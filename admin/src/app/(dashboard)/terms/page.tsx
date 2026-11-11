@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 
+import { TermsPage } from "@/components/terms/terms-page";
+
 export const metadata: Metadata = {
   title: "Terms",
 };
 
-/** Placeholder route for the Terms module (not built yet); renders an empty workspace. */
-export default function TermsPage() {
-  return null;
+/** School terms, backed by the ASP.NET Core Web API (`/api/admin/terms`). */
+export default function Page() {
+  return <TermsPage />;
 }

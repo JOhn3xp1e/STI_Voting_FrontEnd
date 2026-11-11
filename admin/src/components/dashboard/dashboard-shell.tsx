@@ -12,6 +12,7 @@ import type { AdminProfile } from "@/types/auth.types";
 
 import entrance from "./dashboard-entrance.module.css";
 import { DashboardHeader } from "./dashboard-header";
+import { PageDescriptionProvider } from "./page-description";
 import { Sidebar } from "./sidebar";
 
 /** Matches Tailwind's `md` breakpoint: persistent sidebar from here up, drawer below. */
@@ -102,6 +103,7 @@ export function DashboardShell({ admin, children }: DashboardShellProps) {
   };
 
   return (
+    <PageDescriptionProvider>
     <div data-themed className="flex min-h-dvh flex-1 bg-background text-foreground transition-colors duration-500">
       <a
         href="#main-content"
@@ -188,5 +190,6 @@ export function DashboardShell({ admin, children }: DashboardShellProps) {
       {/* Entrance after signing in: lifts away from the sign-in screen's navy (CSS only; hidden otherwise). */}
       <div aria-hidden className={entrance.curtain} onAnimationEnd={endDashboardEntrance} />
     </div>
+    </PageDescriptionProvider>
   );
 }

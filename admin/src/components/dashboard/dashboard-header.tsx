@@ -11,6 +11,7 @@ import { AdminAvatar } from "./admin-avatar";
 import styles from "./dashboard-header.module.css";
 import { headerIconButtonClassName } from "./header-icon-button";
 import { NotificationMenu } from "./notification-menu";
+import { usePageDescriptionOverride } from "./page-description";
 import { ProfileMenu } from "./profile-menu";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -30,7 +31,9 @@ interface DashboardHeaderProps {
  */
 export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, className }: DashboardHeaderProps) {
   const pathname = usePathname();
-  const { title, description, headerTheme } = getPageMeta(pathname, admin.firstName);
+  const meta = getPageMeta(pathname, admin.firstName);
+  const { title, headerTheme } = meta;
+  const description = usePageDescriptionOverride(pathname) ?? meta.description;
   const hero = headerTheme === "hero";
 
   return (

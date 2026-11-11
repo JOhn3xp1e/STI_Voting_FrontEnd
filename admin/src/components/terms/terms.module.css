@@ -1,0 +1,162 @@
+/* Motion for the Terms page. Transform / opacity / colour only; all disabled under reduced motion. */
+
+/* Table rows rise in with a short stagger when the list changes (delay set inline). */
+.rowIn {
+  animation: row-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+}
+
+/* A created / edited / rolled-over row flashes a soft blue once. */
+.rowFlash {
+  animation: row-flash 2.4s ease-out;
+}
+
+.rowIn.rowFlash {
+  animation:
+    row-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both,
+    row-flash 2.4s ease-out;
+}
+
+@keyframes row-flash {
+  0%,
+  35% {
+    background-color: color-mix(in oklab, var(--color-brand-blue) 9%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* The New term card and the toolbar rise in on first paint (delay set inline). */
+.riseIn {
+  animation: rise-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+}
+
+/* Status pills pop when a term's status changes (e.g. after editing its dates). */
+.pillPop {
+  animation: pill-pop 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes pill-pop {
+  from {
+    opacity: 0.4;
+    transform: scale(0.82);
+  }
+}
+
+/* Calendar: the month grid slides in from the side you navigated to. */
+.monthNext {
+  animation: month-next 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.monthPrev {
+  animation: month-prev 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes month-next {
+  from {
+    opacity: 0;
+    transform: translate3d(18px, 0, 0);
+  }
+}
+
+@keyframes month-prev {
+  from {
+    opacity: 0;
+    transform: translate3d(-18px, 0, 0);
+  }
+}
+
+/* Calendar: the month label rolls when it changes. */
+.labelNext {
+  animation: label-next 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.labelPrev {
+  animation: label-prev 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes label-next {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+}
+
+@keyframes label-prev {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0);
+  }
+}
+
+/* Calendar: the picked day pops. */
+.dayPop {
+  animation: day-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes day-pop {
+  from {
+    transform: scale(0.72);
+  }
+}
+
+/* Inline field error appears gently. */
+.fieldError {
+  animation: field-error-in 220ms ease-out;
+}
+
+@keyframes field-error-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -3px, 0);
+  }
+}
+
+/* Delete dialog: the trash badge wobbles once on open. */
+.trashIn {
+  animation: trash-in 520ms cubic-bezier(0.34, 1.56, 0.64, 1) 80ms both;
+}
+
+@keyframes trash-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.6) rotate(-12deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.06) rotate(4deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rowIn,
+  .rowFlash,
+  .riseIn,
+  .pillPop,
+  .monthNext,
+  .monthPrev,
+  .labelNext,
+  .labelPrev,
+  .dayPop,
+  .fieldError,
+  .trashIn {
+    animation: none;
+  }
+}

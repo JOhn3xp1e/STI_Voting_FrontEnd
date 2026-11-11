@@ -110,7 +110,7 @@ const PAGE_META: Record<string, PageMetaConfig> = {
     headerTheme: "hero",
   },
   "/elections": { title: "Elections", description: "Election schedules and settings" },
-  "/terms": { title: "Terms", description: "School years and enrollment terms" },
+  "/terms": { title: "Terms", description: "School terms" },
   "/programs": { title: "Programs & Careers", description: "Academic programs and career tracks" },
   "/students": { title: "Students" },
   "/elections/csc/metrics": { title: "Election Metrics", description: "CSC Elections" },
