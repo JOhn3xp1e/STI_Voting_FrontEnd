@@ -1,5 +1,5 @@
 import { CURRENT_TERM, PROGRAMS, buildStudentEmail } from "@/lib/mock/students.mock";
-import type { ProgramCode, Student, StudentCategory, StudentFilters, StudentStatus, YearLevel } from "@/types/student.types";
+import type { FacetFilters, ProgramCode, Student, StudentStatus, YearLevel } from "@/types/student.types";
 
 export function getStudentStatus(student: Student): StudentStatus {
   if (student.inactive) return "loa";
@@ -19,25 +19,30 @@ export function getStudentInitials(student: Pick<Student, "lastName" | "firstNam
   return `${student.lastName.trim()[0] ?? ""}${student.firstName.trim()[0] ?? ""}`.toUpperCase();
 }
 
-export function isInCategory(student: Student, category: StudentCategory): boolean {
-  switch (category) {
-    case "all":
-      return true;
-    case "enrolled":
-      return student.term === CURRENT_TERM;
-    case "not-updated":
-      return student.term !== CURRENT_TERM;
-    case "inactive":
-      return student.inactive;
-  }
+export const NO_FACETS: FacetFilters = { programs: [], years: [], terms: [], statuses: [] };
+
+/** Number of selected filter values (the badge on the Filters button). */
+export function countFacets(f: FacetFilters): number {
+  return f.programs.length + f.years.length + f.terms.length + f.statuses.length;
 }
 
-export function matchesFilters(student: Student, { query, program, year, term }: StudentFilters): boolean {
-  if (program && student.program !== program) return false;
-  if (year && student.year !== year) return false;
-  if (term && student.term !== term) return false;
+export function countByStatus(students: readonly Student[]): Record<StudentStatus, number> {
+  const counts: Record<StudentStatus, number> = { enrolled: 0, "not-updated": 0, loa: 0 };
+  for (const s of students) counts[getStudentStatus(s)]++;
+  return counts;
+}
 
-  const needle = query.trim().toLowerCase();
+/**
+ * Within a group the values are OR-ed (BSIT or BSCS), groups are AND-ed
+ * (BSIT and TRM-00004). The search matches student no. or name.
+ */
+export function matchesFilters(student: Student, query: string, f: FacetFilters): boolean {
+  if (f.programs.length && !f.programs.includes(student.program)) return false;
+  if (f.years.length && !f.years.includes(student.year)) return false;
+  if (f.terms.length && !f.terms.includes(student.term)) return false;
+  if (f.statuses.length && !f.statuses.includes(getStudentStatus(student))) return false;
+
+  const needle = query.trim().toLowerCase().replace(/\s+/g, " ");
   if (!needle) return true;
   const haystack = [
     student.studentNo,
@@ -47,7 +52,7 @@ export function matchesFilters(student: Student, { query, program, year, term }:
     .join(" ")
     .toLowerCase()
     .replace(/\s+/g, " ");
-  return haystack.includes(needle.replace(/\s+/g, " "));
+  return haystack.includes(needle);
 }
 
 export const STUDENT_NO_PATTERN = /^\d{11}$/;
@@ -63,7 +68,7 @@ export const SAMPLE_CSV = [
   "02000301884,Alfane,Jan Clarence,,BSIT,2,TRM-00004",
   "02000645840,Cruz,Aeron Aries,,BSIT,4,TRM-00004",
   "02000771020,Navarro,Lance Adrian,Reyes,BSCS,1,TRM-00004",
-  '02000771021,"De Leon",Mikaela,,BSBA,1,TRM-00004',
+  '02000771021,"De Leon",Mikaela,,STEM,1,TRM-00004',
 ].join("\n");
 
 /** Minimal RFC 4180 parser: quoted fields, escaped quotes, CRLF. */
@@ -146,7 +151,7 @@ export function previewCsvImport(text: string, existing: readonly Student[]): { 
     if (!lastName || !firstName) return fail("Missing name");
 
     const programRaw = cell(row, "program").toUpperCase();
-    const program = (PROGRAMS as readonly string[]).includes(programRaw) ? (programRaw as ProgramCode) : null;
+    const program: ProgramCode | null = PROGRAMS.find((p) => p.toUpperCase() === programRaw) ?? null;
     if (programRaw && !program) return fail(`Unknown program "${programRaw}"`);
 
     const yearRaw = cell(row, "year");

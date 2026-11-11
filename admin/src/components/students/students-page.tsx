@@ -1,54 +1,44 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { CircleCheck } from "lucide-react";
 
-import { CURRENT_TERM, MOCK_STUDENTS, ROSTER_TOTALS } from "@/lib/mock/students.mock";
-import { formatStudentName, formatYear, isInCategory, matchesFilters } from "@/lib/students";
+import { ADDED_THIS_TERM, CURRENT_TERM, MOCK_STUDENTS } from "@/lib/mock/students.mock";
+import { NO_FACETS, countByStatus, countFacets, formatStudentName, formatYear, matchesFilters } from "@/lib/students";
 import { cn } from "@/lib/utils";
-import type { Student, StudentCategory, StudentFilters, YearLevel } from "@/types/student.types";
+import type { FacetFilters, Student, YearLevel } from "@/types/student.types";
 
 import { AddStudentForm } from "./add-student-form";
 import { BulkActionBar } from "./bulk-action-bar";
 import { CsvImportDialog } from "./csv-import-dialog";
 import { StudentStats, type StudentStat } from "./student-stats";
 import { StudentTable } from "./student-table";
-import { StudentTabs, type StudentTab } from "./student-tabs";
-import { StudentToolbar, toolbarButtonClassName } from "./student-toolbar";
+import { StudentToolbar } from "./student-toolbar";
+import { toolbarButtonClassName } from "./student-toolbar-styles";
 
-const NO_FILTERS: StudentFilters = { query: "", program: null, year: null, term: null };
 const PREVIEW_NOTE = "Preview only, nothing saved.";
-
-function countBy(students: readonly Student[]) {
-  return {
-    all: students.length,
-    enrolled: students.filter((s) => isInCategory(s, "enrolled")).length,
-    notUpdated: students.filter((s) => isInCategory(s, "not-updated")).length,
-    inactive: students.filter((s) => isInCategory(s, "inactive")).length,
-  };
-}
-
-const INITIAL_COUNTS = countBy(MOCK_STUDENTS);
-const fmt = (n: number) => n.toLocaleString("en-US");
 
 /**
  * Students management page (FRONTEND MOCK).
- * Everything happens in local state on fictional sample data; nothing is sent
- * to the Web API. Term totals come from `ROSTER_TOTALS`, adjusted by the
- * changes made to the sample rows during the session.
+ * Everything happens in local state on a fictional generated roster; nothing
+ * is sent to the Web API.
  */
 export function StudentsPage() {
-  const tableId = useId();
   const firstFieldRef = useRef<HTMLInputElement>(null);
 
   const [students, setStudents] = useState<Student[]>(MOCK_STUDENTS);
-  const [category, setCategory] = useState<StudentCategory>("all");
-  const [filters, setFilters] = useState<StudentFilters>(NO_FILTERS);
+  const [query, setQuery] = useState("");
+  const [facets, setFacets] = useState<FacetFilters>(NO_FACETS);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [highlighted, setHighlighted] = useState<Set<string>>(() => new Set());
+  /** Bumped when rows are added, so the table replays its entrance from the top. */
+  const [revision, setRevision] = useState(0);
   const [addedCount, setAddedCount] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const [notice, setNotice] = useState<{ id: number; text: string } | null>(null);
+
+  // Typing stays responsive; the table catches up with the deferred value.
+  const deferredQuery = useDeferredValue(query);
 
   // Notices dismiss themselves.
   useEffect(() => {
@@ -67,62 +57,62 @@ export function StudentsPage() {
   const say = (text: string) => setNotice({ id: Date.now(), text });
 
   const visible = useMemo(
-    () => students.filter((s) => isInCategory(s, category) && matchesFilters(s, filters)),
-    [students, category, filters],
+    () => students.filter((s) => matchesFilters(s, deferredQuery, facets)),
+    [students, deferredQuery, facets],
   );
 
-  const counts = useMemo(() => {
-    const now = countBy(students);
-    return {
-      all: ROSTER_TOTALS.all + now.all - INITIAL_COUNTS.all,
-      enrolled: ROSTER_TOTALS.enrolled + now.enrolled - INITIAL_COUNTS.enrolled,
-      notUpdated: ROSTER_TOTALS.notUpdated + now.notUpdated - INITIAL_COUNTS.notUpdated,
-      inactive: ROSTER_TOTALS.inactive + now.inactive - INITIAL_COUNTS.inactive,
-    };
-  }, [students]);
+  const countMatches = useCallback(
+    (draft: FacetFilters) => students.reduce((n, s) => n + (matchesFilters(s, query, draft) ? 1 : 0), 0),
+    [students, query],
+  );
+
+  const counts = useMemo(() => countByStatus(students), [students]);
 
   const stats: StudentStat[] = [
     {
-      label: "Enrolled this term",
-      value: fmt(counts.enrolled),
-      detail: `${Math.round((counts.enrolled / counts.all) * 100)}% of students`,
+      label: "Total students",
+      value: students.length,
+      detail: `+${ADDED_THIS_TERM + addedCount} this term`,
       tone: "blue",
-      trend: [2, 3, 2.6, 4.4, 4, 5.6, 5.2, 7, 8.4, 9.6],
+      trend: [2.2, 2.6, 2.3, 3.6, 3.3, 4.4, 4.1, 5.6, 6.9, 8.2],
     },
-    { label: "Not yet updated", value: fmt(counts.notUpdated), detail: "still on last term", tone: "gold", trend: [9, 8.4, 8.8, 7, 6.2, 5, 4.4, 4.8, 4.2, 3.9] },
     {
-      label: "Added this term",
-      value: `+${fmt(ROSTER_TOTALS.addedThisTerm + addedCount)}`,
-      detail: "new students",
+      label: "Enrolled this term",
+      value: counts.enrolled,
+      detail: `in ${CURRENT_TERM}`,
       tone: "blue",
-      trend: [2, 2.4, 2.2, 3.8, 3.4, 5, 4.6, 6.4, 7.4, 8.6],
+      trend: [2, 2.5, 2.2, 3.4, 3.1, 4.6, 4.2, 5.8, 7, 8.4],
     },
-    { label: "Inactive / LOA", value: fmt(counts.inactive), detail: "excluded from voting", tone: "gold", trend: [9.2, 8.6, 8.9, 7.4, 6.4, 5.4, 4.6, 4.9, 4.4, 4.2] },
-  ];
-
-  const tabs: StudentTab[] = [
-    { id: "all", label: "All", count: counts.all },
-    { id: "enrolled", label: `Enrolled · ${CURRENT_TERM}`, count: counts.enrolled },
-    { id: "not-updated", label: "Not updated", count: counts.notUpdated },
-    { id: "inactive", label: "Inactive", count: counts.inactive },
+    {
+      label: "Not updated",
+      value: counts["not-updated"],
+      detail: `need ${CURRENT_TERM} enrollment`,
+      tone: "gold",
+      trend: [9, 8.7, 8.9, 7.4, 6.6, 5.2, 4.9, 4.4, 4.3, 4.1],
+    },
+    {
+      label: "On leave (LOA)",
+      value: counts.loa,
+      detail: "not eligible to vote",
+      tone: "gold",
+      trend: [9.2, 8.8, 9, 7.6, 6.8, 5.6, 5, 4.7, 4.5, 4.3],
+    },
   ];
 
   const existingStudentNos = useMemo(() => new Set(students.map((s) => s.studentNo)), [students]);
 
-  function flash(studentNos: string[]) {
-    setHighlighted(new Set(studentNos));
-  }
+  const resultKey = `${deferredQuery.trim().toLowerCase()}|${JSON.stringify(facets)}|${revision}`;
 
   /* ---------------------------------- selection ---------------------------------- */
 
-  function toggle(studentNo: string, checked: boolean) {
+  const toggle = useCallback((studentNo: string, checked: boolean) => {
     setSelected((current) => {
       const next = new Set(current);
       if (checked) next.add(studentNo);
       else next.delete(studentNo);
       return next;
     });
-  }
+  }, []);
 
   function toggleAll(checked: boolean) {
     setSelected((current) => {
@@ -137,21 +127,26 @@ export function StudentsPage() {
 
   function updateSelected(update: (s: Student) => Student) {
     setStudents((list) => list.map((s) => (selected.has(s.studentNo) ? update(s) : s)));
-    flash([...selected]);
+    setHighlighted(new Set(selected));
   }
 
   const n = selected.size;
-  const plural = (count: number) => `${count} student${count === 1 ? "" : "s"}`;
+  const plural = (count: number) => `${count.toLocaleString("en-US")} student${count === 1 ? "" : "s"}`;
 
   /* ------------------------------------ adding ------------------------------------ */
+
+  /** Shows every student again so new rows are visible at the top. */
+  function revealAdded(studentNos: string[]) {
+    setQuery("");
+    setFacets(NO_FACETS);
+    setRevision((r) => r + 1);
+    setHighlighted(new Set(studentNos));
+  }
 
   function addStudent(student: Student) {
     setStudents((list) => [student, ...list]);
     setAddedCount((c) => c + 1);
-    // Make sure the new row is visible.
-    setCategory("all");
-    setFilters(NO_FILTERS);
-    flash([student.studentNo]);
+    revealAdded([student.studentNo]);
     say(`Added ${formatStudentName(student)} · enrolled in ${student.term}. ${PREVIEW_NOTE}`);
   }
 
@@ -163,61 +158,64 @@ export function StudentsPage() {
       return [...rows.filter((r) => !known.has(r.studentNo)), ...updated];
     });
     setAddedCount((c) => c + summary.added);
-    setCategory("all");
-    setFilters(NO_FILTERS);
-    flash(rows.map((r) => r.studentNo));
+    revealAdded(rows.map((r) => r.studentNo));
     say(`Imported ${summary.added} new · ${summary.updated} updated. ${PREVIEW_NOTE}`);
   }
 
-  const filtersActive = filters.query !== "" || filters.program !== null || filters.year !== null || filters.term !== null;
+  const filtersActive = query.trim() !== "" || countFacets(facets) > 0;
 
   return (
     <div className="px-4 pt-0 pb-28 sm:px-6 lg:px-8">
       <StudentStats stats={stats} />
 
-      <StudentTabs tabs={tabs} value={category} onValueChange={setCategory} controls={tableId} />
+      {/* Toolbar above the table; the Add student card lines up with the table's top edge. */}
+      <div className="mt-5 grid grid-cols-1 items-start gap-x-6 gap-y-5.5 min-[85rem]:grid-cols-[minmax(0,1fr)_22.5rem]">
+        <StudentToolbar
+          query={query}
+          onQueryChange={setQuery}
+          facets={facets}
+          onFacetsChange={setFacets}
+          countMatches={countMatches}
+          onImport={() => setImportOpen(true)}
+          onAddStudent={() => {
+            const field = firstFieldRef.current;
+            field?.scrollIntoView({ behavior: "smooth", block: "center" });
+            field?.focus({ preventScroll: true });
+          }}
+          className="min-[85rem]:col-start-1"
+        />
 
-      <StudentToolbar
-        filters={filters}
-        onFiltersChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
-        onImport={() => setImportOpen(true)}
-        onAddStudent={() => {
-          const field = firstFieldRef.current;
-          field?.scrollIntoView({ behavior: "smooth", block: "center" });
-          field?.focus({ preventScroll: true });
-        }}
-      />
-
-      <div className="mt-5 grid grid-cols-1 items-start gap-6 min-[85rem]:grid-cols-[minmax(0,1fr)_22.5rem]">
-        <div className="min-w-0">
+        <div className="min-w-0 min-[85rem]:col-start-1 min-[85rem]:row-start-2">
           <StudentTable
-            id={tableId}
             students={visible}
             selected={selected}
             onToggle={toggle}
             onToggleAll={toggleAll}
             highlighted={highlighted}
+            resultKey={resultKey}
             emptyAction={
-              filtersActive || category !== "all" ? (
+              filtersActive ? (
                 <button
                   type="button"
                   className={cn(toolbarButtonClassName, "h-8 text-[0.8125rem]")}
                   onClick={() => {
-                    setFilters(NO_FILTERS);
-                    setCategory("all");
+                    setQuery("");
+                    setFacets(NO_FACETS);
                   }}
                 >
-                  Clear filters
+                  Clear search &amp; filters
                 </button>
               ) : null
             }
           />
-          <p className="mt-3.5 pl-2 font-mono text-[0.6875rem] leading-4 text-muted-foreground">
-            Import upserts by student no. — existing students get their term &amp; year updated, new ones are added
-          </p>
         </div>
 
-        <AddStudentForm existingStudentNos={existingStudentNos} onAdd={addStudent} firstFieldRef={firstFieldRef} />
+        <AddStudentForm
+          existingStudentNos={existingStudentNos}
+          onAdd={addStudent}
+          firstFieldRef={firstFieldRef}
+          className="min-[85rem]:col-start-2 min-[85rem]:row-start-2"
+        />
       </div>
 
       <BulkActionBar

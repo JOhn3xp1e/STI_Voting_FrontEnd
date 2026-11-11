@@ -112,8 +112,7 @@ const PAGE_META: Record<string, PageMetaConfig> = {
   "/elections": { title: "Elections", description: "Election schedules and settings" },
   "/terms": { title: "Terms", description: "School years and enrollment terms" },
   "/programs": { title: "Programs & Careers", description: "Academic programs and career tracks" },
-  // Mock figures until the roster comes from the Web API.
-  "/students": { title: "Students", description: "1,284 students · enrollment for TRM-00004 · 2025–2026 term 1" },
+  "/students": { title: "Students" },
   "/elections/csc/metrics": { title: "Election Metrics", description: "CSC Elections" },
   "/elections/csc/party-lists": { title: "Party Lists", description: "CSC Elections" },
   "/elections/csc/candidates": { title: "Candidates", description: "CSC Elections" },

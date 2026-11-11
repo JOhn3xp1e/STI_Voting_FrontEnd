@@ -1,5 +1,7 @@
 "use client";
 
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+
 import { Checkbox } from "@/components/ui/checkbox";
 import { CURRENT_TERM } from "@/lib/mock/students.mock";
 import { formatStudentName, formatYear, getStudentInitials, getStudentStatus } from "@/lib/students";
@@ -8,39 +10,174 @@ import type { Student, StudentStatus } from "@/types/student.types";
 
 import styles from "./students.module.css";
 
+/** Rows rendered per batch; more are added as the table scrolls. */
+const BATCH = 40;
+/** Rows that take part in the staggered entrance (the first visible screenful). */
+const INTRO_ROWS = 12;
+
 const STATUS_BADGE: Record<StudentStatus, { label: string; className: string }> = {
-  enrolled: { label: "Enrolled", className: "bg-primary text-primary-foreground" },
-  "not-updated": { label: "Not updated", className: "bg-brand-gold text-brand-navy" },
-  loa: { label: "LOA", className: "border border-border text-muted-foreground/80" },
+  enrolled: { label: "Enrolled", className: "bg-[#22c55e] dark:bg-[#1fa855]" },
+  "not-updated": { label: "Not updated", className: "bg-[#8d939c] dark:bg-[#5f6672]" },
+  loa: { label: "LOA", className: "bg-[#f25f5c] dark:bg-[#d9524f]" },
 };
 
 export const checkboxClassName =
-  "size-4 cursor-pointer rounded-[4px] bg-background transition-[background-color,border-color,box-shadow] duration-150 hover:border-[color-mix(in_oklab,var(--color-brand-muted)_45%,transparent)] focus-visible:ring-brand-blue/25";
+  "size-4 cursor-pointer rounded-[4px] bg-background transition-[background-color,border-color,box-shadow,scale] duration-150 hover:border-[color-mix(in_oklab,var(--color-brand-muted)_45%,transparent)] focus-visible:ring-brand-blue/25 active:scale-90 motion-reduce:active:scale-100";
+
+/** Status pill; pops gently when a row's status changes (e.g. after "Set term"). */
+function StatusBadge({ status }: { status: StudentStatus }) {
+  const [shown, setShown] = useState(status);
+  const [changed, setChanged] = useState(false);
+  if (status !== shown) {
+    setShown(status);
+    setChanged(true);
+  }
+  const badge = STATUS_BADGE[status];
+  return (
+    <span
+      key={status}
+      className={cn(
+        "inline-flex h-4.75 items-center rounded-full px-3.75 font-mono text-[0.5625rem] leading-none font-semibold tracking-[0.08em] whitespace-nowrap text-white uppercase",
+        "transition-colors duration-300",
+        badge.className,
+        changed && styles.badgePop,
+      )}
+    >
+      {badge.label}
+    </span>
+  );
+}
+
+interface RowProps {
+  student: Student;
+  checked: boolean;
+  highlighted: boolean;
+  /** Position in the entrance stagger, or -1 for no entrance. */
+  introIndex: number;
+  onToggle: (studentNo: string, checked: boolean) => void;
+}
+
+const StudentRow = memo(function StudentRow({ student, checked, highlighted, introIndex, onToggle }: RowProps) {
+  const name = formatStudentName(student);
+  return (
+    <tr
+      data-selected={checked || undefined}
+      style={introIndex >= 0 ? { animationDelay: `${introIndex * 26}ms` } : undefined}
+      className={cn(
+        "group/row h-14.5 transition-colors duration-200 hover:bg-muted/55 data-selected:bg-brand-blue/2.5 dark:hover:bg-white/3 dark:data-selected:bg-white/2",
+        introIndex >= 0 && styles.rowIn,
+        highlighted && styles.rowAdded,
+      )}
+    >
+      <td className="border-b border-border pl-2">
+        <Checkbox
+          aria-label={`Select ${name}`}
+          checked={checked}
+          onCheckedChange={(next) => onToggle(student.studentNo, next)}
+          className={checkboxClassName}
+        />
+      </td>
+      <td className="border-b border-border pr-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            aria-hidden
+            className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-background font-mono text-[0.5625rem] font-medium text-muted-foreground transition-[border-color,color] duration-200 group-hover/row:border-[color-mix(in_oklab,var(--color-brand-muted)_40%,transparent)] group-hover/row:text-foreground/80"
+          >
+            {getStudentInitials(student)}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-[0.84375rem] leading-4.5 font-medium text-foreground">{name}</p>
+            <p className="truncate font-mono text-[0.65625rem] leading-4 text-muted-foreground">{student.email}</p>
+          </div>
+        </div>
+      </td>
+      <td className="border-b border-border font-mono text-[0.75rem] text-muted-foreground tabular-nums">{student.studentNo}</td>
+      <td className="border-b border-border text-[0.8125rem] text-muted-foreground">{student.program}</td>
+      <td className="border-b border-border font-mono text-[0.75rem] text-muted-foreground">{formatYear(student.year)}</td>
+      <td
+        className={cn(
+          "border-b border-border font-mono text-[0.75rem] transition-colors duration-300",
+          student.term === CURRENT_TERM ? "text-foreground" : "text-muted-foreground/60",
+        )}
+      >
+        {student.term}
+      </td>
+      <td className="border-b border-border">
+        <StatusBadge status={getStudentStatus(student)} />
+      </td>
+    </tr>
+  );
+});
 
 interface StudentTableProps {
-  id: string;
   students: readonly Student[];
   selected: ReadonlySet<string>;
   onToggle: (studentNo: string, checked: boolean) => void;
   onToggleAll: (checked: boolean) => void;
-  /** Student numbers to flash (just added / imported). */
+  /** Student numbers to flash (just added / imported / updated). */
   highlighted: ReadonlySet<string>;
-  emptyAction?: React.ReactNode;
+  /** Changes whenever the result set is re-queried (filters, search): replays the entrance and scrolls to the top. */
+  resultKey: string;
+  emptyAction?: ReactNode;
 }
 
-/** Roster table. Scrolls inside a 7-row viewport so the page keeps the reference proportions. */
-export function StudentTable({ id, students, selected, onToggle, onToggleAll, highlighted, emptyAction }: StudentTableProps) {
-  const selectedVisible = students.filter((s) => selected.has(s.studentNo)).length;
+/**
+ * Roster table. Scrolls inside a 7-row viewport (reference proportions) and
+ * renders rows in batches as you scroll, so the full roster stays smooth.
+ */
+export function StudentTable({ students, selected, onToggle, onToggleAll, highlighted, resultKey, emptyAction }: StudentTableProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLTableRowElement>(null);
+
+  const [limit, setLimit] = useState(BATCH);
+  const [intro, setIntro] = useState(true);
+  const [limitFor, setLimitFor] = useState(resultKey);
+  if (limitFor !== resultKey) {
+    setLimitFor(resultKey);
+    setLimit(BATCH);
+    setIntro(true);
+  }
+
+  // The entrance only applies right after (re)querying, never to later edits.
+  useEffect(() => {
+    if (!intro) return;
+    const timer = setTimeout(() => setIntro(false), 900);
+    return () => clearTimeout(timer);
+  }, [intro, resultKey]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [resultKey]);
+
+  // Render the next batch when the sentinel scrolls into view.
+  const hasMore = limit < students.length;
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!hasMore || !sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) setLimit((l) => l + BATCH);
+      },
+      { root: scrollRef.current, rootMargin: "240px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, limit]);
+
+  const selectedVisible = selected.size === 0 ? 0 : students.reduce((n, s) => n + (selected.has(s.studentNo) ? 1 : 0), 0);
   const allChecked = students.length > 0 && selectedVisible === students.length;
   const someChecked = selectedVisible > 0 && !allChecked;
+  const rows = students.slice(0, limit);
 
   return (
     <div
-      id={id}
-      role="tabpanel"
-      className="max-h-[calc(2.625rem+7*3.625rem+1px)] overflow-auto overscroll-contain border-t border-border [scrollbar-width:thin]"
+      ref={scrollRef}
+      className="max-h-[calc(2.625rem+7*3.625rem+1px)] overflow-auto overscroll-contain border-t border-border scrollbar-thin"
     >
       <table className="w-full min-w-160 table-fixed border-separate border-spacing-0 text-left">
+        <caption className="sr-only">
+          Students, {students.length.toLocaleString("en-US")} {students.length === 1 ? "result" : "results"}
+        </caption>
         <colgroup>
           <col className="w-9.5" />
           <col />
@@ -50,11 +187,11 @@ export function StudentTable({ id, students, selected, onToggle, onToggleAll, hi
           <col className="w-24 min-[90rem]:w-26.5" />
           <col className="w-25 min-[90rem]:w-28" />
         </colgroup>
-        <thead className="sticky top-0 z-10 bg-background">
+        <thead className="sticky top-0 z-10 bg-background transition-colors duration-500">
           <tr className="h-10.5 font-mono text-[0.65625rem] tracking-[0.08em] text-muted-foreground uppercase">
             <th scope="col" className="border-b border-border pl-2 font-normal">
               <Checkbox
-                aria-label={allChecked ? "Deselect all shown students" : "Select all shown students"}
+                aria-label={allChecked ? "Deselect all matching students" : "Select all matching students"}
                 checked={allChecked}
                 indeterminate={someChecked}
                 disabled={students.length === 0}
@@ -70,78 +207,32 @@ export function StudentTable({ id, students, selected, onToggle, onToggleAll, hi
             <th scope="col" className="border-b border-border font-normal">Status</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody key={resultKey}>
           {students.length === 0 ? (
-            <tr>
-              <td colSpan={7} className="h-40 border-b border-border text-center">
-                <p className="text-[0.875rem] font-medium text-foreground">No students match these filters</p>
-                <p className="mt-1 text-[0.8125rem] text-muted-foreground">Try another category, search or filter.</p>
-                {emptyAction ? <div className="mt-3">{emptyAction}</div> : null}
+            <tr className={styles.rowIn}>
+              <td colSpan={7} className="h-50 border-b border-border text-center">
+                <p className="text-[0.875rem] font-medium text-foreground">No students match</p>
+                <p className="mt-1 text-[0.8125rem] text-muted-foreground">Try another search or loosen the filters.</p>
+                {emptyAction ? <div className="mt-3.5">{emptyAction}</div> : null}
               </td>
             </tr>
           ) : (
-            students.map((student) => {
-              const checked = selected.has(student.studentNo);
-              const status = STATUS_BADGE[getStudentStatus(student)];
-              const name = formatStudentName(student);
-              return (
-                <tr
-                  key={student.studentNo}
-                  data-selected={checked || undefined}
-                  className={cn(
-                    "group/row h-14.5 transition-colors duration-150 hover:bg-muted/55 dark:hover:bg-white/3",
-                    highlighted.has(student.studentNo) && styles.rowAdded,
-                  )}
-                >
-                  <td className="border-b border-border pl-2">
-                    <Checkbox
-                      aria-label={`Select ${name}`}
-                      checked={checked}
-                      onCheckedChange={(next) => onToggle(student.studentNo, next)}
-                      className={checkboxClassName}
-                    />
-                  </td>
-                  <td className="border-b border-border pr-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span
-                        aria-hidden
-                        className="flex size-6.5 shrink-0 items-center justify-center rounded-full border border-border bg-background font-mono text-[0.5625rem] font-medium text-muted-foreground transition-colors group-hover/row:border-[color-mix(in_oklab,var(--color-brand-muted)_40%,transparent)]"
-                      >
-                        {getStudentInitials(student)}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-[0.84375rem] leading-4.5 font-medium text-foreground">{name}</p>
-                        <p className="truncate font-mono text-[0.65625rem] leading-4 text-muted-foreground">{student.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="border-b border-border font-mono text-[0.75rem] text-muted-foreground tabular-nums">
-                    {student.studentNo}
-                  </td>
-                  <td className="border-b border-border text-[0.8125rem] text-muted-foreground">{student.program}</td>
-                  <td className="border-b border-border font-mono text-[0.75rem] text-muted-foreground">{formatYear(student.year)}</td>
-                  <td
-                    className={cn(
-                      "border-b border-border font-mono text-[0.75rem]",
-                      student.term === CURRENT_TERM ? "text-foreground" : "text-muted-foreground/65",
-                    )}
-                  >
-                    {student.term}
-                  </td>
-                  <td className="border-b border-border">
-                    <span
-                      className={cn(
-                        "inline-flex h-4.5 items-center rounded-[3px] px-1.5 font-mono text-[0.59375rem] font-semibold tracking-[0.06em] uppercase",
-                        status.className,
-                      )}
-                    >
-                      {status.label}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })
+            rows.map((student, index) => (
+              <StudentRow
+                key={student.studentNo}
+                student={student}
+                checked={selected.has(student.studentNo)}
+                highlighted={highlighted.has(student.studentNo)}
+                introIndex={intro && index < INTRO_ROWS ? index : -1}
+                onToggle={onToggle}
+              />
+            ))
           )}
+          {hasMore ? (
+            <tr ref={sentinelRef} aria-hidden>
+              <td colSpan={7} className="h-px p-0" />
+            </tr>
+          ) : null}
         </tbody>
       </table>
     </div>

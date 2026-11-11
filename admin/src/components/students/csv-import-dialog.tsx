@@ -8,7 +8,7 @@ import { CSV_COLUMNS, SAMPLE_CSV, previewCsvImport, type ImportRowResult } from 
 import { cn } from "@/lib/utils";
 import type { Student } from "@/types/student.types";
 
-import { toolbarButtonClassName } from "./student-toolbar";
+import { toolbarButtonClassName } from "./student-toolbar-styles";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 

@@ -1,10 +1,15 @@
 /* Motion for the Students page. Transform / opacity / stroke only; all disabled under reduced motion. */
 
-/* Sparklines draw themselves in once. */
+/* Stat cells rise in once (delay set inline per cell). */
+.statIn {
+  animation: rise-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Sparklines draw themselves in once (delay set inline). */
 .spark {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: spark-draw 900ms cubic-bezier(0.65, 0, 0.35, 1) 150ms forwards;
+  animation: spark-draw 1000ms cubic-bezier(0.65, 0, 0.35, 1) 180ms forwards;
 }
 
 @keyframes spark-draw {
@@ -13,9 +18,34 @@
   }
 }
 
-/* A newly added / imported row flashes a soft blue once. */
+/* Table rows enter with a short stagger after (re)querying (delay set inline). */
+.rowIn {
+  animation: row-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+}
+
+/* A newly added / imported / updated row flashes a soft blue once. */
 .rowAdded {
   animation: row-added 2.4s ease-out;
+}
+
+.rowIn.rowAdded {
+  animation:
+    row-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both,
+    row-added 2.4s ease-out;
 }
 
 @keyframes row-added {
@@ -25,6 +55,30 @@
   }
   100% {
     background-color: transparent;
+  }
+}
+
+/* Badges (status pills, filter count) pop in when their value changes. */
+.badgePop {
+  animation: badge-pop 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes badge-pop {
+  from {
+    opacity: 0.4;
+    transform: scale(0.82);
+  }
+}
+
+/* Extra program chips fade up as the list unfolds (delay set inline). */
+.chipIn {
+  animation: chip-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes chip-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0) scale(0.96);
   }
 }
 
@@ -46,7 +100,11 @@
     stroke-dashoffset: 0;
   }
 
+  .statIn,
+  .rowIn,
   .rowAdded,
+  .badgePop,
+  .chipIn,
   .fieldError {
     animation: none;
   }

@@ -3,7 +3,32 @@
  * (Frontend mock for now; will mirror the Web API DTOs once they exist.)
  */
 
-export type ProgramCode = "BSIT" | "BSCS" | "BSBA" | "BSHM" | "BSTM";
+/** College programs and senior high strands offered on campus. */
+export type ProgramCode =
+  | "BSIT"
+  | "BSCS"
+  | "BSTM"
+  | "BSHM"
+  | "STEM"
+  | "BSIS"
+  | "BSCpE"
+  | "BSEMC"
+  | "BMMA"
+  | "BSBA"
+  | "BSA"
+  | "BSAIS"
+  | "BSRTCS"
+  | "BACOMM"
+  | "ABM"
+  | "HUMSS"
+  | "GAS"
+  | "ICT-MAWD"
+  | "ICT-CP"
+  | "ICT-ANIM"
+  | "HE-CA"
+  | "HE-TO"
+  | "HE-HO"
+  | "ARTS-DA";
 
 export type YearLevel = 1 | 2 | 3 | 4;
 
@@ -18,19 +43,17 @@ export interface Student {
   year: YearLevel;
   /** Term the student is enrolled in, e.g. `TRM-00004`. */
   term: string;
-  /** On leave of absence / inactive: excluded from voting. */
+  /** On leave of absence: excluded from voting. */
   inactive: boolean;
 }
 
-/** Badge shown in the Status column. */
+/** Badge shown in the Status column (mutually exclusive). */
 export type StudentStatus = "enrolled" | "not-updated" | "loa";
 
-/** Category tabs above the table. */
-export type StudentCategory = "all" | "enrolled" | "not-updated" | "inactive";
-
-export interface StudentFilters {
-  query: string;
-  program: ProgramCode | null;
-  year: YearLevel | null;
-  term: string | null;
+/** Multi-select filters from the Filters popover; empty list = no filter. */
+export interface FacetFilters {
+  programs: ProgramCode[];
+  years: YearLevel[];
+  terms: string[];
+  statuses: StudentStatus[];
 }
