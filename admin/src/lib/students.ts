@@ -164,6 +164,7 @@ export function previewCsvImport(
   if (missing.length) return { results: [], error: `Missing column${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}.` };
 
   const byNo = new Map(existing.map((s) => [s.studentNo, s]));
+  const byEmail = new Map(existing.map((s) => [s.email.toLowerCase(), s.studentNo]));
   const termIds = new Set(catalog.terms.map((t) => t.id));
   const careerCodes = catalog.careers.map((c) => c.code);
   const onlyCareer = careerCodes.length === 1 ? careerCodes[0] : null;
@@ -229,6 +230,8 @@ export function previewCsvImport(
     const email = cell(row, "email").toLowerCase() || buildStudentEmail(lastName, studentNo);
     if (!EMAIL_PATTERN.test(email)) return fail(`Invalid email "${email}"`);
     if (seenEmails.has(email)) return fail("Email used twice in file");
+    const owner = byEmail.get(email);
+    if (owner) return fail(`Email already used by ${owner}`);
     seenEmails.add(email);
 
     return {

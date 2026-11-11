@@ -202,6 +202,7 @@ function StudentsRoster({ initialStudents, loadedAt }: { initialStudents: Studen
   ];
 
   const existingStudentNos = useMemo(() => new Set(students.map((s) => s.studentNo)), [students]);
+  const existingEmails = useMemo(() => new Set(students.map((s) => s.email.toLowerCase())), [students]);
 
   const resultKey = `${deferredQuery.trim().toLowerCase()}|${JSON.stringify(facets)}|${revision}`;
 
@@ -373,6 +374,7 @@ function StudentsRoster({ initialStudents, loadedAt }: { initialStudents: Studen
 
         <AddStudentForm
           existingStudentNos={existingStudentNos}
+          existingEmails={existingEmails}
           onAdd={addStudent}
           firstFieldRef={firstFieldRef}
           className="min-[85rem]:col-start-2 min-[85rem]:row-start-2"

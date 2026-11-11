@@ -67,6 +67,8 @@ function Field({ id, label, error, children, className }: { id: string; label: s
 
 interface AddStudentFormProps {
   existingStudentNos: ReadonlySet<string>;
+  /** Lowercased emails already on the roster (emails must be unique). */
+  existingEmails: ReadonlySet<string>;
   /** Saves the student; rejects with a user-facing message when the API refuses it. */
   onAdd: (student: Student) => Promise<void>;
   /** First field, focused by the toolbar's "+ Add student". */
@@ -75,7 +77,7 @@ interface AddStudentFormProps {
 }
 
 /** "Add student" card: validates locally, then creates the student and their enrollment through the Web API. */
-export function AddStudentForm({ existingStudentNos, onAdd, firstFieldRef, className }: AddStudentFormProps) {
+export function AddStudentForm({ existingStudentNos, existingEmails, onAdd, firstFieldRef, className }: AddStudentFormProps) {
   const { careers, programs, terms, currentTerm, yearLevels } = useStudentCatalog();
 
   const [values, setValues] = useState<FormValues>(EMPTY);
@@ -120,6 +122,7 @@ export function AddStudentForm({ existingStudentNos, onAdd, firstFieldRef, class
   // Email preview follows what's typed; falls back to the example while incomplete.
   const emailReady = lastName.length > 0 && studentNo.length >= 6;
   const email = emailReady ? buildStudentEmail(lastName, studentNo) : buildStudentEmail(EXAMPLE.lastName, EXAMPLE.studentNo);
+  const emailTaken = emailReady && STUDENT_NO_PATTERN.test(studentNo) && existingEmails.has(email.toLowerCase());
 
   function set<K extends keyof FormValues>(key: K, value: FormValues[K]) {
     setValues((v) => ({ ...v, [key]: value }));
@@ -137,7 +140,8 @@ export function AddStudentForm({ existingStudentNos, onAdd, firstFieldRef, class
       STUDENT_NO_PATTERN.test(studentNo) &&
       !existingStudentNos.has(studentNo) &&
       lastName.length >= 2 &&
-      firstName.length >= 2;
+      firstName.length >= 2 &&
+      !emailTaken;
     if (!valid) {
       requestAnimationFrame(() => form.querySelector<HTMLElement>("[aria-invalid=true]")?.focus());
       return;
@@ -256,6 +260,11 @@ export function AddStudentForm({ existingStudentNos, onAdd, firstFieldRef, class
             </span>
             <span className="shrink-0 font-mono text-[0.6875rem] text-brand-blue dark:text-[#7aa7e6]">auto</span>
           </p>
+          {emailTaken ? (
+            <p role="alert" className={cn("mt-1 text-[0.6875rem] leading-4 text-destructive", styles.fieldError)}>
+              Another student already uses this email.
+            </p>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-2 gap-2.5">
