@@ -4,11 +4,14 @@ import Image from "next/image";
 
 import { DASHBOARD_HOME } from "@/config/navigation";
 import { useAdminSignIn } from "@/hooks/use-admin-sign-in";
+import { useEffect, useState } from "react";
+
 import { useLoginTransition } from "@/hooks/use-login-transition";
 import { cn } from "@/lib/utils";
 
 import styles from "./login-effects.module.css";
 import { LoginForm } from "./login-form";
+import { useLoginLayout } from "./login-stage";
 import { SuccessCheck } from "./success-check";
 
 /**
@@ -17,10 +20,27 @@ import { SuccessCheck } from "./success-check";
  * Connects the sign-in request (`useAdminSignIn`) to the success animation and
  * dashboard transition (`useLoginTransition`). `data-auth-phase` exposes the
  * transition phase to CSS (see `.card` / `.stage` in login-effects.module.css).
+ *
+ * Also picks the screen's composition:
+ * - empty form → dark page (form without a card);
+ * - something typed → white card;
+ * - signed in → dark again, and the success checkmark only appears once the
+ *   card has turned dark, so it always plays in its dark version.
  */
 export function LoginCard({ className }: { className?: string }) {
   const { status, error, signIn, clearError } = useAdminSignIn();
-  const phase = useLoginTransition(status === "authenticated", DASHBOARD_HOME);
+  const { variant, settled, requestVariant } = useLoginLayout();
+  const [hasText, setHasText] = useState(false);
+
+  const authenticated = status === "authenticated";
+  const wanted = authenticated || !hasText ? 2 : 1;
+
+  useEffect(() => {
+    requestVariant(wanted);
+  }, [wanted, requestVariant]);
+
+  // Start the success timeline only after the morph to the dark composition has finished.
+  const phase = useLoginTransition(authenticated && variant === 2 && settled, DASHBOARD_HOME);
 
   const announcement =
     status === "verifying"
@@ -68,7 +88,7 @@ export function LoginCard({ className }: { className?: string }) {
             Use your STI admin account to manage terms and elections.
           </p>
 
-          <LoginForm status={status} error={error} onSignIn={signIn} onEdit={clearError} className="mt-4" />
+          <LoginForm status={status} error={error} onSignIn={signIn} onEdit={clearError} onHasTextChange={setHasText} className="mt-4" />
 
           <p className="mt-5 text-center text-xs leading-4 text-brand-muted">
             Admins are added by a Super Admin. For access issues, contact the MIS office.

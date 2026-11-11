@@ -6,8 +6,9 @@ import { LoginStage } from "./login-stage";
 /**
  * Admin sign-in screen: branding on the left, sign-in card on the right.
  *
- * Two compositions share this markup; press C to morph between them (see
- * LoginStage). `login-alt:` classes describe the alternate composition: brand
+ * Two compositions share this markup and morph between them (see LoginStage):
+ * the dark one while the form is empty or after signing in, the white card
+ * while typing (chosen in LoginCard). `login-alt:` classes describe the dark composition: brand
  * and headline centred on the left over the blue/gold glow, pixel map along
  * the bottom, and the form without its white card.
  *

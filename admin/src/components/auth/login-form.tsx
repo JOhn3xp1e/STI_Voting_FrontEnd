@@ -44,10 +44,12 @@ interface LoginFormProps {
   onSignIn: (request: AdminSignInRequest) => Promise<boolean>;
   /** Called when the user edits a field (clears a stale sign-in error). */
   onEdit: () => void;
+  /** Called when the email / password go from empty to typed or back (drives the screen's layout). */
+  onHasTextChange?: (hasText: boolean) => void;
   className?: string;
 }
 
-export function LoginForm({ status, error, onSignIn, onEdit, className }: LoginFormProps) {
+export function LoginForm({ status, error, onSignIn, onEdit, onHasTextChange, className }: LoginFormProps) {
   const [values, setValues] = useState<AdminSignInRequest>({
     email: "",
     password: "",
@@ -66,8 +68,12 @@ export function LoginForm({ status, error, onSignIn, onEdit, className }: LoginF
   const errors = submitted ? validate(values) : {};
 
   function update<K extends keyof AdminSignInRequest>(key: K, value: AdminSignInRequest[K]) {
-    setValues((current) => ({ ...current, [key]: value }));
+    const next = { ...values, [key]: value };
+    setValues(next);
     onEdit();
+    const hadText = values.email !== "" || values.password !== "";
+    const hasText = next.email !== "" || next.password !== "";
+    if (hasText !== hadText) onHasTextChange?.(hasText);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
