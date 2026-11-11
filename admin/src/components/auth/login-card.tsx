@@ -34,13 +34,22 @@ export function LoginCard({ className }: { className?: string }) {
       {/* Blue ambient glow, faded in on hover, while the form has focus, or after signing in (opacity only, no movement). */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 rounded-3xl opacity-0 shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-brand-blue)_30%,transparent),0_28px_90px_-24px_color-mix(in_oklab,var(--color-brand-blue)_80%,transparent)] transition-opacity duration-500 ease-out group-focus-within/card:opacity-100 group-hover/card:opacity-100 group-data-[auth-phase=success]/card:opacity-100"
+        className="pointer-events-none absolute inset-0 rounded-3xl opacity-0 shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-brand-blue)_30%,transparent),0_28px_90px_-24px_color-mix(in_oklab,var(--color-brand-blue)_80%,transparent)] transition-opacity duration-500 ease-out group-focus-within/card:opacity-100 group-hover/card:opacity-100 group-data-[auth-phase=success]/card:opacity-100 login-alt:opacity-0!"
       />
 
       <section
         aria-labelledby="admin-sign-in-title"
-        className="relative w-full overflow-hidden rounded-3xl bg-brand-white px-6 pt-24 pb-10 text-brand-navy shadow-2xl shadow-black/40 transition-shadow duration-500 ease-out group-hover/card:shadow-black/50 sm:px-12 sm:py-20 lg:pt-31 lg:pb-28"
+        className="relative w-full overflow-hidden rounded-3xl px-6 pt-24 pb-10 text-brand-navy transition-colors duration-500 sm:px-12 sm:py-20 lg:pt-31 lg:pb-28 login-alt:text-brand-white lg:login-alt:pt-36 lg:login-alt:pr-10.5 lg:login-alt:pb-23 lg:login-alt:pl-13.5"
       >
+        {/*
+         * The card's white surface. In the alternate composition it melts away
+         * (fades and shrinks slightly), leaving the form directly on the page.
+         */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-3xl bg-brand-white shadow-2xl shadow-black/40 transition-[opacity,scale,box-shadow] duration-500 ease-out group-hover/card:shadow-black/50 login-alt:scale-[0.96] login-alt:opacity-0"
+        />
+
         <Image
           src="/images/image2.png"
           alt=""
@@ -50,7 +59,8 @@ export function LoginCard({ className }: { className?: string }) {
           className="pointer-events-none absolute top-0 right-0 z-20 w-32 select-none sm:w-40"
         />
 
-        <div className="relative">
+        {/* Fades out under the success panel. */}
+        <div data-morph="form" className="relative transition-opacity duration-300 group-data-[auth-phase=leaving]/card:opacity-0 group-data-[auth-phase=success]/card:opacity-0">
           <h1 id="admin-sign-in-title" className="text-[1.75rem] font-semibold tracking-tight sm:text-3xl">
             Admin Sign In
           </h1>
@@ -69,12 +79,17 @@ export function LoginCard({ className }: { className?: string }) {
           <div
             aria-hidden
             className={cn(
-              "absolute inset-0 z-10 flex flex-col items-center justify-center bg-brand-white px-6 text-center",
+              "absolute inset-0 z-10 flex flex-col items-center justify-center px-6 text-center",
               styles.successPanel,
             )}
           >
             <SuccessCheck className="size-18" />
-            <p className={cn("mt-7 text-lg font-semibold tracking-tight text-brand-navy sm:text-xl", styles.successText)}>
+            <p
+              className={cn(
+                "mt-7 text-lg font-semibold tracking-tight text-brand-navy sm:text-xl login-alt:text-brand-white",
+                styles.successText,
+              )}
+            >
               Authentication successful
             </p>
             <p className={cn("mt-1.5 font-mono text-xs text-brand-muted", styles.successText)}>

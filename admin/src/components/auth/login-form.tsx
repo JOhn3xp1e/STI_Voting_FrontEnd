@@ -103,9 +103,9 @@ export function LoginForm({ status, error, onSignIn, onEdit, className }: LoginF
       {error ? (
         <div
           role="alert"
-          className="mb-5 flex gap-2.5 rounded-md border border-brand-blue/20 bg-brand-blue/5 px-3 py-2.5 text-xs leading-5 text-brand-navy"
+          className="mb-5 flex gap-2.5 rounded-md border border-brand-blue/20 bg-brand-blue/5 px-3 py-2.5 text-xs leading-5 text-brand-navy transition-colors login-alt:border-brand-white/15 login-alt:bg-brand-white/6 login-alt:text-brand-white"
         >
-          <Info className="mt-0.5 size-4 shrink-0 text-brand-blue" aria-hidden />
+          <Info className="mt-0.5 size-4 shrink-0 text-brand-blue transition-colors login-alt:text-brand-gold" aria-hidden />
           <p>{error}</p>
         </div>
       ) : null}
@@ -156,7 +156,7 @@ export function LoginForm({ status, error, onSignIn, onEdit, className }: LoginF
               checked={values.rememberMe}
               onCheckedChange={(checked) => update("rememberMe", checked)}
               disabled={locked}
-              className="border-input focus-visible:border-brand-blue focus-visible:ring-brand-blue/20"
+              className="border-input focus-visible:border-brand-blue focus-visible:ring-brand-blue/20 login-alt:border-brand-white/75 login-alt:data-checked:border-brand-gold login-alt:data-checked:bg-brand-gold login-alt:data-checked:text-brand-navy"
             />
             Remember me
           </Label>
@@ -164,7 +164,7 @@ export function LoginForm({ status, error, onSignIn, onEdit, className }: LoginF
           <Link
             href={FORGOT_PASSWORD_HREF}
             prefetch={false}
-            className="rounded-sm text-[0.8125rem] font-semibold text-brand-blue outline-none hover:underline hover:underline-offset-4 focus-visible:ring-3 focus-visible:ring-brand-blue/30"
+            className="rounded-sm text-[0.8125rem] font-semibold text-brand-blue transition-colors outline-none hover:underline hover:underline-offset-4 focus-visible:ring-3 focus-visible:ring-brand-blue/30 login-alt:text-brand-gold"
           >
             Forgot password?
           </Link>
@@ -184,6 +184,8 @@ export function LoginForm({ status, error, onSignIn, onEdit, className }: LoginF
             // Press: the base button settles 1px down; the shadow tightens quickly.
             "active:shadow-[0_4px_12px_-8px_color-mix(in_oklab,var(--color-brand-blue)_80%,transparent)] active:duration-75",
             "motion-reduce:hover:translate-y-0 motion-reduce:active:translate-y-0",
+            // Alternate composition: Primary Blue button on the navy page.
+            "login-alt:bg-brand-blue login-alt:hover:bg-[color-mix(in_oklab,var(--color-brand-blue)_86%,var(--color-brand-white))]",
             // Waiting: stay fully opaque (not the faded disabled look); the glow comes from `.submit[data-pending]`.
             locked && "disabled:opacity-100",
           )}

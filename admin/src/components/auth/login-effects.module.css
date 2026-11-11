@@ -363,6 +363,28 @@
 }
 
 /* -------------------------------------------------------------------------- */
+/*                    Composition switch (C key, see LoginStage)              */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * While the screen morphs between its two compositions, every colour, opacity
+ * and surface transition runs on one shared, slow curve so the whole page moves
+ * together. Duration matches MORPH_MS in login-stage.tsx.
+ *
+ * Only visual properties may transition here: layout (size, position, font
+ * size) must snap instantly so the FLIP animation (spring, in login-stage.tsx)
+ * can measure the new layout and glide elements into it.
+ */
+.stage[data-morphing],
+.stage[data-morphing] * {
+  transition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity,
+    box-shadow, scale, border-radius !important;
+  transition-duration: 950ms !important;
+  transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1) !important;
+  transition-delay: 0ms !important;
+}
+
+/* -------------------------------------------------------------------------- */
 /*                         Accessibility: motion and contrast                 */
 /* -------------------------------------------------------------------------- */
 
@@ -399,6 +421,12 @@
   .stage > *,
   .card {
     transition-duration: 250ms;
+  }
+
+  /* Composition switch: a short cross-fade, no movement. */
+  .stage[data-morphing],
+  .stage[data-morphing] * {
+    transition-duration: 250ms !important;
   }
 }
 

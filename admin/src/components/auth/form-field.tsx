@@ -12,8 +12,10 @@ import styles from "./login-effects.module.css";
 export const authInputClassName = cn(
   "h-10 rounded-md bg-brand-white px-3 text-sm text-brand-navy md:text-sm",
   "placeholder:text-brand-muted placeholder:transition-opacity placeholder:duration-300 focus-visible:placeholder:opacity-70",
-  "transition-[border-color,box-shadow] duration-300 ease-out",
+  "transition-[border-color,box-shadow,border-radius] duration-300 ease-out",
   "focus-visible:border-brand-blue/25 focus-visible:ring-0 aria-invalid:focus-visible:ring-0",
+  // Alternate composition: flat white fields straight on the navy page.
+  "login-alt:rounded-[0.3125rem] login-alt:border-transparent",
 );
 
 /** `id` of the element holding a field's validation message. */
@@ -37,7 +39,7 @@ export function FormField({ id, label, error, children, className }: FormFieldPr
     <div className={cn("group/field flex flex-col gap-1.5", className)}>
       <Label
         htmlFor={id}
-        className="text-xs font-semibold text-brand-navy transition-colors duration-300 group-has-[input:focus-visible]/field:text-brand-blue"
+        className="text-xs font-semibold text-brand-navy transition-colors duration-300 login-alt:text-brand-white group-has-[input:focus-visible]/field:text-brand-blue login-alt:group-has-[input:focus-visible]/field:text-brand-gold"
       >
         {label}
       </Label>
