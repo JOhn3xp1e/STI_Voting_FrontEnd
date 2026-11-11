@@ -9,7 +9,6 @@ import type { AdminProfile } from "@/types/auth.types";
 
 import { SidebarBrand } from "./sidebar-brand";
 import { SidebarNavigation } from "./sidebar-navigation";
-import { SidebarProfile } from "./sidebar-profile";
 import { SidebarSearch } from "./sidebar-search";
 
 export interface SidebarProps {
@@ -26,7 +25,7 @@ export interface SidebarProps {
   className?: string;
 }
 
-/** Sidebar contents: brand, search, navigation and the pinned admin profile. */
+/** Sidebar contents: brand, search and navigation. (The account menu lives on the header avatar.) */
 export function Sidebar({
   admin,
   activeHref,
@@ -68,7 +67,7 @@ export function Sidebar({
         />
       </div>
 
-      <div className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 [scrollbar-width:thin]">
+      <div className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 [scrollbar-width:thin]">
         <SidebarNavigation
           id={navId}
           sections={sections}
@@ -84,10 +83,6 @@ export function Sidebar({
             onNavigate?.();
           }}
         />
-      </div>
-
-      <div className="px-4 pt-2 pb-4">
-        <SidebarProfile admin={admin} />
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Flag, SquareCheck, Users, type LucideIcon } from "lucide-react";
+import { BriefcaseBusiness, CalendarDays, Flag, LayoutDashboard, SquareCheck, Users, type LucideIcon } from "lucide-react";
 
 /**
  * Dashboard sidebar navigation.
@@ -42,6 +42,14 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { type: "link", id: "dashboard", label: "Dashboard", href: DASHBOARD_HOME, icon: LayoutDashboard },
       { type: "link", id: "elections", label: "Elections", href: "/elections", icon: SquareCheck },
+    ],
+  },
+  {
+    id: "academic",
+    label: "Academic",
+    items: [
+      { type: "link", id: "terms", label: "Terms", href: "/terms", icon: CalendarDays },
+      { type: "link", id: "programs", label: "Programs & Careers", href: "/programs", icon: BriefcaseBusiness },
     ],
   },
   {
@@ -102,6 +110,8 @@ const PAGE_META: Record<string, PageMetaConfig> = {
     headerTheme: "hero",
   },
   "/elections": { title: "Elections", description: "Election schedules and settings" },
+  "/terms": { title: "Terms", description: "School years and enrollment terms" },
+  "/programs": { title: "Programs & Careers", description: "Academic programs and career tracks" },
   // Mock figures until the roster comes from the Web API.
   "/students": { title: "Students", description: "1,284 students · enrollment for TRM-00004 · 2025–2026 term 1" },
   "/elections/csc/metrics": { title: "Election Metrics", description: "CSC Elections" },
