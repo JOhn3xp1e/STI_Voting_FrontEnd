@@ -1,90 +1,148 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { Download, FileSpreadsheet, Upload, X } from "lucide-react";
+import { Download, FileSpreadsheet, LoaderCircle, Upload, X } from "lucide-react";
 
-import { CSV_COLUMNS, buildSampleCsv, previewCsvImport, type ImportRowResult } from "@/lib/students";
+import { IMPORT_COLUMNS, SAMPLE_IMPORT_CSV, findUnknownPrograms, readStudentImport } from "@/lib/students";
 import { cn } from "@/lib/utils";
-import type { Student } from "@/types/student.types";
+import {
+  getStudentsErrorMessage,
+  importStudents,
+  previewStudentImport,
+  type ExistingStudentsChoice,
+  type StudentImportPreview,
+  type StudentImportResult,
+  type StudentImportRow,
+} from "@/services/students/students.service";
 
 import { useStudentCatalog } from "./student-catalog";
 import { toolbarButtonClassName } from "./student-toolbar-styles";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
-interface Preview {
-  fileName: string;
-  results: ImportRowResult[];
-  error?: string;
-}
+type Step =
+  | { kind: "idle" }
+  | { kind: "checking"; fileName: string }
+  | { kind: "invalid"; fileName: string; message: string }
+  | {
+      kind: "preview";
+      fileName: string;
+      rows: StudentImportRow[];
+      preview: StudentImportPreview;
+      unknownPrograms: { code: string; count: number }[];
+    };
 
 interface CsvImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  students: readonly Student[];
-  /** Saves the valid rows through the Web API: new rows are created, existing ones get their enrollment updated. */
-  onApply: (rows: { added: Student[]; updated: Student[] }) => Promise<void>;
+  /** Called after the backend saved the import (e.g. to reload the roster). */
+  onImported: (result: StudentImportResult) => Promise<void> | void;
 }
 
-const ACTION_BADGE = {
-  new: "bg-brand-blue/10 text-brand-blue dark:bg-white/10 dark:text-[#9dbdeb]",
-  update: "bg-brand-gold/25 text-brand-navy dark:bg-brand-gold/20 dark:text-brand-gold",
-  error: "bg-destructive/10 text-destructive",
-} as const;
+/** UTF-8 first; files saved by Excel as "CSV (Comma delimited)" are Windows-1252 (ñ breaks otherwise). */
+async function readText(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const utf8 = new TextDecoder("utf-8").decode(buffer);
+  return utf8.includes("�") ? new TextDecoder("windows-1252").decode(buffer) : utf8;
+}
 
-/** CSV upsert: pick or drop a file, preview matches by student no., then save through the Web API. */
-export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvImportDialogProps) {
-  const catalog = useStudentCatalog();
+const CHOICES: { value: ExistingStudentsChoice; label: string; hint: string }[] = [
+  { value: "replace", label: "Update them", hint: "Use the file's program, year and name" },
+  { value: "keep", label: "Leave them as they are", hint: "Only add the new students" },
+];
+
+/**
+ * Imports the school's student list through the Web API:
+ * 1. the file is read here and checked by `/students/import/preview` (nothing saved),
+ * 2. the admin reviews new / existing / invalid rows,
+ * 3. `/students/import` saves everything at once and enrolls it in the current term.
+ */
+export function CsvImportDialog({ open, onOpenChange, onImported }: CsvImportDialogProps) {
+  const { programs } = useStudentCatalog();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [preview, setPreview] = useState<Preview | null>(null);
+  const checkRef = useRef<AbortController | null>(null);
+
+  const [step, setStep] = useState<Step>({ kind: "idle" });
   const [dragging, setDragging] = useState(false);
+  const [onExisting, setOnExisting] = useState<ExistingStudentsChoice | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  async function readFile(file: File) {
-    if (!/\.csv$/i.test(file.name) && file.type !== "text/csv") {
-      setPreview({ fileName: file.name, results: [], error: "Choose a .csv file." });
-      return;
-    }
-    if (file.size > MAX_BYTES) {
-      setPreview({ fileName: file.name, results: [], error: "This file is larger than 2 MB." });
-      return;
-    }
-    const { results, error } = previewCsvImport(await file.text(), students, catalog);
-    setPreview({ fileName: file.name, results, error });
+  // Cancel a running check when the dialog unmounts.
+  useEffect(() => () => checkRef.current?.abort(), []);
+
+  function reset() {
+    checkRef.current?.abort();
+    setStep({ kind: "idle" });
+    setDragging(false);
+    setOnExisting(null);
     setSaveError(null);
   }
 
+  async function readFile(file: File) {
+    checkRef.current?.abort();
+    setOnExisting(null);
+    setSaveError(null);
+
+    if (!/\.csv$/i.test(file.name) && file.type !== "text/csv") {
+      setStep({ kind: "invalid", fileName: file.name, message: "Choose a .csv file. In Excel: File → Save As → CSV UTF-8." });
+      return;
+    }
+    if (file.size > MAX_BYTES) {
+      setStep({ kind: "invalid", fileName: file.name, message: "This file is larger than 2 MB." });
+      return;
+    }
+
+    const { rows, error } = readStudentImport(await readText(file));
+    if (error) {
+      setStep({ kind: "invalid", fileName: file.name, message: error });
+      return;
+    }
+
+    const controller = new AbortController();
+    checkRef.current = controller;
+    setStep({ kind: "checking", fileName: file.name });
+    try {
+      const preview = await previewStudentImport(rows, { signal: controller.signal });
+      if (controller.signal.aborted) return;
+      setStep({ kind: "preview", fileName: file.name, rows, preview, unknownPrograms: findUnknownPrograms(rows, programs) });
+    } catch (cause) {
+      if (controller.signal.aborted) return;
+      setStep({ kind: "invalid", fileName: file.name, message: getStudentsErrorMessage(cause) });
+    }
+  }
+
   function downloadSample() {
-    const url = URL.createObjectURL(new Blob([buildSampleCsv(catalog)], { type: "text/csv" }));
+    const url = URL.createObjectURL(new Blob([SAMPLE_IMPORT_CSV], { type: "text/csv" }));
     const link = Object.assign(document.createElement("a"), { href: url, download: "students-sample.csv" });
     link.click();
     URL.revokeObjectURL(url);
   }
 
-  const valid = preview?.results.filter((r): r is Extract<ImportRowResult, { student: Student }> => r.action !== "error") ?? [];
-  const added = valid.filter((r) => r.action === "new").length;
-  const updated = valid.length - added;
-  const errors = (preview?.results.length ?? 0) - valid.length;
+  const preview = step.kind === "preview" ? step.preview : null;
+  const existingCount = preview?.existing.length ?? 0;
+  const errorCount = preview?.errors.length ?? 0;
+  const willSave = preview ? preview.new + (onExisting === "replace" ? existingCount : 0) : 0;
+  const canImport = step.kind === "preview" && errorCount === 0 && (existingCount === 0 || onExisting !== null) && willSave + existingCount > 0;
 
   async function apply() {
-    if (saving) return;
+    if (step.kind !== "preview" || !canImport || saving) return;
     setSaving(true);
     setSaveError(null);
     try {
-      await onApply({
-        added: valid.filter((r) => r.action === "new").map((r) => r.student),
-        updated: valid.filter((r) => r.action === "update").map((r) => r.student),
-      });
+      const result = await importStudents(step.rows, existingCount > 0 ? onExisting : null);
+      await onImported(result);
       onOpenChange(false);
-      setPreview(null);
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "The import failed. Please try again.");
+      reset();
+    } catch (cause) {
+      setSaveError(getStudentsErrorMessage(cause));
     } finally {
       setSaving(false);
     }
   }
+
+  const fileName = step.kind === "idle" ? null : step.fileName;
 
   return (
     <Dialog.Root
@@ -92,11 +150,7 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
       onOpenChange={(next) => {
         if (!next && saving) return; // keep the dialog open until the import finishes
         onOpenChange(next);
-        if (!next) {
-          setPreview(null);
-          setDragging(false);
-          setSaveError(null);
-        }
+        if (!next) reset();
       }}
     >
       <Dialog.Portal>
@@ -116,13 +170,14 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
             <div>
               <Dialog.Title className="text-[0.9375rem] font-semibold text-foreground">Import CSV (upsert)</Dialog.Title>
               <Dialog.Description className="mt-1 text-[0.8125rem] leading-5 text-muted-foreground">
-                Rows are matched by student no. Existing students get their term &amp; year updated; new ones are added
-                and enrolled. Nothing is saved until you confirm.
+                Use the school&apos;s student list. Everyone is enrolled in the current term; the career comes from the
+                level (1Y1 → 1st year). Nothing is saved until you confirm.
               </Dialog.Description>
             </div>
             <Dialog.Close
               aria-label="Close"
-              className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              disabled={saving}
+              className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-50"
             >
               <X aria-hidden className="size-4" />
             </Dialog.Close>
@@ -131,6 +186,7 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
             <button
               type="button"
+              disabled={saving}
               onClick={() => inputRef.current?.click()}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -141,20 +197,21 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
                 e.preventDefault();
                 setDragging(false);
                 const file = e.dataTransfer.files[0];
-                if (file) void readFile(file);
+                if (file && !saving) void readFile(file);
               }}
               className={cn(
                 "flex w-full cursor-pointer flex-col items-center gap-1.5 rounded-lg border border-dashed border-border px-4 py-6 text-center outline-none",
                 "transition-[background-color,border-color] duration-200 hover:border-brand-blue/40 hover:bg-brand-blue/3 focus-visible:border-brand-blue/60 focus-visible:ring-3 focus-visible:ring-brand-blue/15",
+                "disabled:cursor-wait disabled:opacity-60",
                 dragging && "border-brand-blue/60 bg-brand-blue/5",
               )}
             >
               <Upload aria-hidden className="size-5 text-brand-blue dark:text-[#7aa7e6]" strokeWidth={1.75} />
               <span className="text-[0.8125rem] font-medium text-foreground">
-                {preview ? "Choose another file" : "Choose a CSV file"}{" "}
+                {fileName ? "Choose another file" : "Choose a CSV file"}{" "}
                 <span className="font-normal text-muted-foreground">or drop it here</span>
               </span>
-              <span className="font-mono text-[0.6875rem] text-muted-foreground">{CSV_COLUMNS.join(", ")}</span>
+              <span className="font-mono text-[0.6875rem] text-muted-foreground">{IMPORT_COLUMNS.join(", ")}</span>
             </button>
             <input
               ref={inputRef}
@@ -170,67 +227,104 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
               }}
             />
 
-            {preview ? (
+            {fileName ? (
               <div className="mt-4" aria-live="polite">
                 <p className="flex items-center gap-2 text-[0.8125rem] font-medium text-foreground">
                   <FileSpreadsheet aria-hidden className="size-4 text-muted-foreground" />
-                  <span className="truncate">{preview.fileName}</span>
+                  <span className="truncate">{fileName}</span>
                 </p>
-                {preview.error ? (
-                  <p role="alert" className="mt-2 rounded-md bg-destructive/8 px-3 py-2 text-[0.8125rem] text-destructive">
-                    {preview.error}
+
+                {step.kind === "checking" ? (
+                  <p className="mt-2 flex items-center gap-2 text-[0.8125rem] text-muted-foreground" role="status">
+                    <LoaderCircle aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+                    Checking the rows…
                   </p>
-                ) : (
+                ) : null}
+
+                {step.kind === "invalid" ? (
+                  <p role="alert" className="mt-2 rounded-md bg-destructive/8 px-3 py-2 text-[0.8125rem] whitespace-pre-line text-destructive">
+                    {step.message}
+                  </p>
+                ) : null}
+
+                {step.kind === "preview" ? (
                   <>
                     <p className="mt-1 font-mono text-[0.6875rem] text-muted-foreground">
-                      {preview.results.length} rows · {added} new · {updated} updates{errors ? ` · ${errors} skipped` : ""}
+                      {step.preview.total} rows · {step.preview.new} new · {existingCount} already on the roster
+                      {errorCount ? ` · ${errorCount} with problems` : ""} · term {step.preview.termId}
                     </p>
-                    <div className="mt-3 max-h-56 overflow-auto rounded-lg border border-border [scrollbar-width:thin]">
-                      <table className="w-full text-left text-[0.75rem]">
-                        <thead className="sticky top-0 bg-popover font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground uppercase">
-                          <tr>
-                            <th className="border-b border-border px-3 py-2 font-normal">Line</th>
-                            <th className="border-b border-border px-3 py-2 font-normal">Student no.</th>
-                            <th className="border-b border-border px-3 py-2 font-normal">Name / issue</th>
-                            <th className="border-b border-border px-3 py-2 font-normal">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {preview.results.map((row) => (
-                            <tr key={row.line} className="transition-colors hover:bg-muted/50">
-                              <td className="border-b border-border px-3 py-2 font-mono text-muted-foreground">{row.line}</td>
-                              <td className="border-b border-border px-3 py-2 font-mono">
-                                {row.action === "error" ? row.studentNo || "—" : row.student.studentNo}
-                              </td>
-                              <td className="max-w-48 truncate border-b border-border px-3 py-2">
-                                {row.action === "error" ? (
-                                  <span className="text-destructive">{row.reason}</span>
-                                ) : (
-                                  `${row.student.lastName}, ${row.student.firstName} · ${row.student.term}`
-                                )}
-                              </td>
-                              <td className="border-b border-border px-3 py-2">
-                                <span
-                                  className={cn(
-                                    "rounded-[3px] px-1.5 py-0.5 font-mono text-[0.59375rem] font-semibold tracking-[0.06em] uppercase",
-                                    ACTION_BADGE[row.action],
-                                  )}
-                                >
-                                  {row.action === "error" ? "skip" : row.action}
-                                </span>
-                              </td>
-                            </tr>
+
+                    {errorCount ? (
+                      <div role="alert" className="mt-3 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5">
+                        <p className="text-[0.8125rem] font-medium text-destructive">
+                          Fix {errorCount === 1 ? "this row" : `these ${errorCount} rows`} in the file, then choose it again.
+                          Nothing can be imported until every row is valid.
+                        </p>
+                        <ul className="mt-1.5 max-h-36 overflow-y-auto font-mono text-[0.6875rem] leading-5 text-destructive/90 [scrollbar-width:thin]">
+                          {step.preview.errors.map((error) => (
+                            <li key={error}>{error}</li>
                           ))}
-                        </tbody>
-                      </table>
-                    </div>
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    {step.unknownPrograms.length ? (
+                      <p className="mt-3 rounded-md bg-brand-gold/15 px-3 py-2 text-[0.8125rem] leading-5 text-foreground">
+                        Not in the Programs list:{" "}
+                        <span className="font-mono">
+                          {step.unknownPrograms.map((p) => `${p.code} (${p.count})`).join(", ")}
+                        </span>
+                        . Add {step.unknownPrograms.length === 1 ? "it" : "them"} under Programs first, or the import may fail.
+                      </p>
+                    ) : null}
+
+                    {existingCount ? (
+                      <fieldset className="mt-3">
+                        <legend className="text-[0.8125rem] font-medium text-foreground">
+                          {existingCount} {existingCount === 1 ? "student is" : "students are"} already on the roster
+                        </legend>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          {CHOICES.map((choice) => (
+                            <label
+                              key={choice.value}
+                              className={cn(
+                                "flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 transition-colors",
+                                onExisting === choice.value
+                                  ? "border-brand-blue/60 bg-brand-blue/5"
+                                  : "border-border hover:bg-muted/50",
+                              )}
+                            >
+                              <input
+                                type="radio"
+                                name="on-existing"
+                                value={choice.value}
+                                checked={onExisting === choice.value}
+                                onChange={() => setOnExisting(choice.value)}
+                                className="mt-0.5 accent-[var(--color-brand-blue)]"
+                              />
+                              <span>
+                                <span className="block text-[0.8125rem] font-medium text-foreground">{choice.label}</span>
+                                <span className="block text-[0.75rem] text-muted-foreground">{choice.hint}</span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        <ul className="mt-2 max-h-28 overflow-y-auto rounded-md border border-border px-3 py-1.5 font-mono text-[0.6875rem] leading-5 text-muted-foreground [scrollbar-width:thin]">
+                          {step.preview.existing.map((s) => (
+                            <li key={s.id}>
+                              {s.id} · {s.name}
+                            </li>
+                          ))}
+                        </ul>
+                      </fieldset>
+                    ) : null}
                   </>
-                )}
+                ) : null}
               </div>
             ) : null}
 
             {saveError ? (
-              <p role="alert" className="mt-3 rounded-md bg-destructive/8 px-3 py-2 text-[0.8125rem] text-destructive">
+              <p role="alert" className="mt-3 rounded-md bg-destructive/8 px-3 py-2 text-[0.8125rem] whitespace-pre-line text-destructive">
                 {saveError}
               </p>
             ) : null}
@@ -242,14 +336,16 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
               Sample CSV
             </button>
             <div className="flex gap-2.5">
-              <Dialog.Close className={cn(toolbarButtonClassName, "h-8 text-[0.8125rem]")}>Cancel</Dialog.Close>
+              <Dialog.Close disabled={saving} className={cn(toolbarButtonClassName, "h-8 text-[0.8125rem] disabled:cursor-wait disabled:opacity-50")}>
+                Cancel
+              </Dialog.Close>
               <button
                 type="button"
-                disabled={valid.length === 0 || saving}
+                disabled={!canImport || saving}
                 onClick={() => void apply()}
                 className="h-8 cursor-pointer rounded-md bg-primary px-3.5 text-[0.8125rem] font-semibold text-primary-foreground transition-[background-color,opacity] duration-200 hover:bg-[color-mix(in_oklab,var(--color-brand-navy)_86%,var(--color-brand-blue))] disabled:cursor-not-allowed disabled:opacity-45 dark:hover:bg-white/90"
               >
-                {saving ? "Importing…" : `Import ${valid.length ? `${valid.length} row${valid.length > 1 ? "s" : ""}` : ""}`.trim()}
+                {saving ? "Importing…" : willSave > 0 ? `Import ${willSave} student${willSave === 1 ? "" : "s"}` : "Import"}
               </button>
             </div>
           </div>

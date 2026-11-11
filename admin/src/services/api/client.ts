@@ -142,6 +142,15 @@ function toProblemDetails(body: unknown, response: Response): ProblemDetails {
   if (body && typeof body === "object" && !Array.isArray(body)) {
     return { status: response.status, ...(body as ProblemDetails) };
   }
+  // A list of messages, e.g. `Results.BadRequest(errors)` with a List<string>.
+  if (Array.isArray(body)) {
+    const messages = body.filter((item): item is string => typeof item === "string");
+    return {
+      status: response.status,
+      title: response.statusText || undefined,
+      detail: messages.length ? messages.join("\n") : undefined,
+    };
+  }
   return {
     status: response.status,
     title: response.statusText || undefined,

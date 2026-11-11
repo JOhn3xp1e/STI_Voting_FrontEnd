@@ -1,4 +1,5 @@
-import type { FacetFilters, Student, StudentCatalog, StudentStatus, YearLevel } from "@/types/student.types";
+import type { StudentImportRow } from "@/services/students/students.service";
+import type { FacetFilters, Student, StudentStatus, YearLevel } from "@/types/student.types";
 
 /**
  * - `loa` / `inactive`: the enrollment says so (not eligible to vote).
@@ -81,21 +82,26 @@ export const STUDENT_NO_PATTERN = /^\d{11}$/;
 /*                                 CSV import                                 */
 /* -------------------------------------------------------------------------- */
 
-export const CSV_COLUMNS = ["student_no", "last_name", "first_name", "middle_name", "career", "program", "year", "term"] as const;
+/** Columns of the school's student list, in order (also used for the sample file). */
+export const IMPORT_COLUMNS = ["Full Name", "Program", "Level", "Student ID", "Email"] as const;
 
-/** Sample file using the first career and the current term from the catalog. */
-export function buildSampleCsv(catalog: StudentCatalog): string {
-  const career = catalog.careers[0]?.code ?? "TER";
-  const program = catalog.programs.includes("BSIT") ? "BSIT" : (catalog.programs[0] ?? "BSIT");
-  const term = catalog.currentTerm?.id ?? "TRM-00001";
-  return [
-    CSV_COLUMNS.join(","),
-    `02000301884,Alfane,Jan Clarence,,${career},${program},2,${term}`,
-    `02000645840,Cruz,Aeron Aries,,${career},${program},4,${term}`,
-    `02000771020,Navarro,Lance Adrian,Reyes,${career},${program},1,${term}`,
-    `02000771021,"De Leon",Mikaela,,${career},${program},1,${term}`,
-  ].join("\n");
-}
+/** Which `StudentImportRow` field each column fills. */
+const IMPORT_FIELDS: Record<(typeof IMPORT_COLUMNS)[number], keyof StudentImportRow> = {
+  "Full Name": "fullName",
+  Program: "program",
+  Level: "level",
+  "Student ID": "studentId",
+  Email: "email",
+};
+
+/** Fictional sample rows in the school's format. */
+export const SAMPLE_IMPORT_CSV = [
+  IMPORT_COLUMNS.join(","),
+  `"Dela Cruz, Juan Miguel Santos",BSIT,1Y1,02000123451,${buildStudentEmail("Dela Cruz", "02000123451")}`,
+  `"Reyes, Maria Clara",BSIT,2Y1,02000123452,${buildStudentEmail("Reyes", "02000123452")}`,
+  `"Santos, Paolo",BSCS,3Y1,02000123453,${buildStudentEmail("Santos", "02000123453")}`,
+  `"Garcia, Andrea Lim",BSIT,4Y1,02000123454,${buildStudentEmail("Garcia", "02000123454")}`,
+].join("\n");
 
 /** Minimal RFC 4180 parser: quoted fields, escaped quotes, CRLF. */
 export function parseCsv(text: string): string[][] {
@@ -137,106 +143,45 @@ export function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((cell) => cell.trim() !== ""));
 }
 
-export type ImportRowResult =
-  | { line: number; action: "new" | "update"; student: Student }
-  | { line: number; action: "error"; studentNo: string; reason: string };
+/** "Student ID", "student_id" and "StudentID" all match. */
+const normalizeHeader = (header: string) => header.trim().toLowerCase().replace(/[^a-z]/g, "");
 
 /**
- * Turns CSV text into upsert results against `existing`: rows whose student no.
- * exists become enrollment updates (term & year), the rest are new students.
- * Values are checked against the terms, programs and careers in `catalog`.
+ * Reads the school's student list (Full Name, Program, Level, Student ID, Email)
+ * into rows for the backend import. Validation of each row happens on the backend.
  */
-export function previewCsvImport(
-  text: string,
-  existing: readonly Student[],
-  catalog: StudentCatalog,
-): { results: ImportRowResult[]; error?: string } {
-  const rows = parseCsv(text.replace(/^﻿/, ""));
-  if (rows.length === 0) return { results: [], error: "The file is empty." };
+export function readStudentImport(text: string): { rows: StudentImportRow[]; error?: string } {
+  const table = parseCsv(text.replace(/^﻿/, ""));
+  if (table.length === 0) return { rows: [], error: "The file is empty." };
 
-  const header = rows[0].map((h) => h.trim().toLowerCase().replace(/[\s.]+/g, "_"));
-  const index = Object.fromEntries(CSV_COLUMNS.map((column) => [column, header.indexOf(column)]));
-  const missing = ["student_no", "last_name", "first_name"].filter((column) => index[column] < 0);
-  if (missing.length) return { results: [], error: `Missing column${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}.` };
-
-  const byNo = new Map(existing.map((s) => [s.studentNo, s]));
-  const termIds = new Set(catalog.terms.map((t) => t.id));
-  const careerCodes = catalog.careers.map((c) => c.code);
-  const onlyCareer = careerCodes.length === 1 ? careerCodes[0] : null;
-  const seen = new Set<string>();
-  const cell = (row: string[], column: (typeof CSV_COLUMNS)[number]) => (index[column] >= 0 ? (row[index[column]] ?? "").trim() : "");
-
-  const results = rows.slice(1).map<ImportRowResult>((row, i) => {
-    const line = i + 2;
-    const studentNo = cell(row, "student_no");
-    const fail = (reason: string): ImportRowResult => ({ line, action: "error", studentNo, reason });
-
-    if (!STUDENT_NO_PATTERN.test(studentNo)) return fail("Student no. must be 11 digits");
-    if (seen.has(studentNo)) return fail("Duplicate row in file");
-    seen.add(studentNo);
-
-    const lastName = cell(row, "last_name");
-    const firstName = cell(row, "first_name");
-    if (!lastName || !firstName) return fail("Missing name");
-
-    const programRaw = cell(row, "program").toUpperCase();
-    const program = catalog.programs.find((p) => p.toUpperCase() === programRaw) ?? null;
-    if (programRaw && !program) return fail(`Unknown program "${programRaw}"`);
-
-    const careerRaw = cell(row, "career").toUpperCase();
-    const career = careerCodes.find((c) => c.toUpperCase() === careerRaw) ?? null;
-    if (careerRaw && !career) return fail(`Unknown career "${careerRaw}"`);
-
-    const yearRaw = cell(row, "year");
-    const year = yearRaw ? Number.parseInt(yearRaw, 10) : null;
-    if (yearRaw && (year === null || !catalog.yearLevels.includes(year))) {
-      return fail(`Year must be one of ${catalog.yearLevels.join(", ")}`);
-    }
-
-    const term = cell(row, "term").toUpperCase() || catalog.currentTerm?.id || "";
-    if (!term) return fail("Missing term (no term exists yet)");
-    if (!termIds.has(term)) return fail(`Unknown term "${term}"`);
-
-    const current = byNo.get(studentNo);
-    if (current) {
-      if (!current.careerCode || !current.program || current.year === null) {
-        return fail("Existing student has no enrollment to update");
-      }
-      return {
-        line,
-        action: "update",
-        student: {
-          ...current,
-          careerCode: career ?? current.careerCode,
-          program: program ?? current.program,
-          year: year ?? current.year,
-          term,
-        },
-      };
-    }
-
-    const careerCode = career ?? onlyCareer;
-    if (!careerCode) return fail("Missing career");
-    if (!program) return fail("Missing program");
-    if (year === null) return fail("Missing year");
-
+  const header = table[0].map(normalizeHeader);
+  const index = IMPORT_COLUMNS.map((column) => header.indexOf(normalizeHeader(column)));
+  const missing = IMPORT_COLUMNS.filter((_, i) => index[i] < 0);
+  if (missing.length) {
     return {
-      line,
-      action: "new",
-      student: {
-        studentNo,
-        lastName,
-        firstName,
-        middleName: cell(row, "middle_name") || undefined,
-        email: buildStudentEmail(lastName, studentNo),
-        careerCode,
-        program,
-        year,
-        term,
-        enrollmentStatus: "Active",
-      },
+      rows: [],
+      error: `Missing column${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}. The first row must be: ${IMPORT_COLUMNS.join(", ")}.`,
     };
-  });
+  }
 
-  return { results };
+  const rows = table.slice(1).map((cells) => {
+    const row = {} as StudentImportRow;
+    IMPORT_COLUMNS.forEach((column, i) => {
+      row[IMPORT_FIELDS[column]] = (cells[index[i]] ?? "").trim();
+    });
+    return row;
+  });
+  if (rows.length === 0) return { rows, error: "The file has a header row but no students." };
+  return { rows };
+}
+
+/** Program codes in the file that aren't in the Programs list, with how many rows use each. */
+export function findUnknownPrograms(rows: readonly StudentImportRow[], programs: readonly string[]): { code: string; count: number }[] {
+  const known = new Set(programs.map((p) => p.toUpperCase()));
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const code = row.program.trim().toUpperCase();
+    if (code && !known.has(code)) counts.set(code, (counts.get(code) ?? 0) + 1);
+  }
+  return [...counts].map(([code, count]) => ({ code, count }));
 }

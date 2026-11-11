@@ -58,13 +58,40 @@ interface CreateStudentRequest {
   termId: string;
 }
 
-/** EnrollmentDtos.UpdateEnrollmentRequest */
-interface UpdateEnrollmentRequest {
-  careerCode: string;
-  programCode: string;
-  level: number;
+/** One row of the school's student list: StudentDtos.ImportRow. */
+export interface StudentImportRow {
+  /** "Last, Given names" */
+  fullName: string;
+  program: string;
+  /** e.g. `1Y1` (year 1, term 1) or a plain `1` */
+  level: string;
+  studentId: string;
+  email: string;
+}
+
+/** What to do with rows whose student is already on the roster. */
+export type ExistingStudentsChoice = "replace" | "keep";
+
+/** StudentDtos.ImportRequest */
+interface ImportRequest {
+  rows: StudentImportRow[];
+  onExisting: ExistingStudentsChoice | null;
+}
+
+/** StudentDtos.ImportPreviewResponse */
+export interface StudentImportPreview {
+  /** The current term the students will be enrolled in. */
   termId: string;
-  status: EnrollmentStatus;
+  total: number;
+  new: number;
+  existing: { id: string; name: string }[];
+  /** e.g. "Row 14: Level '5Y1' doesn't match any career" */
+  errors: string[];
+}
+
+export interface StudentImportResult {
+  imported: number;
+  termId: string;
 }
 
 /** EnrollmentDtos.BulkUpdateEnrollmentRequest: only the fields sent are changed. */
@@ -164,9 +191,17 @@ export function getStudentsErrorMessage(error: unknown): string {
     case "aborted":
       return "The request was cancelled.";
     case "http": {
-      // The backend answers some errors with `{ error: "..." }`.
+      // The backend answers some errors with `{ error: "...", detail?: "..." }`.
       const custom = error.problem?.error;
-      if (typeof custom === "string" && custom) return custom;
+      const detail = error.problem?.detail;
+      if (typeof custom === "string" && custom) {
+        return typeof detail === "string" && detail ? `${custom} ${detail}` : custom;
+      }
+      if (error.status === 409 && Array.isArray(error.problem?.existing)) {
+        return "Some students are already on the roster. Choose the file again to see them.";
+      }
+      // Plain-text or list-of-messages errors, e.g. "There's no current term."
+      if (error.status === 400 && typeof detail === "string" && detail) return detail;
       if (error.status === 404) return "Not found. It may have been archived.";
       if (error.status === 401 || error.status === 403) return "You're not allowed to do this. Sign in again.";
       if (error.status !== null && error.status >= 500) {
@@ -233,21 +268,36 @@ export async function createStudent(student: Student): Promise<Student> {
   return toStudent(dto);
 }
 
-/** Replaces one student's enrollment (career, program, year, term, status). */
-export async function updateEnrollment(student: Student): Promise<void> {
-  if (!student.careerCode || !student.program || student.year === null || !student.term) {
-    throw new Error("This student has no complete enrollment to update.");
-  }
-  const body: UpdateEnrollmentRequest = {
-    careerCode: student.careerCode,
-    programCode: student.program,
-    level: student.year,
-    termId: student.term,
-    status: student.enrollmentStatus ?? "Active",
-  };
-  await apiClient.put<unknown, UpdateEnrollmentRequest>(
-    `${ROUTES.enrollments}/${encodeURIComponent(student.studentNo)}`,
-    body,
+/** Imports can hold hundreds of rows: give the backend more time than the default. */
+const IMPORT_TIMEOUT_MS = 120_000;
+
+/**
+ * Step 1 of the import: validates the rows on the backend and reports new,
+ * existing and invalid rows. Saves nothing.
+ */
+export function previewStudentImport(
+  rows: StudentImportRow[],
+  { signal }: RequestOptions = {},
+): Promise<StudentImportPreview> {
+  return apiClient.post<StudentImportPreview, ImportRequest>(
+    `${ROUTES.students}/import/preview`,
+    { rows, onExisting: null },
+    { signal, timeoutMs: IMPORT_TIMEOUT_MS },
+  );
+}
+
+/**
+ * Step 2: saves the rows and enrolls them in the current term, all or nothing.
+ * `onExisting` must be set when some students already exist (`null` is refused with 409).
+ */
+export function importStudents(
+  rows: StudentImportRow[],
+  onExisting: ExistingStudentsChoice | null,
+): Promise<StudentImportResult> {
+  return apiClient.post<StudentImportResult, ImportRequest>(
+    `${ROUTES.students}/import`,
+    { rows, onExisting },
+    { timeoutMs: IMPORT_TIMEOUT_MS },
   );
 }
 

@@ -11,7 +11,7 @@ import {
   fetchStudentCatalog,
   fetchStudents,
   getStudentsErrorMessage,
-  updateEnrollment,
+  type StudentImportResult,
 } from "@/services/students/students.service";
 import type { EnrollmentStatus, FacetFilters, Student, StudentCatalog, YearLevel } from "@/types/student.types";
 
@@ -23,9 +23,6 @@ import { StudentStats, type StudentStat } from "./student-stats";
 import { StudentTable } from "./student-table";
 import { StudentToolbar } from "./student-toolbar";
 import { toolbarButtonClassName } from "./student-toolbar-styles";
-
-/** Requests sent at once during a CSV import. */
-const IMPORT_CONCURRENCY = 4;
 
 type LoadState =
   | { status: "loading" }
@@ -95,15 +92,6 @@ export function StudentsPage() {
 /* -------------------------------------------------------------------------- */
 /*                                   Helpers                                  */
 /* -------------------------------------------------------------------------- */
-
-/** Runs `task` over `items`, a few at a time, and never rejects. */
-async function settleInBatches<T, R>(items: readonly T[], size: number, task: (item: T) => Promise<R>) {
-  const results: PromiseSettledResult<R>[] = [];
-  for (let i = 0; i < items.length; i += size) {
-    results.push(...(await Promise.allSettled(items.slice(i, i + size).map(task))));
-  }
-  return results;
-}
 
 /** Roster size over time (from `createdAt`), sampled at `points` evenly spaced moments up to `now`. */
 function growthTrend(students: readonly Student[], now: number, points = 10): number[] | undefined {
@@ -292,34 +280,18 @@ function StudentsRoster({ initialStudents, loadedAt }: { initialStudents: Studen
     say(`Added ${formatStudentName(saved)} · enrolled in ${saved.term ?? student.term}.`);
   }
 
-  async function applyImport({ added, updated }: { added: Student[]; updated: Student[] }) {
-    const created = await settleInBatches(added, IMPORT_CONCURRENCY, createStudent);
-    const changed = await settleInBatches(updated, IMPORT_CONCURRENCY, async (s) => {
-      await updateEnrollment(s);
-      return s;
-    });
-
-    const ok = [...created, ...changed].flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
-    const failures = [...created, ...changed].flatMap((r) => (r.status === "rejected" ? [r.reason as unknown] : []));
-    const okAdded = created.filter((r) => r.status === "fulfilled").length;
-    const okUpdated = ok.length - okAdded;
-
-    if (ok.length === 0) {
-      throw new Error(`Nothing was imported. ${getStudentsErrorMessage(failures[0])}`);
-    }
-
-    setStudents((list) => {
-      const byNo = new Map(ok.map((s) => [s.studentNo, s]));
-      const known = new Set(list.map((s) => s.studentNo));
-      return [...ok.filter((s) => !known.has(s.studentNo)), ...list.map((s) => byNo.get(s.studentNo) ?? s)];
-    });
-    revealAdded(ok.map((s) => s.studentNo));
-
-    const summary = `Imported ${okAdded} new · ${okUpdated} updated.`;
-    if (failures.length) {
-      say(`${summary} ${failures.length} failed: ${getStudentsErrorMessage(failures[0])}`, "error");
-    } else {
-      say(summary);
+  /** The backend saved the import: reload the roster and flash the students that are new. */
+  async function handleImported({ imported, termId }: StudentImportResult) {
+    const known = new Set(students.map((s) => s.studentNo));
+    try {
+      const fresh = await fetchStudents();
+      // Newly imported students first, so they're visible right away.
+      const added = fresh.filter((s) => !known.has(s.studentNo));
+      setStudents([...added, ...fresh.filter((s) => known.has(s.studentNo))]);
+      revealAdded(added.map((s) => s.studentNo));
+      say(`Imported ${imported} student${imported === 1 ? "" : "s"} into ${termId} · ${added.length} new.`);
+    } catch (error) {
+      say(`Imported ${imported} students, but the list couldn't refresh: ${getStudentsErrorMessage(error)} Reload the page.`, "error");
     }
   }
 
@@ -399,7 +371,7 @@ function StudentsRoster({ initialStudents, loadedAt }: { initialStudents: Studen
         onDiscard={() => setSelected(new Set())}
       />
 
-      <CsvImportDialog open={importOpen} onOpenChange={setImportOpen} students={students} onApply={applyImport} />
+      <CsvImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={handleImported} />
 
       {/* Feedback toast */}
       <div aria-live="polite" className="pointer-events-none fixed right-4 bottom-20 z-50 sm:right-6 sm:bottom-6">
