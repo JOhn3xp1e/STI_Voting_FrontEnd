@@ -27,7 +27,7 @@ export const checkboxClassName =
 
 /** Status pill; pops gently when a row's status changes (e.g. after "Set term"). */
 function StatusBadge({ status }: { status: StudentStatus }) {
-  const [shown, setShown] = useState(status);
+  const [shown, setShown] = useState(status); 
   const [changed, setChanged] = useState(false);
   if (status !== shown) {
     setShown(status);
