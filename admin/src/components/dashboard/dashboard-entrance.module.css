@@ -1,0 +1,137 @@
+/*
+ * One-time entrance after signing in (see lib/dashboard-entrance.ts).
+ *
+ * Everything here applies only while <html data-dashboard-entrance> is set, so
+ * a normal visit to the dashboard renders exactly as before. Only opacity and
+ * transform are animated, and every element ends in its normal resting state.
+ *
+ * Timeline (~1.2 s):
+ *   0 ms     navy curtain (the sign-in screen's base colour) starts lifting
+ *   60 ms    sidebar slides in from the left
+ *   260 ms   header fades in, moving down slightly
+ *   380 ms+  navigation labels and links fade in, lightly staggered
+ *   420 ms   workspace fades in
+ *   1300 ms  curtain animation ends → attribute removed
+ */
+
+.curtain {
+  display: none;
+}
+
+:global(html[data-dashboard-entrance]) .curtain {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+  background-color: var(--color-brand-background);
+  animation: curtain-lift 1300ms linear both;
+}
+
+/* Fades over the first ~40%, then stays clear until the entrance is over. */
+@keyframes curtain-lift {
+  0% {
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  40%,
+  100% {
+    opacity: 0;
+  }
+}
+
+:global(html[data-dashboard-entrance]) .sidebar {
+  animation: sidebar-in 820ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+}
+
+:global(html[data-dashboard-entrance]) .header {
+  animation: header-in 700ms cubic-bezier(0.22, 1, 0.36, 1) 260ms both;
+}
+
+:global(html[data-dashboard-entrance]) .workspace {
+  animation: workspace-in 600ms cubic-bezier(0.4, 0, 0.2, 1) 420ms both;
+}
+
+/* Navigation: section labels, then their links, ~50 ms apart. */
+:global(html[data-dashboard-entrance]) .sidebar nav h2,
+:global(html[data-dashboard-entrance]) .sidebar nav li {
+  animation: nav-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(380ms + var(--entrance-section, 0) * 110ms + var(--entrance-item, 0) * 50ms);
+}
+
+.sidebar nav > section:nth-child(2) {
+  --entrance-section: 1;
+}
+.sidebar nav > section:nth-child(3) {
+  --entrance-section: 2;
+}
+.sidebar nav > section:nth-child(n + 4) {
+  --entrance-section: 3;
+}
+.sidebar nav li:nth-child(1) {
+  --entrance-item: 1;
+}
+.sidebar nav li:nth-child(2) {
+  --entrance-item: 2;
+}
+.sidebar nav li:nth-child(3) {
+  --entrance-item: 3;
+}
+.sidebar nav li:nth-child(n + 4) {
+  --entrance-item: 4;
+}
+
+@keyframes sidebar-in {
+  from {
+    transform: translate3d(-100%, 0, 0);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes header-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes workspace-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes nav-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-8px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Just a short cross-fade from the sign-in colour. */
+  :global(html[data-dashboard-entrance]) .curtain {
+    animation-duration: 450ms;
+  }
+
+  :global(html[data-dashboard-entrance]) .sidebar,
+  :global(html[data-dashboard-entrance]) .header,
+  :global(html[data-dashboard-entrance]) .workspace,
+  :global(html[data-dashboard-entrance]) .sidebar nav h2,
+  :global(html[data-dashboard-entrance]) .sidebar nav li {
+    animation: none;
+  }
+}

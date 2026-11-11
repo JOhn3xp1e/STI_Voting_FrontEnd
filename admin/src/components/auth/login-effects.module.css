@@ -1,0 +1,415 @@
+/*
+ * Motion and interaction effects for the admin sign-in screen.
+ *
+ * Performance notes:
+ * - Continuous animations only move layers (`transform` / `offset-distance`) or
+ *   fade them (`opacity`); the input highlights only run while the input is focused.
+ * - Every animation is disabled under `prefers-reduced-motion: reduce`.
+ */
+
+/* -------------------------------------------------------------------------- */
+/*                         Animated input focus outline                       */
+/* -------------------------------------------------------------------------- */
+
+/* Wraps an auth input. Effects are drawn on overlay layers, so focus never shifts layout. */
+.field {
+  --field-accent: var(--color-brand-blue);
+  --field-radius: calc(var(--radius) * 0.8);
+  position: relative;
+  border-radius: var(--field-radius);
+}
+
+.field:has([aria-invalid="true"]) {
+  --field-accent: var(--destructive);
+}
+
+/* 1.5px outline ring (faint accent) that clips the travelling comets. */
+.fieldRing,
+.field::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 320ms ease;
+}
+
+.fieldRing {
+  z-index: 1;
+  padding: 1.5px;
+  background: color-mix(in oklab, var(--field-accent) 30%, transparent);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+/*
+ * Gradient highlights that ride along the input's rounded-rectangle edge
+ * (CSS motion path), so they move at a constant speed and turn each corner.
+ */
+.fieldComet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 132px;
+  height: 26px;
+  background: radial-gradient(
+    closest-side,
+    var(--field-accent),
+    color-mix(in oklab, var(--field-accent) 55%, transparent) 45%,
+    transparent
+  );
+  offset-path: inset(0 round var(--field-radius));
+  offset-rotate: auto;
+  animation: field-travel 3.6s linear infinite paused;
+}
+
+.fieldComet + .fieldComet {
+  animation-delay: -1.8s;
+}
+
+@keyframes field-travel {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+
+/* Soft glow around the whole input. */
+.field::after {
+  content: "";
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--field-accent) 10%, transparent),
+    0 0 18px 1px color-mix(in oklab, var(--field-accent) 26%, transparent);
+}
+
+/* Text inputs match :focus-visible for mouse and keyboard focus alike. */
+.field:has(input:focus-visible) .fieldRing,
+.field:has(input:focus-visible)::after {
+  opacity: 1;
+}
+
+.field:has(input:focus-visible) .fieldComet {
+  animation-play-state: running;
+}
+
+/* Without motion-path support, show a solid accent outline instead. */
+@supports not (offset-path: inset(0)) {
+  .fieldComet {
+    display: none;
+  }
+
+  .fieldRing {
+    background: var(--field-accent);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Sign-in button sheen                          */
+/* -------------------------------------------------------------------------- */
+
+.submit {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* A blue highlight that sweeps once across the button on hover / keyboard focus. */
+.submit::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  z-index: -1;
+  width: 45%;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    color-mix(in oklab, var(--color-brand-blue) 65%, transparent),
+    transparent
+  );
+  transform: translateX(-110%);
+  /* Snap back instantly (while off-screen) so the sweep only plays forwards. */
+  transition: transform 0s;
+  pointer-events: none;
+}
+
+.submit:hover::before,
+.submit:focus-visible::before {
+  transform: translateX(230%);
+  transition: transform 750ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Waiting for the sign-in response: a soft blue glow breathes around the
+   button and the sheen loops across it. Size and position never change. */
+.submit[data-pending] {
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--color-brand-blue) 20%, transparent),
+    0 10px 26px -12px color-mix(in oklab, var(--color-brand-blue) 90%, transparent);
+  animation: submit-glow 1.8s ease-in-out infinite;
+}
+
+.submit[data-pending]::before {
+  animation: submit-sheen 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes submit-glow {
+  50% {
+    box-shadow:
+      0 0 0 4px color-mix(in oklab, var(--color-brand-blue) 32%, transparent),
+      0 12px 32px -10px color-mix(in oklab, var(--color-brand-blue) 100%, transparent);
+  }
+}
+
+@keyframes submit-sheen {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(230%);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                         Sign-in success and leaving                        */
+/* -------------------------------------------------------------------------- */
+
+/* Success panel laid over the card's contents (the card keeps its size). */
+.successPanel {
+  animation: success-panel-in 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.successText {
+  animation: success-text-in 520ms cubic-bezier(0.22, 1, 0.36, 1) 380ms both;
+}
+
+.successText + .successText {
+  animation-delay: 500ms;
+}
+
+@keyframes success-panel-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes success-text-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+}
+
+/*
+ * Leaving: once the success state has been shown, everything on the page
+ * (backdrop artwork, branding, card) fades out to the plain navy base, which
+ * the dashboard's entrance curtain picks up seamlessly.
+ * Duration matches LEAVE_MS in hooks/use-login-transition.ts.
+ */
+.stage > * {
+  transition: opacity 450ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stage:has([data-auth-phase="leaving"]) > * {
+  opacity: 0;
+}
+
+.card {
+  transition:
+    opacity 450ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 450ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card[data-auth-phase="leaving"] {
+  opacity: 0;
+  transform: translate3d(0, 10px, 0) scale(0.985);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                          Pixel-art map: drift + shimmer                    */
+/* -------------------------------------------------------------------------- */
+
+.mapFloat {
+  animation: map-float 14s ease-in-out infinite;
+}
+
+@keyframes map-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+  50% {
+    transform: translate3d(0, -6px, 0);
+    opacity: 0.84;
+  }
+}
+
+/*
+ * Shimmer: a soft-edged window slides across the map while its contents
+ * (a brighter copy of the map) counter-slide, so the copy stays aligned with
+ * the original. Both moves are transforms, so nothing is repainted.
+ * Window width = 35% of the map: travel is -100% → 285.71% (= 100% / 0.35),
+ * and the counter-move is 35% → -100% of the copy's width.
+ */
+.mapSweepWindow {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 35%;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 50%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 50%, transparent);
+  animation: map-sweep-window 10s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.mapSweepInner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% / 0.35);
+  animation: map-sweep-inner 10s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes map-sweep-window {
+  0% {
+    transform: translateX(-100%);
+  }
+  40%,
+  100% {
+    transform: translateX(285.7143%);
+  }
+}
+
+@keyframes map-sweep-inner {
+  0% {
+    transform: translateX(35%);
+  }
+  40%,
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               Background layers                            */
+/* -------------------------------------------------------------------------- */
+
+.dotsBreathe {
+  animation: dots-breathe 8s ease-in-out infinite;
+}
+
+@keyframes dots-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Large, slow ambient light that trails the cursor. */
+.glowAmbient {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1120px;
+  height: 1120px;
+  border-radius: 9999px;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--color-brand-blue) 20%, transparent),
+    transparent
+  );
+  will-change: transform;
+}
+
+/* Brighter core that follows the cursor closely and lights up the dots beneath it. */
+.glowCore {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 520px;
+  height: 520px;
+  overflow: hidden;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--color-brand-blue) 34%, transparent),
+    transparent
+  );
+  -webkit-mask-image: radial-gradient(closest-side, #000 35%, transparent);
+  mask-image: radial-gradient(closest-side, #000 35%, transparent);
+  will-change: transform;
+}
+
+/* Page-sized dot layer, counter-translated so it stays aligned with the base grid. */
+.glowDots {
+  position: absolute;
+  top: 0;
+  left: 0;
+  --dot-color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--color-brand-blue) 45%, var(--color-brand-white)) 55%,
+    transparent
+  );
+  will-change: transform;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                         Accessibility: motion and contrast                 */
+/* -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  /* Keep a clear accent outline and glow, without travelling highlights. */
+  .fieldComet {
+    display: none;
+  }
+
+  .fieldRing {
+    background: var(--field-accent);
+  }
+
+  .submit::before,
+  .mapSweepWindow {
+    display: none;
+  }
+
+  .mapFloat,
+  .dotsBreathe,
+  .submit[data-pending] {
+    animation: none;
+  }
+
+  /* Keep the fades, drop the movement. */
+  .successText {
+    animation-name: success-panel-in;
+  }
+
+  .card[data-auth-phase="leaving"] {
+    transform: none;
+  }
+
+  .stage > *,
+  .card {
+    transition-duration: 250ms;
+  }
+}
+
+@media (forced-colors: active) {
+  .fieldRing,
+  .field::after {
+    display: none;
+  }
+
+  .field:has(input:focus-visible) {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}

@@ -1,0 +1,92 @@
+/*
+ * Dashboard (`hero`) header backdrop: dark navy base lit by STI Gold and
+ * Primary Blue, with a soft glow and film grain. White title text sits on it,
+ * so it stays dark in both light and dark themes.
+ */
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background-color: var(--color-brand-background);
+}
+
+/* Oversized so it can drift sideways without exposing an edge. */
+.gradient {
+  position: absolute;
+  inset: 0 -8%;
+  background: linear-gradient(
+    90deg,
+    var(--color-brand-background) 0%,
+    var(--color-brand-navy) 15%,
+    color-mix(in oklab, var(--color-brand-gold) 40%, var(--color-brand-navy)) 29%,
+    color-mix(in oklab, var(--color-brand-gold) 78%, var(--color-brand-navy)) 39%,
+    color-mix(in oklab, var(--color-brand-gold) 28%, var(--color-brand-blue)) 51%,
+    var(--color-brand-blue) 60%,
+    color-mix(in oklab, var(--color-brand-blue) 40%, var(--color-brand-background)) 72%,
+    var(--color-brand-background) 86%,
+    var(--color-brand-background) 100%
+  );
+  animation: drift 26s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+/* Vertical shading: deepen the top and bottom edges. */
+.shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(11 18 32 / 0.25) 0%, transparent 45%, rgb(11 18 32 / 0.4) 100%);
+}
+
+/* Faint light spot near the top-left corner. */
+.glow {
+  position: absolute;
+  top: -18%;
+  left: 0.5%;
+  width: 9rem;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgb(255 255 255 / 0.95) 0%, rgb(255 255 255 / 0.55) 32%, transparent 70%);
+  filter: blur(6px);
+  opacity: 0.16;
+  animation: breathe 9s ease-in-out infinite;
+}
+
+/* Film grain (inline SVG noise). */
+.grain {
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 1.1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-size: 220px 220px;
+  mix-blend-mode: overlay;
+  opacity: 0.55;
+}
+
+@keyframes drift {
+  from {
+    transform: translate3d(-3.5%, 0, 0);
+  }
+  to {
+    transform: translate3d(3.5%, 0, 0);
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.14;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.2;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gradient,
+  .glow {
+    animation: none;
+  }
+}
