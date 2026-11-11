@@ -202,7 +202,10 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
                               <td className="border-b border-border px-3 py-2 font-mono">
                                 {row.action === "error" ? row.studentNo || "—" : row.student.studentNo}
                               </td>
-                              <td className="max-w-48 truncate border-b border-border px-3 py-2">
+                              <td
+                                className="max-w-48 truncate border-b border-border px-3 py-2"
+                                title={row.action === "error" ? row.reason : row.student.email}
+                              >
                                 {row.action === "error" ? (
                                   <span className="text-destructive">{row.reason}</span>
                                 ) : (

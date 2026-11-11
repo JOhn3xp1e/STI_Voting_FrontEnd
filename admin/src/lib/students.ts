@@ -81,7 +81,10 @@ export const STUDENT_NO_PATTERN = /^\d{11}$/;
 /*                                 CSV import                                 */
 /* -------------------------------------------------------------------------- */
 
-export const CSV_COLUMNS = ["student_no", "last_name", "first_name", "middle_name", "career", "program", "year", "term"] as const;
+export const CSV_COLUMNS = ["student_no", "last_name", "first_name", "middle_name", "career", "program", "year", "term", "email"] as const;
+
+/** Loose email check (the backend also requires `x@y.z`). */
+const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 /** Sample file using the first career and the current term from the catalog. */
 export function buildSampleCsv(catalog: StudentCatalog): string {
@@ -90,10 +93,11 @@ export function buildSampleCsv(catalog: StudentCatalog): string {
   const term = catalog.currentTerm?.id ?? "TRM-00001";
   return [
     CSV_COLUMNS.join(","),
-    `02000301884,Alfane,Jan Clarence,,${career},${program},2,${term}`,
-    `02000645840,Cruz,Aeron Aries,,${career},${program},4,${term}`,
-    `02000771020,Navarro,Lance Adrian,Reyes,${career},${program},1,${term}`,
-    `02000771021,"De Leon",Mikaela,,${career},${program},1,${term}`,
+    `02000301884,Alfane,Jan Clarence,,${career},${program},2,${term},${buildStudentEmail("Alfane", "02000301884")}`,
+    `02000645840,Cruz,Aeron Aries,,${career},${program},4,${term},${buildStudentEmail("Cruz", "02000645840")}`,
+    `02000771020,Navarro,Lance Adrian,Reyes,${career},${program},1,${term},${buildStudentEmail("Navarro", "02000771020")}`,
+    // Email left blank: it's generated from the last name and student no.
+    `02000771021,"De Leon",Mikaela,,${career},${program},1,${term},`,
   ].join("\n");
 }
 
@@ -164,6 +168,7 @@ export function previewCsvImport(
   const careerCodes = catalog.careers.map((c) => c.code);
   const onlyCareer = careerCodes.length === 1 ? careerCodes[0] : null;
   const seen = new Set<string>();
+  const seenEmails = new Set<string>();
   const cell = (row: string[], column: (typeof CSV_COLUMNS)[number]) => (index[column] >= 0 ? (row[index[column]] ?? "").trim() : "");
 
   const results = rows.slice(1).map<ImportRowResult>((row, i) => {
@@ -220,6 +225,12 @@ export function previewCsvImport(
     if (!program) return fail("Missing program");
     if (year === null) return fail("Missing year");
 
+    // The file's email when given, otherwise lastname.123456@legazpi.sti.edu.ph.
+    const email = cell(row, "email").toLowerCase() || buildStudentEmail(lastName, studentNo);
+    if (!EMAIL_PATTERN.test(email)) return fail(`Invalid email "${email}"`);
+    if (seenEmails.has(email)) return fail("Email used twice in file");
+    seenEmails.add(email);
+
     return {
       line,
       action: "new",
@@ -228,7 +239,7 @@ export function previewCsvImport(
         lastName,
         firstName,
         middleName: cell(row, "middle_name") || undefined,
-        email: buildStudentEmail(lastName, studentNo),
+        email,
         careerCode,
         program,
         year,
