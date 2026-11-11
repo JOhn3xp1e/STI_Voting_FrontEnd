@@ -2,11 +2,17 @@ import Image from "next/image";
 
 import { cn } from "@/lib/utils";
 
+import { GlowField } from "./glow-field";
 import styles from "./login-effects.module.css";
 import { PointerGlow } from "./pointer-glow";
 
-/** Same props for both glow layers so they share one cached image file. */
-const GLOW_IMAGE = { src: "/images/bglogin.png", fill: true, loading: "eager", sizes: "40vw" } as const;
+/**
+ * Same props for both glow layers so they share one cached image file.
+ * `bglogin-glow.png` is `bglogin.png` with its baked-in dot grid removed: the
+ * glow layer stretches while the composition switches, which smeared those
+ * dots. The page's own dot texture (`bg-dot-grid`, below) is never scaled.
+ */
+const GLOW_IMAGE = { src: "/images/bglogin-glow.png", fill: true, loading: "eager", sizes: "40vw" } as const;
 
 /**
  * Decorative page background: navy base, blue wash, glow artwork, dot texture and cursor light.
@@ -17,7 +23,8 @@ const GLOW_IMAGE = { src: "/images/bglogin.png", fill: true, loading: "eager", s
  */
 export function LoginBackdrop() {
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+    // Own base colour: this layer is a stacking context, so the glow's `lighten` blend needs it.
+    <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden bg-login-background">
       {/* Blue wash behind the branding side. */}
       <div className="absolute inset-0 bg-linear-to-b from-brand-blue/25 via-brand-blue/5 to-brand-blue/10 transition-opacity login-alt:opacity-0" />
 
@@ -32,19 +39,26 @@ export function LoginBackdrop() {
       </div>
 
       {/*
-       * Alternate composition: the full glow on the left (the artwork's own left 69%).
+       * Alternate composition: the full glow on the left (the artwork's own left 69%),
+       * as separate gold and blue layers that drift apart around the cursor.
        * Small screens: kept behind the brand at the top, fading out before the form.
+       * `lighten` lets only the glow's blue/gold add light: the artwork's own dark
+       * navy areas give way to the page's base colour instead of tinting it.
        */}
-      <div
+      <GlowField
         className={cn(
-          "absolute top-0 left-0 h-[55%] w-full origin-left mask-r-from-80% mask-b-from-35% lg:inset-y-0 lg:h-auto lg:w-[68.75%] lg:mask-b-from-100%",
+          "absolute top-0 left-0 h-[55%] w-full origin-left mix-blend-lighten mask-r-from-80% mask-b-from-35% lg:inset-y-0 lg:h-auto lg:w-[68.75%] lg:mask-b-from-100%",
           "scale-x-[0.55] opacity-0 transition-[opacity,scale] login-alt:scale-100 login-alt:opacity-100",
         )}
-      >
-        <Image {...GLOW_IMAGE} alt="" className="object-cover object-left" />
-      </div>
+      />
 
-      <div className={cn("absolute inset-0 bg-dot-grid", styles.dotsBreathe)} />
+      {/* Fine dot texture, fading out towards the edges. */}
+      <div
+        className={cn(
+          "absolute inset-0 bg-dot-grid [mask-image:radial-gradient(ellipse_75%_85%_at_center,#000_40%,transparent_100%)]",
+          styles.dotsBreathe,
+        )}
+      />
 
       <PointerGlow />
     </div>

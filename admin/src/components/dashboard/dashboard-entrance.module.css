@@ -24,7 +24,7 @@
   inset: 0;
   z-index: 80;
   pointer-events: none;
-  background-color: var(--color-brand-background);
+  background-color: var(--color-login-background);
   animation: curtain-lift 1300ms linear both;
 }
 

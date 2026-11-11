@@ -8,8 +8,8 @@ import styles from "./login-effects.module.css";
 const CORE_RADIUS = 260;
 const AMBIENT_RADIUS = 560;
 /** Easing time constants (ms): the core follows closely, the ambient light trails. */
-const CORE_TAU = 90;
-const AMBIENT_TAU = 280;
+const CORE_TAU = 150;
+const AMBIENT_TAU = 460;
 /** Distance (px) at which the glow counts as caught up and the loop stops. */
 const SETTLE_DISTANCE = 0.5;
 

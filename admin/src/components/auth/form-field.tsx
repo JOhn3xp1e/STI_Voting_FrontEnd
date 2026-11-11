@@ -30,7 +30,7 @@ interface FormFieldProps {
   /** Validation message. When set, render the control with `aria-invalid` and `aria-describedby`. */
   error?: string;
   children: ReactNode;
-  className?: string;
+  className?: string;   
 }
 
 /** Label, control (inside the animated focus frame) and validation message. */

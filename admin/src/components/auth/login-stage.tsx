@@ -7,8 +7,11 @@ import { cn } from "@/lib/utils";
 
 import styles from "./login-effects.module.css";
 
-/** 1 = original composition, 2 = alternate composition. */
+/** 1 = original composition (white card), 2 = alternate composition (form on the dark page). */
 export type LoginVariant = 1 | 2;
+
+/** Composition shown when the sign-in screen first loads. */
+const INITIAL_VARIANT: LoginVariant = 2;
 
 /** Colour / opacity cross-fades (keep in sync with `.stage[data-morphing]` in login-effects.module.css). */
 const MORPH_MS = 950;
@@ -44,7 +47,7 @@ function measure(root: HTMLElement): Snapshot {
  */
 export function LoginStage({ children, className }: { children: ReactNode; className?: string }) {
   const rootRef = useRef<HTMLElement>(null);
-  const [variant, setVariant] = useState<LoginVariant>(1);
+  const [variant, setVariant] = useState<LoginVariant>(INITIAL_VARIANT);
 
   const snapshotRef = useRef<Snapshot | null>(null);
   const busyRef = useRef(false);

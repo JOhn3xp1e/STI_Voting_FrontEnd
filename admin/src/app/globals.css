@@ -27,6 +27,9 @@
   --color-brand-muted: #64748b;
   --color-brand-gold: #ffc200;
   --color-brand-white: #ffffff;
+
+  /* Sign-in screen base, also where the dashboard entrance fades in from: RGB 17 19 22. */
+  --color-login-background: #111316;
 }
 
 @theme inline {
@@ -166,12 +169,12 @@
   }
 }
 
-/* Subtle dotted texture used on dark brand surfaces. Override `--dot-color` to tint it. */
+/* Fine dotted texture used on dark brand surfaces. Override `--dot-color` to tint it. */
 @utility bg-dot-grid {
   background-image: radial-gradient(
     circle,
-    var(--dot-color, rgb(255 255 255 / 0.08)) 1px,
-    transparent 1.5px
+    var(--dot-color, rgb(255 255 255 / 0.055)) 0.7px,
+    transparent 1.2px
   );
   background-size: 24px 24px;
 }
