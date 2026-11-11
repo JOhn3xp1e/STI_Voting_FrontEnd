@@ -34,13 +34,12 @@ export async function signInAdmin(request: AdminSignInRequest, { signal }: SignI
  * Entry point used by the sign-in screen.
  *
  * - Normally: the real Web API request (`signInAdmin`).
- * - Development with `NEXT_PUBLIC_AUTH_DEMO_MODE=true`: the animation preview,
- *   which only waits ~2 s. It is not authentication and creates no session.
- *   `env.authDemoMode` is always `false` in production builds.
+ * - With the animation preview enabled (`env.authDemoMode`: local dev, or a
+ *   demo deployment that explicitly opts in): only waits ~2 s. It is not
+ *   authentication and creates no session.
  */
 export function authenticateAdmin(request: AdminSignInRequest, options: SignInOptions = {}): Promise<void> {
-  // The local NODE_ENV check lets the bundler drop the preview from production builds entirely.
-  if (process.env.NODE_ENV === "development" && env.authDemoMode) {
+  if (env.authDemoMode) {
     return simulateSignInPreview(options.signal);
   }
   return signInAdmin(request, options);

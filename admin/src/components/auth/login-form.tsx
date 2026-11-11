@@ -198,9 +198,9 @@ export function LoginForm({ status, error, onSignIn, onEdit, className }: LoginF
           )}
         </Button>
 
-        {process.env.NODE_ENV === "development" && env.authDemoMode ? (
+        {env.authDemoMode ? (
           <p className="-mt-2 text-center font-mono text-[0.6875rem] leading-4 text-brand-muted">
-            Animation preview (dev only): sign-in is simulated, no account is checked.
+            Animation preview: sign-in is simulated, no account is checked.
           </p>
         ) : null}
       </div>

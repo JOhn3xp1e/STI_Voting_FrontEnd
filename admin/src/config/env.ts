@@ -16,13 +16,15 @@ export const env = {
    * and dashboard transition without contacting the Web API. No credentials
    * are checked, and no token or session is created.
    *
-   * On only when BOTH hold:
-   * - `NEXT_PUBLIC_AUTH_DEMO_MODE=true`, and
-   * - the app runs with `next dev` (`NODE_ENV === "development"`).
+   * On only when `NEXT_PUBLIC_AUTH_DEMO_MODE=true` AND either:
+   * - the app runs with `next dev` (local development), or
+   * - `NEXT_PUBLIC_ALLOW_DEMO_ON_DEPLOY=true` is ALSO set: a deliberate
+   *   opt-in for a demo deployment (e.g. a Vercel preview for showing the UI).
+   *   Never set it on the real production deployment.
    *
-   * `next build` always compiles with `NODE_ENV=production`, so this is the
-   * constant `false` in production bundles and the preview code is dropped.
+   * Both are build-time values: after changing them on Vercel, redeploy.
    */
   authDemoMode:
-    process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_AUTH_DEMO_MODE?.trim() === "true",
+    process.env.NEXT_PUBLIC_AUTH_DEMO_MODE?.trim() === "true" &&
+    (process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_ALLOW_DEMO_ON_DEPLOY?.trim() === "true"),
 } as const;

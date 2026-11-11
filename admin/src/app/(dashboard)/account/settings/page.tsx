@@ -6,5 +6,5 @@ export const metadata: Metadata = {
 
 /** Placeholder route for account settings (not built yet); renders an empty workspace. */
 export default function AccountSettingsPage() {
-  return null;
+  return null;  
 }
