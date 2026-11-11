@@ -16,7 +16,7 @@ import {
 } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
-import styles from "./terms.module.css";
+import styles from "@/components/shared/motion.module.css";
 
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 

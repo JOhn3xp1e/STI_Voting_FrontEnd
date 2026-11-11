@@ -21,10 +21,12 @@ export interface TermUsage {
   elections: number;
 }
 
-/** One enrollment, as needed by the roll-over. */
+/** One enrollment, as needed for usage counts and the roll-over. */
 export interface EnrollmentSummary {
   studentId: string;
   termId: string;
+  careerCode: string;
+  programCode: string;
   status: string;
 }
 

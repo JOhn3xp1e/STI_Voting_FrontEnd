@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 
+import { ProgramsPage } from "@/components/programs/programs-page";
+
 export const metadata: Metadata = {
   title: "Programs & Careers",
 };
 
-/** Placeholder route for the Programs & Careers module (not built yet); renders an empty workspace. */
-export default function ProgramsPage() {
-  return null;
+/** Programs & careers, backed by the ASP.NET Core Web API (`/api/admin/programs`, `/careers`). */
+export default function Page() {
+  return <ProgramsPage />;
 }

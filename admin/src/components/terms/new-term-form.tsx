@@ -9,8 +9,8 @@ import { cn } from "@/lib/utils";
 import type { NewTermInput, Term } from "@/types/term.types";
 
 import { DatePicker } from "./date-picker";
-import { errorClassName, eyebrowClassName, fieldClassName, labelClassName } from "./form-styles";
-import styles from "./terms.module.css";
+import { errorClassName, eyebrowClassName, fieldClassName, labelClassName } from "@/components/shared/form-styles";
+import styles from "@/components/shared/motion.module.css";
 
 const TERM_NUMBER_OPTIONS = [1, 2, 3].map((n) => ({ value: n, label: String(n) }));
 

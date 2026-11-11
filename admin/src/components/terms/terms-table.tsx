@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import type { Term } from "@/types/term.types";
 
 import { TermNumberBadge, TermStatusPill } from "./term-badges";
-import styles from "./terms.module.css";
+import styles from "@/components/shared/motion.module.css";
 
 /** Rows that take part in the staggered entrance. */
 const INTRO_ROWS = 12;

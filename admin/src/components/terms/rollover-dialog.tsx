@@ -1,17 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Dialog } from "@base-ui/react/dialog";
-import { ArrowRight, X } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
+import { DialogCancel, DialogFrame, DialogHeading, dialogPrimaryClassName } from "@/components/shared/dialog-frame";
+import { fieldClassName, labelClassName } from "@/components/shared/form-styles";
+import styles from "@/components/shared/motion.module.css";
 import { Caret, OptionMenu } from "@/components/students/option-menu";
-import { toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
 import { formatAcadYear, sortTerms } from "@/lib/terms";
 import { cn } from "@/lib/utils";
 import type { EnrollmentSummary, Term } from "@/types/term.types";
-
-import { fieldClassName, labelClassName } from "./form-styles";
-import styles from "./terms.module.css";
 
 interface RolloverDialogProps {
   open: boolean;
@@ -20,7 +18,7 @@ interface RolloverDialogProps {
   /** `null` when the enrollments couldn't be loaded. */
   enrollments: readonly EnrollmentSummary[] | null;
   currentTerm: Term | null;
-  /** Moves the students; resolves with how many changed. */
+  /** Moves the students; rejects with a user-facing message. */
   onRollover: (from: Term, to: Term, studentIds: string[]) => Promise<void>;
 }
 
@@ -32,43 +30,18 @@ export function RolloverDialog({ open, onOpenChange, terms, enrollments, current
   const [saving, setSaving] = useState(false);
 
   return (
-    <Dialog.Root
-      open={open}
-      onOpenChange={(next) => {
-        if (!next && saving) return;
-        onOpenChange(next);
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Backdrop
-          data-themed
-          className="fixed inset-0 z-50 bg-brand-background/45 backdrop-blur-[1.5px] transition-opacity duration-250 ease-out data-ending-style:opacity-0 data-starting-style:opacity-0"
-        />
-        <Dialog.Popup
-          data-themed
-          className={cn(
-            "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[min(33rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto",
-            "rounded-xl border border-border bg-popover text-popover-foreground shadow-[0_28px_70px_-22px_rgb(11_18_32/0.5)] outline-none",
-            "transition-[opacity,scale,translate] duration-250 ease-[cubic-bezier(0.22,1,0.36,1)]",
-            "data-starting-style:translate-y-[calc(-50%+8px)] data-starting-style:scale-[0.96] data-starting-style:opacity-0",
-            "data-ending-style:translate-y-[calc(-50%+4px)] data-ending-style:scale-[0.97] data-ending-style:opacity-0",
-            "motion-reduce:transition-opacity",
-          )}
-        >
-          {/* The popup unmounts after closing, so the form starts fresh each time it opens. */}
-          <RolloverForm
-            terms={terms}
-            enrollments={enrollments}
-            currentTerm={currentTerm}
-            saving={saving}
-            setSaving={setSaving}
-            onRollover={onRollover}
-            onDone={() => onOpenChange(false)}
-          />
-
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <DialogFrame open={open} onOpenChange={onOpenChange} locked={saving} widthClassName="w-[min(33rem,calc(100vw-2rem))]">
+      {/* The popup unmounts after closing, so the form starts fresh each time it opens. */}
+      <RolloverForm
+        terms={terms}
+        enrollments={enrollments}
+        currentTerm={currentTerm}
+        saving={saving}
+        setSaving={setSaving}
+        onRollover={onRollover}
+        onDone={() => onOpenChange(false)}
+      />
+    </DialogFrame>
   );
 }
 
@@ -129,11 +102,9 @@ function RolloverForm({ terms, enrollments, currentTerm, saving, setSaving, onRo
     }
   }
 
-  const termSelect = (id: string, label: string, value: string | null, onChange: (v: string | null) => void, align: "start" | "end") => (
+  const termSelect = (label: string, value: string | null, onChange: (v: string | null) => void, align: "start" | "end") => (
     <div className="min-w-0 flex-1">
-      <p id={`${id}-label`} className={labelClassName}>
-        {label}
-      </p>
+      <p className={labelClassName}>{label}</p>
       <OptionMenu<string> label={label} value={value} options={options} onChange={onChange} align={align} triggerClassName={cn(fieldClassName, "cursor-pointer gap-1")}>
         <span className={cn("min-w-0 truncate font-mono text-[0.8125rem]", !value && "text-muted-foreground")}>{value ?? "Pick a term"}</span>
         <Caret className="ml-auto" />
@@ -143,28 +114,18 @@ function RolloverForm({ terms, enrollments, currentTerm, saving, setSaving, onRo
 
   return (
     <>
-      <div className="flex items-start justify-between gap-4 border-b border-border px-6 pt-5 pb-4.5">
-        <div>
-          <p className="font-mono text-[0.6875rem] tracking-[0.12em] text-muted-foreground uppercase">Enrollment</p>
-          <Dialog.Title className="mt-1 text-[1.375rem] leading-7 font-semibold tracking-tight text-foreground">Roll over enrollment</Dialog.Title>
-          <Dialog.Description className="mt-1.5 text-[0.8125rem] leading-5 text-muted-foreground">
-            Moves students who are active in one term into another. Year levels stay the same; update them on the Students page.
-          </Dialog.Description>
-        </div>
-        <Dialog.Close
-          aria-label="Close"
-          disabled={saving}
-          className="-mr-1.5 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-50"
-        >
-          <X aria-hidden className="size-4" />
-        </Dialog.Close>
-      </div>
+      <DialogHeading
+        eyebrow="Enrollment"
+        title="Roll over enrollment"
+        description="Moves students who are active in one term into another. Year levels stay the same; update them on the Students page."
+        closeDisabled={saving}
+      />
 
       <div className="px-6 py-5">
         <div className="flex items-end gap-3">
-          {termSelect("rollover-from", "From term", fromId, setFromId, "start")}
+          {termSelect("From term", fromId, setFromId, "start")}
           <ArrowRight aria-hidden className="mb-3 size-4 shrink-0 text-muted-foreground" />
-          {termSelect("rollover-to", "Into term", toId, setToId, "end")}
+          {termSelect("Into term", toId, setToId, "end")}
         </div>
 
         <p
@@ -192,15 +153,8 @@ function RolloverForm({ terms, enrollments, currentTerm, saving, setSaving, onRo
       </div>
 
       <div className="flex justify-end gap-2.5 border-t border-border px-6 py-4">
-        <Dialog.Close disabled={saving} className={cn(toolbarButtonClassName, "h-9 px-4 text-[0.875rem] font-medium text-foreground")}>
-          Cancel
-        </Dialog.Close>
-        <button
-          type="button"
-          disabled={!!problem || saving}
-          onClick={() => void confirm()}
-          className="h-9 cursor-pointer rounded-md bg-primary px-4 text-[0.875rem] font-semibold text-primary-foreground outline-none transition-[background-color,opacity] duration-200 hover:bg-[color-mix(in_oklab,var(--color-brand-navy)_86%,var(--color-brand-blue))] focus-visible:ring-3 focus-visible:ring-brand-blue/30 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/90"
-        >
+        <DialogCancel disabled={saving} />
+        <button type="button" disabled={!!problem || saving} onClick={() => void confirm()} className={dialogPrimaryClassName}>
           {saving ? "Moving…" : students.length && !problem ? `Move ${students.length} student${students.length === 1 ? "" : "s"}` : "Move students"}
         </button>
       </div>

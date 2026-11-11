@@ -26,6 +26,8 @@ interface TermDto {
 interface EnrollmentDto {
   studentId: string;
   termId: string;
+  careerCode: string;
+  programCode: string;
   /** "Active", or a number when the backend sends enums as numbers. */
   status: string | number;
 }
@@ -62,6 +64,8 @@ export async function fetchEnrollmentSummaries({ signal }: RequestOptions = {}):
   return dtos.map((e) => ({
     studentId: e.studentId,
     termId: e.termId,
+    careerCode: e.careerCode,
+    programCode: e.programCode,
     status: typeof e.status === "number" ? (ENROLLMENT_STATUSES[e.status] ?? String(e.status)) : e.status,
   }));
 }

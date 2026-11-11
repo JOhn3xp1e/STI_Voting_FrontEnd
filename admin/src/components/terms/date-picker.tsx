@@ -8,7 +8,7 @@ import { formatDate, type IsoDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
 import { Calendar } from "./calendar";
-import { fieldClassName } from "./form-styles";
+import { fieldClassName } from "@/components/shared/form-styles";
 
 interface DatePickerProps {
   id: string;

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { TermStatus } from "@/types/term.types";
 
-import styles from "./terms.module.css";
+import styles from "@/components/shared/motion.module.css";
 
 const STATUS_PILL: Record<TermStatus, { label: string; className: string }> = {
   upcoming: { label: "Upcoming", className: "bg-brand-gold text-brand-navy" },

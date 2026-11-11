@@ -1,9 +1,12 @@
 "use client";
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert, CircleCheck, LoaderCircle, Plus, Search, X } from "lucide-react";
+import { Plus } from "lucide-react";
 
 import { usePageDescription } from "@/components/dashboard/page-description";
+import styles from "@/components/shared/motion.module.css";
+import { PageError, PageLoading, SearchInput, Toast, useNotice } from "@/components/shared/page-feedback";
+import { SelectionBar } from "@/components/shared/selection-bar";
 import { Caret, OptionMenu } from "@/components/students/option-menu";
 import { primaryButtonClassName, toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
 import { formatDate, todayIso, type IsoDate } from "@/lib/dates";
@@ -26,7 +29,6 @@ import { RolloverDialog } from "./rollover-dialog";
 import { DeleteTermDialog, EditTermDialog } from "./term-dialogs";
 import { TermTabs, type TermTab } from "./term-tabs";
 import { TermsTable } from "./terms-table";
-import styles from "./terms.module.css";
 
 type LoadState =
   | { status: "loading" }
@@ -68,36 +70,18 @@ export function TermsPage() {
     return () => controller.abort();
   }, [attempt]);
 
-  if (state.status === "loading") {
-    return (
-      <div className="flex min-h-80 items-center justify-center gap-2.5 px-4 text-[0.875rem] text-muted-foreground" role="status">
-        <LoaderCircle aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
-        Loading terms…
-      </div>
-    );
-  }
+  if (state.status === "loading") return <PageLoading label="Loading terms…" />;
 
   if (state.status === "error") {
     return (
-      <div className="flex min-h-80 flex-col items-center justify-center gap-3 px-4 text-center">
-        <CircleAlert aria-hidden className="size-6 text-destructive" strokeWidth={1.75} />
-        <div>
-          <p className="text-[0.9375rem] font-semibold text-foreground">Couldn&apos;t load the terms</p>
-          <p role="alert" className="mt-1 max-w-md text-[0.8125rem] leading-5 text-muted-foreground">
-            {state.message}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            setState({ status: "loading" });
-            setAttempt((n) => n + 1);
-          }}
-          className={cn(toolbarButtonClassName, "h-8 px-3.5 text-[0.8125rem]")}
-        >
-          Try again
-        </button>
-      </div>
+      <PageError
+        title="Couldn't load the terms"
+        message={state.message}
+        onRetry={() => {
+          setState({ status: "loading" });
+          setAttempt((n) => n + 1);
+        }}
+      />
     );
   }
 
@@ -115,12 +99,6 @@ export function TermsPage() {
 /* -------------------------------------------------------------------------- */
 /*                                  Workspace                                 */
 /* -------------------------------------------------------------------------- */
-
-interface Notice {
-  id: number;
-  text: string;
-  tone: "success" | "error";
-}
 
 interface WorkspaceProps {
   initialTerms: Term[];
@@ -142,25 +120,15 @@ function TermsWorkspace({ initialTerms, initialEnrollments, electionTermIds, tod
   const [editing, setEditing] = useState<Term | null>(null);
   const [deleting, setDeleting] = useState<Term | null>(null);
   const [rolloverOpen, setRolloverOpen] = useState(false);
-  const [confirmBulk, setConfirmBulk] = useState(false);
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const { notice, say } = useNotice();
 
   const deferredQuery = useDeferredValue(query);
-
-  useEffect(() => {
-    if (!notice) return;
-    const timer = setTimeout(() => setNotice(null), notice.tone === "error" ? 7000 : 3800);
-    return () => clearTimeout(timer);
-  }, [notice]);
 
   useEffect(() => {
     if (flashed.size === 0) return;
     const timer = setTimeout(() => setFlashed(new Set()), 2500);
     return () => clearTimeout(timer);
   }, [flashed]);
-
-  const say = (text: string, tone: Notice["tone"] = "success") => setNotice({ id: Date.now(), text, tone });
 
   /* --------------------------------- derived --------------------------------- */
 
@@ -218,7 +186,6 @@ function TermsWorkspace({ initialTerms, initialEnrollments, electionTermIds, tod
       else next.delete(id);
       return next;
     });
-    setConfirmBulk(false);
   }, []);
 
   function toggleAll(checked: boolean) {
@@ -230,7 +197,6 @@ function TermsWorkspace({ initialTerms, initialEnrollments, electionTermIds, tod
       }
       return next;
     });
-    setConfirmBulk(false);
   }
 
   /** Makes sure a term is visible after it's created or changed. */
@@ -301,10 +267,7 @@ function TermsWorkspace({ initialTerms, initialEnrollments, electionTermIds, tod
       const u = usageOf(t.id);
       return u === null || u.enrollments + u.elections === 0;
     });
-    setBulkBusy(true);
     const results = await Promise.allSettled(deletable.map((t) => deleteTerm(t.id).then(() => t.id)));
-    setBulkBusy(false);
-    setConfirmBulk(false);
 
     const deleted = new Set(results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : [])));
     setTerms((list) => list.filter((t) => !deleted.has(t.id)));
@@ -330,42 +293,7 @@ function TermsWorkspace({ initialTerms, initialEnrollments, electionTermIds, tod
       <div className="mt-5 grid grid-cols-1 items-start gap-x-6 gap-y-5 min-[85rem]:grid-cols-[minmax(0,1fr)_22.5rem]">
         {/* Toolbar */}
         <div className={cn("flex flex-wrap items-center gap-2.5 min-[85rem]:col-span-2", styles.riseIn)}>
-          <div className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
-            <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3.25 size-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape" && query) {
-                  e.preventDefault();
-                  setQuery("");
-                }
-              }}
-              placeholder="Search terms"
-              aria-label="Search terms"
-              className={cn(
-                "h-8.5 w-full rounded-md border border-border bg-background pl-8.75 text-[0.875rem] text-foreground outline-none placeholder:text-muted-foreground",
-                query ? "pr-8" : "pr-2",
-                "transition-[border-color,box-shadow] duration-200 hover:border-[color-mix(in_oklab,var(--color-brand-muted)_38%,transparent)]",
-                "focus:border-brand-blue/60 focus:ring-3 focus:ring-brand-blue/15 [&::-webkit-search-cancel-button]:hidden",
-              )}
-            />
-            <button
-              type="button"
-              aria-label="Clear search"
-              tabIndex={query ? 0 : -1}
-              aria-hidden={!query}
-              onClick={() => setQuery("")}
-              className={cn(
-                "absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-muted-foreground",
-                "transition-[opacity,scale,background-color,color] duration-200 hover:bg-muted hover:text-foreground",
-                query ? "scale-100 opacity-100" : "pointer-events-none scale-75 opacity-0",
-              )}
-            >
-              <X aria-hidden className="size-3.5" />
-            </button>
-          </div>
+          <SearchInput value={query} onChange={setQuery} placeholder="Search terms" />
 
           <OptionMenu<string>
             label="Filter by school year"
@@ -446,46 +374,13 @@ function TermsWorkspace({ initialTerms, initialEnrollments, electionTermIds, tod
         />
       </div>
 
-      {/* Selection bar */}
-      <div
-        role="toolbar"
-        aria-label="Actions for selected terms"
-        aria-hidden={selected.size === 0}
-        inert={selected.size === 0}
-        className={cn(
-          "fixed bottom-6 left-1/2 z-40 max-w-[calc(100%-2rem)] -translate-x-1/2 md:left-[calc(16rem+(100%-16rem)/2)] min-[85rem]:left-[calc(18rem+(100%-44rem)/2)]",
-          "flex items-center gap-1.5 rounded-[0.625rem] bg-brand-navy py-1.5 pr-1.5 pl-4",
-          "shadow-[0_18px_40px_-14px_rgb(11_18_32/0.55),0_2px_6px_rgb(11_18_32/0.2)] dark:shadow-[0_0_0_1px_rgb(255_255_255/0.08),0_18px_40px_-14px_rgb(0_0_0/0.8)]",
-          "transition-[opacity,translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-opacity",
-          selected.size > 0 ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0",
-        )}
-      >
-        <p className="shrink-0 pr-1.5 font-mono text-[0.75rem] whitespace-nowrap text-white/55" aria-live="polite">
-          Selected: <span className="text-white/80 tabular-nums">{selected.size}</span>
-        </p>
-        <span aria-hidden className="h-4.5 w-px shrink-0 bg-white/18" />
-        <button
-          type="button"
-          disabled={bulkBusy}
-          onClick={() => (confirmBulk ? void deleteSelected() : setConfirmBulk(true))}
-          className={cn(
-            "inline-flex h-7.5 shrink-0 cursor-pointer items-center rounded-md px-2.5 text-[0.8125rem] font-medium whitespace-nowrap outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-white/30 disabled:cursor-wait disabled:opacity-60",
-            confirmBulk ? "bg-[#d92d20] text-white hover:bg-[#b42318]" : "text-white hover:bg-white/10",
-          )}
-        >
-          {bulkBusy ? "Deleting…" : confirmBulk ? `Confirm delete ${selected.size}?` : "Delete"}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setSelected(new Set());
-            setConfirmBulk(false);
-          }}
-          className="h-7.5 shrink-0 cursor-pointer rounded-md bg-white px-3.5 text-[0.8125rem] font-semibold text-brand-navy outline-none transition-colors duration-150 hover:bg-white/88 focus-visible:ring-2 focus-visible:ring-white/50"
-        >
-          Clear
-        </button>
-      </div>
+      <SelectionBar
+        count={selected.size}
+        noun="terms"
+        onDelete={deleteSelected}
+        onClear={() => setSelected(new Set())}
+        className="min-[85rem]:left-[calc(18rem+(100%-44rem)/2)]"
+      />
 
       <EditTermDialog
         term={editing}
@@ -514,24 +409,7 @@ function TermsWorkspace({ initialTerms, initialEnrollments, electionTermIds, tod
         onRollover={handleRollover}
       />
 
-      {/* Feedback toast */}
-      <div aria-live="polite" className="pointer-events-none fixed right-4 bottom-20 z-50 sm:right-6 sm:bottom-6">
-        {notice ? (
-          <p
-            key={notice.id}
-            data-themed
-            role={notice.tone === "error" ? "alert" : undefined}
-            className="flex max-w-sm animate-in items-start gap-2.5 rounded-lg border border-border bg-popover px-3.5 py-2.5 text-[0.8125rem] leading-5 text-popover-foreground shadow-[0_14px_36px_-14px_rgb(15_23_42/0.4)] duration-300 fade-in slide-in-from-bottom-2 motion-reduce:animate-none"
-          >
-            {notice.tone === "error" ? (
-              <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
-            ) : (
-              <CircleCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-brand-blue dark:text-[#7aa7e6]" />
-            )}
-            {notice.text}
-          </p>
-        ) : null}
-      </div>
+      <Toast notice={notice} />
     </div>
   );
 }

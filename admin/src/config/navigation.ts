@@ -111,7 +111,7 @@ const PAGE_META: Record<string, PageMetaConfig> = {
   },
   "/elections": { title: "Elections", description: "Election schedules and settings" },
   "/terms": { title: "Terms", description: "School terms" },
-  "/programs": { title: "Programs & Careers", description: "Academic programs and career tracks" },
+  "/programs": { title: "Programs & careers" },
   "/students": { title: "Students" },
   "/elections/csc/metrics": { title: "Election Metrics", description: "CSC Elections" },
   "/elections/csc/party-lists": { title: "Party Lists", description: "CSC Elections" },
