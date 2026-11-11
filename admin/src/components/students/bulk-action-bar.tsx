@@ -2,18 +2,17 @@
 
 import { useState } from "react";
 
-import { CURRENT_TERM, YEAR_LEVELS } from "@/lib/mock/students.mock";
 import { formatYear } from "@/lib/students";
 import { cn } from "@/lib/utils";
 import type { YearLevel } from "@/types/student.types";
 
 import { OptionMenu } from "./option-menu";
-
-const YEAR_OPTIONS = YEAR_LEVELS.map((y) => ({ value: y, label: formatYear(y) }));
+import { useStudentCatalog } from "./student-catalog";
 
 const actionClassName = cn(
   "inline-flex h-7.5 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-[0.8125rem] font-medium whitespace-nowrap text-white outline-none",
   "transition-colors duration-150 hover:bg-white/10 focus-visible:bg-white/12 focus-visible:ring-2 focus-visible:ring-white/30 data-popup-open:bg-white/12",
+  "disabled:cursor-wait disabled:opacity-50",
 );
 
 function Divider() {
@@ -26,6 +25,8 @@ interface BulkActionBarProps {
   onSetYear: (year: YearLevel) => void;
   onUpsert: () => void;
   onDiscard: () => void;
+  /** A bulk change is being saved: the actions are disabled until it finishes. */
+  busy?: boolean;
 }
 
 /**
@@ -33,7 +34,9 @@ interface BulkActionBarProps {
  * can slide in and out; hidden from assistive tech and focus while closed.
  * Centred under the table column (from 85rem the form column takes 22.5rem + 1.5rem gap).
  */
-export function BulkActionBar({ count, onSetTerm, onSetYear, onUpsert, onDiscard }: BulkActionBarProps) {
+export function BulkActionBar({ count, onSetTerm, onSetYear, onUpsert, onDiscard, busy = false }: BulkActionBarProps) {
+  const { currentTerm, yearLevels } = useStudentCatalog();
+  const yearOptions = yearLevels.map((y) => ({ value: y, label: formatYear(y) }));
   const open = count > 0;
 
   // Keep showing the last count while the bar slides out.
@@ -59,23 +62,29 @@ export function BulkActionBar({ count, onSetTerm, onSetYear, onUpsert, onDiscard
         Selected: <span className="text-white/80 tabular-nums">{shownCount}</span>
       </p>
       <Divider />
-      <button type="button" onClick={onSetTerm} className={actionClassName}>
-        Set term → {CURRENT_TERM}
+      <button type="button" onClick={onSetTerm} disabled={busy || !currentTerm} className={actionClassName}>
+        Set term → {currentTerm?.id ?? "—"}
       </button>
       <span className="w-1 shrink-0" />
       <OptionMenu<YearLevel>
         label="Set year for selected students"
         value={null}
-        options={YEAR_OPTIONS}
-        onChange={(year) => year && onSetYear(year)}
+        options={yearOptions}
+        onChange={(year) => year !== null && !busy && onSetYear(year)}
         side="top"
         align="center"
-        triggerClassName={actionClassName}
+        triggerClassName={cn(actionClassName, busy && "pointer-events-none opacity-50")}
       >
         Set year <span aria-hidden className="text-[0.5rem] text-white/70">▼</span>
       </OptionMenu>
       <Divider />
-      <button type="button" onClick={onUpsert} className={actionClassName}>
+      <button
+        type="button"
+        onClick={onUpsert}
+        disabled={busy || !currentTerm}
+        title={currentTerm ? `Active in ${currentTerm.id}` : undefined}
+        className={actionClassName}
+      >
         Upsert enrollment
       </button>
       <button

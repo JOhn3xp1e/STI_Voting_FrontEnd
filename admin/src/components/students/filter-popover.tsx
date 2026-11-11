@@ -5,24 +5,23 @@ import { Popover } from "@base-ui/react/popover";
 import { Check, Funnel } from "lucide-react";
 
 import { popupClassName } from "@/components/dashboard/popup-styles";
-import { CURRENT_TERM, PROGRAMS, TERMS, YEAR_LEVELS } from "@/lib/mock/students.mock";
 import { NO_FACETS, countFacets, formatYear } from "@/lib/students";
 import { cn } from "@/lib/utils";
 import type { FacetFilters, StudentStatus, YearLevel } from "@/types/student.types";
 
 import { AnimatedNumber } from "./animated-number";
+import { useStudentCatalog } from "./student-catalog";
 import styles from "./students.module.css";
 import { primaryButtonClassName, toolbarButtonClassName } from "./student-toolbar-styles";
 
 /** Programs shown before the "+N" chip. */
 const VISIBLE_PROGRAMS = 5;
-const SHOWN_PROGRAMS = PROGRAMS.slice(0, VISIBLE_PROGRAMS);
-const MORE_PROGRAMS = PROGRAMS.slice(VISIBLE_PROGRAMS);
 
 const STATUS_OPTIONS: { value: StudentStatus; label: string }[] = [
   { value: "enrolled", label: "Enrolled" },
   { value: "not-updated", label: "Not updated" },
   { value: "loa", label: "LOA" },
+  { value: "inactive", label: "Inactive" },
 ];
 
 function toggle<T>(list: readonly T[], value: T): T[] {
@@ -105,6 +104,10 @@ interface FilterPopoverProps {
  * applied with "Apply"; closing the panel any other way discards the draft.
  */
 export function FilterPopover({ value, onApply, countMatches }: FilterPopoverProps) {
+  const { programs, terms, currentTerm, yearLevels } = useStudentCatalog();
+  const shownPrograms = programs.slice(0, VISIBLE_PROGRAMS);
+  const morePrograms = programs.slice(VISIBLE_PROGRAMS);
+
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<FacetFilters>(value);
   const [showAllPrograms, setShowAllPrograms] = useState(false);
@@ -117,7 +120,7 @@ export function FilterPopover({ value, onApply, countMatches }: FilterPopoverPro
     if (next) {
       setDraft(value);
       // Unfold the long program list when one of its programs is already selected.
-      setShowAllPrograms(value.programs.some((p) => MORE_PROGRAMS.includes(p)));
+      setShowAllPrograms(value.programs.some((p) => morePrograms.includes(p)));
     }
     setOpen(next);
   }
@@ -197,19 +200,22 @@ export function FilterPopover({ value, onApply, countMatches }: FilterPopoverPro
 
             <div className="flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto overscroll-contain px-4 pt-3.5 pb-4 scrollbar-thin">
               <FacetGroup label="Program" selectedCount={draft.programs.length}>
-                {SHOWN_PROGRAMS.map((program) => (
+                {shownPrograms.map((program) => (
                   <Chip key={program} selected={draft.programs.includes(program)} onClick={() => patch("programs", program)}>
                     {program}
                   </Chip>
                 ))}
-                <Chip
-                  selected={false}
-                  onClick={() => setShowAllPrograms((v) => !v)}
-                  className="text-muted-foreground"
-                >
-                  <span aria-hidden>{showAllPrograms ? "Less" : `+${MORE_PROGRAMS.length}`}</span>
-                  <span className="sr-only">{showAllPrograms ? "Show fewer programs" : `Show ${MORE_PROGRAMS.length} more programs`}</span>
-                </Chip>
+                {morePrograms.length > 0 ? (
+                  <Chip
+                    selected={false}
+                    onClick={() => setShowAllPrograms((v) => !v)}
+                    className="text-muted-foreground"
+                  >
+                    <span aria-hidden>{showAllPrograms ? "Less" : `+${morePrograms.length}`}</span>
+                    <span className="sr-only">{showAllPrograms ? "Show fewer programs" : `Show ${morePrograms.length} more programs`}</span>
+                  </Chip>
+                ) : null}
+                {programs.length === 0 ? <p className="text-[0.8125rem] text-muted-foreground">No programs yet.</p> : null}
                 {/* The rest of the programs unfold below (height animates via grid rows). */}
                 <div
                   inert={!showAllPrograms}
@@ -220,7 +226,7 @@ export function FilterPopover({ value, onApply, countMatches }: FilterPopoverPro
                 >
                   <div className="overflow-hidden">
                     <div className="flex flex-wrap gap-2">
-                      {MORE_PROGRAMS.map((program, i) => (
+                      {morePrograms.map((program, i) => (
                         <Chip
                           key={program}
                           selected={draft.programs.includes(program)}
@@ -237,7 +243,7 @@ export function FilterPopover({ value, onApply, countMatches }: FilterPopoverPro
               </FacetGroup>
 
               <FacetGroup label="Year" selectedCount={draft.years.length}>
-                {YEAR_LEVELS.map((year: YearLevel) => (
+                {yearLevels.map((year: YearLevel) => (
                   <Chip key={year} selected={draft.years.includes(year)} onClick={() => patch("years", year)}>
                     {formatYear(year)}
                   </Chip>
@@ -245,12 +251,13 @@ export function FilterPopover({ value, onApply, countMatches }: FilterPopoverPro
               </FacetGroup>
 
               <FacetGroup label="Term" selectedCount={draft.terms.length}>
-                {TERMS.map((term) => (
+                {terms.map(({ id: term }) => (
                   <Chip key={term} selected={draft.terms.includes(term)} onClick={() => patch("terms", term)}>
                     {term}
-                    {term === CURRENT_TERM ? <span className="whitespace-pre opacity-80"> · current</span> : null}
+                    {term === currentTerm?.id ? <span className="whitespace-pre opacity-80"> · current</span> : null}
                   </Chip>
                 ))}
+                {terms.length === 0 ? <p className="text-[0.8125rem] text-muted-foreground">No terms yet.</p> : null}
               </FacetGroup>
 
               <FacetGroup label="Status" selectedCount={draft.statuses.length}>

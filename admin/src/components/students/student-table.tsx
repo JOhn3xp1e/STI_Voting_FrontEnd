@@ -3,11 +3,11 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Checkbox } from "@/components/ui/checkbox";
-import { CURRENT_TERM } from "@/lib/mock/students.mock";
 import { formatStudentName, formatYear, getStudentInitials, getStudentStatus } from "@/lib/students";
 import { cn } from "@/lib/utils";
 import type { Student, StudentStatus } from "@/types/student.types";
 
+import { useStudentCatalog } from "./student-catalog";
 import styles from "./students.module.css";
 
 /** Rows rendered per batch; more are added as the table scrolls. */
@@ -19,6 +19,7 @@ const STATUS_BADGE: Record<StudentStatus, { label: string; className: string }> 
   enrolled: { label: "Enrolled", className: "bg-[#22c55e] dark:bg-[#1fa855]" },
   "not-updated": { label: "Not updated", className: "bg-[#8d939c] dark:bg-[#5f6672]" },
   loa: { label: "LOA", className: "bg-[#f25f5c] dark:bg-[#d9524f]" },
+  inactive: { label: "Inactive", className: "bg-[#4b5563] dark:bg-[#3f4652]" },
 };
 
 export const checkboxClassName =
@@ -54,10 +55,11 @@ interface RowProps {
   highlighted: boolean;
   /** Position in the entrance stagger, or -1 for no entrance. */
   introIndex: number;
+  currentTermId: string | null;
   onToggle: (studentNo: string, checked: boolean) => void;
 }
 
-const StudentRow = memo(function StudentRow({ student, checked, highlighted, introIndex, onToggle }: RowProps) {
+const StudentRow = memo(function StudentRow({ student, checked, highlighted, introIndex, currentTermId, onToggle }: RowProps) {
   const name = formatStudentName(student);
   return (
     <tr
@@ -92,18 +94,18 @@ const StudentRow = memo(function StudentRow({ student, checked, highlighted, int
         </div>
       </td>
       <td className="border-b border-border font-mono text-[0.75rem] text-muted-foreground tabular-nums">{student.studentNo}</td>
-      <td className="border-b border-border text-[0.8125rem] text-muted-foreground">{student.program}</td>
+      <td className="border-b border-border text-[0.8125rem] text-muted-foreground">{student.program ?? "—"}</td>
       <td className="border-b border-border font-mono text-[0.75rem] text-muted-foreground">{formatYear(student.year)}</td>
       <td
         className={cn(
           "border-b border-border font-mono text-[0.75rem] transition-colors duration-300",
-          student.term === CURRENT_TERM ? "text-foreground" : "text-muted-foreground/60",
+          student.term !== null && student.term === currentTermId ? "text-foreground" : "text-muted-foreground/60",
         )}
       >
-        {student.term}
+        {student.term ?? "—"}
       </td>
       <td className="border-b border-border">
-        <StatusBadge status={getStudentStatus(student)} />
+        <StatusBadge status={getStudentStatus(student, currentTermId)} />
       </td>
     </tr>
   );
@@ -126,6 +128,7 @@ interface StudentTableProps {
  * renders rows in batches as you scroll, so the full roster stays smooth.
  */
 export function StudentTable({ students, selected, onToggle, onToggleAll, highlighted, resultKey, emptyAction }: StudentTableProps) {
+  const currentTermId = useStudentCatalog().currentTerm?.id ?? null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLTableRowElement>(null);
 
@@ -224,6 +227,7 @@ export function StudentTable({ students, selected, onToggle, onToggleAll, highli
                 checked={selected.has(student.studentNo)}
                 highlighted={highlighted.has(student.studentNo)}
                 introIndex={intro && index < INTRO_ROWS ? index : -1}
+                currentTermId={currentTermId}
                 onToggle={onToggle}
               />
             ))

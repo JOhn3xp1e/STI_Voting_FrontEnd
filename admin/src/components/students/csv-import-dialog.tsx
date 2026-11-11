@@ -4,10 +4,11 @@ import { useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { Download, FileSpreadsheet, Upload, X } from "lucide-react";
 
-import { CSV_COLUMNS, SAMPLE_CSV, previewCsvImport, type ImportRowResult } from "@/lib/students";
+import { CSV_COLUMNS, buildSampleCsv, previewCsvImport, type ImportRowResult } from "@/lib/students";
 import { cn } from "@/lib/utils";
 import type { Student } from "@/types/student.types";
 
+import { useStudentCatalog } from "./student-catalog";
 import { toolbarButtonClassName } from "./student-toolbar-styles";
 
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -22,8 +23,8 @@ interface CsvImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   students: readonly Student[];
-  /** Applies the valid rows to the page's local list (no upload). */
-  onApply: (rows: Student[], summary: { added: number; updated: number }) => void;
+  /** Saves the valid rows through the Web API: new rows are created, existing ones get their enrollment updated. */
+  onApply: (rows: { added: Student[]; updated: Student[] }) => Promise<void>;
 }
 
 const ACTION_BADGE = {
@@ -32,11 +33,14 @@ const ACTION_BADGE = {
   error: "bg-destructive/10 text-destructive",
 } as const;
 
-/** Frontend-only CSV upsert: pick or drop a file, preview matches by student no., apply locally. */
+/** CSV upsert: pick or drop a file, preview matches by student no., then save through the Web API. */
 export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvImportDialogProps) {
+  const catalog = useStudentCatalog();
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   async function readFile(file: File) {
     if (!/\.csv$/i.test(file.name) && file.type !== "text/csv") {
@@ -47,12 +51,13 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
       setPreview({ fileName: file.name, results: [], error: "This file is larger than 2 MB." });
       return;
     }
-    const { results, error } = previewCsvImport(await file.text(), students);
+    const { results, error } = previewCsvImport(await file.text(), students, catalog);
     setPreview({ fileName: file.name, results, error });
+    setSaveError(null);
   }
 
   function downloadSample() {
-    const url = URL.createObjectURL(new Blob([SAMPLE_CSV], { type: "text/csv" }));
+    const url = URL.createObjectURL(new Blob([buildSampleCsv(catalog)], { type: "text/csv" }));
     const link = Object.assign(document.createElement("a"), { href: url, download: "students-sample.csv" });
     link.click();
     URL.revokeObjectURL(url);
@@ -63,22 +68,34 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
   const updated = valid.length - added;
   const errors = (preview?.results.length ?? 0) - valid.length;
 
-  function apply() {
-    onApply(
-      valid.map((r) => r.student),
-      { added, updated },
-    );
-    onOpenChange(false);
+  async function apply() {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onApply({
+        added: valid.filter((r) => r.action === "new").map((r) => r.student),
+        updated: valid.filter((r) => r.action === "update").map((r) => r.student),
+      });
+      onOpenChange(false);
+      setPreview(null);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "The import failed. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <Dialog.Root
       open={open}
       onOpenChange={(next) => {
+        if (!next && saving) return; // keep the dialog open until the import finishes
         onOpenChange(next);
         if (!next) {
           setPreview(null);
           setDragging(false);
+          setSaveError(null);
         }
       }}
     >
@@ -99,8 +116,8 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
             <div>
               <Dialog.Title className="text-[0.9375rem] font-semibold text-foreground">Import CSV (upsert)</Dialog.Title>
               <Dialog.Description className="mt-1 text-[0.8125rem] leading-5 text-muted-foreground">
-                Rows are matched by student no. Existing students get their term &amp; year updated; new ones are added.
-                Preview only: nothing is uploaded or saved.
+                Rows are matched by student no. Existing students get their term &amp; year updated; new ones are added
+                and enrolled. Nothing is saved until you confirm.
               </Dialog.Description>
             </div>
             <Dialog.Close
@@ -211,6 +228,12 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
                 )}
               </div>
             ) : null}
+
+            {saveError ? (
+              <p role="alert" className="mt-3 rounded-md bg-destructive/8 px-3 py-2 text-[0.8125rem] text-destructive">
+                {saveError}
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-border px-5 py-3.5">
@@ -222,11 +245,11 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
               <Dialog.Close className={cn(toolbarButtonClassName, "h-8 text-[0.8125rem]")}>Cancel</Dialog.Close>
               <button
                 type="button"
-                disabled={valid.length === 0}
-                onClick={apply}
+                disabled={valid.length === 0 || saving}
+                onClick={() => void apply()}
                 className="h-8 cursor-pointer rounded-md bg-primary px-3.5 text-[0.8125rem] font-semibold text-primary-foreground transition-[background-color,opacity] duration-200 hover:bg-[color-mix(in_oklab,var(--color-brand-navy)_86%,var(--color-brand-blue))] disabled:cursor-not-allowed disabled:opacity-45 dark:hover:bg-white/90"
               >
-                Apply {valid.length ? `${valid.length} row${valid.length > 1 ? "s" : ""}` : ""} to preview
+                {saving ? "Importing…" : `Import ${valid.length ? `${valid.length} row${valid.length > 1 ? "s" : ""}` : ""}`.trim()}
               </button>
             </div>
           </div>

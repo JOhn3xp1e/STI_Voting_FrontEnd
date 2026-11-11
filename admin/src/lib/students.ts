@@ -1,13 +1,21 @@
-import { CURRENT_TERM, PROGRAMS, buildStudentEmail } from "@/lib/mock/students.mock";
-import type { FacetFilters, ProgramCode, Student, StudentStatus, YearLevel } from "@/types/student.types";
+import type { FacetFilters, Student, StudentCatalog, StudentStatus, YearLevel } from "@/types/student.types";
 
-export function getStudentStatus(student: Student): StudentStatus {
-  if (student.inactive) return "loa";
-  return student.term === CURRENT_TERM ? "enrolled" : "not-updated";
+/**
+ * - `loa` / `inactive`: the enrollment says so (not eligible to vote).
+ * - `enrolled`: active and enrolled in the current term.
+ * - `not-updated`: no enrollment yet, or still on an older term.
+ */
+export function getStudentStatus(student: Student, currentTermId: string | null): StudentStatus {
+  if (student.enrollmentStatus === "Loa") return "loa";
+  if (student.enrollmentStatus === "Inactive" || student.enrollmentStatus === "Graduated") return "inactive";
+  return student.term !== null && student.term === currentTermId ? "enrolled" : "not-updated";
 }
 
-export function formatYear(year: YearLevel): string {
-  return ["1st", "2nd", "3rd", "4th"][year - 1];
+/** `1` → "1st" … `4` → "4th"; senior high grades → "G11". */
+export function formatYear(year: YearLevel | null): string {
+  if (year === null) return "—";
+  if (year >= 1 && year <= 4) return ["1st", "2nd", "3rd", "4th"][year - 1];
+  return `G${year}`;
 }
 
 export function formatStudentName(student: Pick<Student, "lastName" | "firstName">): string {
@@ -19,6 +27,18 @@ export function getStudentInitials(student: Pick<Student, "lastName" | "firstNam
   return `${student.lastName.trim()[0] ?? ""}${student.firstName.trim()[0] ?? ""}`.toUpperCase();
 }
 
+export const EMAIL_DOMAIN = "legazpi.sti.edu.ph";
+
+/** `acosta.799331@legazpi.sti.edu.ph`: last name (letters only) + last 6 digits of the student no. */
+export function buildStudentEmail(lastName: string, studentNo: string): string {
+  const name = lastName
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
+  return `${name}.${studentNo.slice(-6)}@${EMAIL_DOMAIN}`;
+}
+
 export const NO_FACETS: FacetFilters = { programs: [], years: [], terms: [], statuses: [] };
 
 /** Number of selected filter values (the badge on the Filters button). */
@@ -26,9 +46,9 @@ export function countFacets(f: FacetFilters): number {
   return f.programs.length + f.years.length + f.terms.length + f.statuses.length;
 }
 
-export function countByStatus(students: readonly Student[]): Record<StudentStatus, number> {
-  const counts: Record<StudentStatus, number> = { enrolled: 0, "not-updated": 0, loa: 0 };
-  for (const s of students) counts[getStudentStatus(s)]++;
+export function countByStatus(students: readonly Student[], currentTermId: string | null): Record<StudentStatus, number> {
+  const counts: Record<StudentStatus, number> = { enrolled: 0, "not-updated": 0, loa: 0, inactive: 0 };
+  for (const s of students) counts[getStudentStatus(s, currentTermId)]++;
   return counts;
 }
 
@@ -36,11 +56,11 @@ export function countByStatus(students: readonly Student[]): Record<StudentStatu
  * Within a group the values are OR-ed (BSIT or BSCS), groups are AND-ed
  * (BSIT and TRM-00004). The search matches student no. or name.
  */
-export function matchesFilters(student: Student, query: string, f: FacetFilters): boolean {
-  if (f.programs.length && !f.programs.includes(student.program)) return false;
-  if (f.years.length && !f.years.includes(student.year)) return false;
-  if (f.terms.length && !f.terms.includes(student.term)) return false;
-  if (f.statuses.length && !f.statuses.includes(getStudentStatus(student))) return false;
+export function matchesFilters(student: Student, query: string, f: FacetFilters, currentTermId: string | null): boolean {
+  if (f.programs.length && (student.program === null || !f.programs.includes(student.program))) return false;
+  if (f.years.length && (student.year === null || !f.years.includes(student.year))) return false;
+  if (f.terms.length && (student.term === null || !f.terms.includes(student.term))) return false;
+  if (f.statuses.length && !f.statuses.includes(getStudentStatus(student, currentTermId))) return false;
 
   const needle = query.trim().toLowerCase().replace(/\s+/g, " ");
   if (!needle) return true;
@@ -58,18 +78,24 @@ export function matchesFilters(student: Student, query: string, f: FacetFilters)
 export const STUDENT_NO_PATTERN = /^\d{11}$/;
 
 /* -------------------------------------------------------------------------- */
-/*                         CSV import (frontend preview)                       */
+/*                                 CSV import                                 */
 /* -------------------------------------------------------------------------- */
 
-export const CSV_COLUMNS = ["student_no", "last_name", "first_name", "middle_name", "program", "year", "term"] as const;
+export const CSV_COLUMNS = ["student_no", "last_name", "first_name", "middle_name", "career", "program", "year", "term"] as const;
 
-export const SAMPLE_CSV = [
-  CSV_COLUMNS.join(","),
-  "02000301884,Alfane,Jan Clarence,,BSIT,2,TRM-00004",
-  "02000645840,Cruz,Aeron Aries,,BSIT,4,TRM-00004",
-  "02000771020,Navarro,Lance Adrian,Reyes,BSCS,1,TRM-00004",
-  '02000771021,"De Leon",Mikaela,,STEM,1,TRM-00004',
-].join("\n");
+/** Sample file using the first career and the current term from the catalog. */
+export function buildSampleCsv(catalog: StudentCatalog): string {
+  const career = catalog.careers[0]?.code ?? "TER";
+  const program = catalog.programs.includes("BSIT") ? "BSIT" : (catalog.programs[0] ?? "BSIT");
+  const term = catalog.currentTerm?.id ?? "TRM-00001";
+  return [
+    CSV_COLUMNS.join(","),
+    `02000301884,Alfane,Jan Clarence,,${career},${program},2,${term}`,
+    `02000645840,Cruz,Aeron Aries,,${career},${program},4,${term}`,
+    `02000771020,Navarro,Lance Adrian,Reyes,${career},${program},1,${term}`,
+    `02000771021,"De Leon",Mikaela,,${career},${program},1,${term}`,
+  ].join("\n");
+}
 
 /** Minimal RFC 4180 parser: quoted fields, escaped quotes, CRLF. */
 export function parseCsv(text: string): string[][] {
@@ -115,16 +141,16 @@ export type ImportRowResult =
   | { line: number; action: "new" | "update"; student: Student }
   | { line: number; action: "error"; studentNo: string; reason: string };
 
-function parseYear(value: string): YearLevel | null {
-  const n = Number.parseInt(value, 10);
-  return n >= 1 && n <= 4 ? (n as YearLevel) : null;
-}
-
 /**
  * Turns CSV text into upsert results against `existing`: rows whose student no.
- * exists become updates (term & year), the rest are new students.
+ * exists become enrollment updates (term & year), the rest are new students.
+ * Values are checked against the terms, programs and careers in `catalog`.
  */
-export function previewCsvImport(text: string, existing: readonly Student[]): { results: ImportRowResult[]; error?: string } {
+export function previewCsvImport(
+  text: string,
+  existing: readonly Student[],
+  catalog: StudentCatalog,
+): { results: ImportRowResult[]; error?: string } {
   const rows = parseCsv(text.replace(/^﻿/, ""));
   if (rows.length === 0) return { results: [], error: "The file is empty." };
 
@@ -134,6 +160,9 @@ export function previewCsvImport(text: string, existing: readonly Student[]): { 
   if (missing.length) return { results: [], error: `Missing column${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}.` };
 
   const byNo = new Map(existing.map((s) => [s.studentNo, s]));
+  const termIds = new Set(catalog.terms.map((t) => t.id));
+  const careerCodes = catalog.careers.map((c) => c.code);
+  const onlyCareer = careerCodes.length === 1 ? careerCodes[0] : null;
   const seen = new Set<string>();
   const cell = (row: string[], column: (typeof CSV_COLUMNS)[number]) => (index[column] >= 0 ? (row[index[column]] ?? "").trim() : "");
 
@@ -151,21 +180,46 @@ export function previewCsvImport(text: string, existing: readonly Student[]): { 
     if (!lastName || !firstName) return fail("Missing name");
 
     const programRaw = cell(row, "program").toUpperCase();
-    const program: ProgramCode | null = PROGRAMS.find((p) => p.toUpperCase() === programRaw) ?? null;
+    const program = catalog.programs.find((p) => p.toUpperCase() === programRaw) ?? null;
     if (programRaw && !program) return fail(`Unknown program "${programRaw}"`);
 
-    const yearRaw = cell(row, "year");
-    const year = yearRaw ? parseYear(yearRaw) : null;
-    if (yearRaw && !year) return fail("Year must be 1–4");
+    const careerRaw = cell(row, "career").toUpperCase();
+    const career = careerCodes.find((c) => c.toUpperCase() === careerRaw) ?? null;
+    if (careerRaw && !career) return fail(`Unknown career "${careerRaw}"`);
 
-    const term = cell(row, "term").toUpperCase() || CURRENT_TERM;
-    if (!/^TRM-\d{5}$/.test(term)) return fail("Term must look like TRM-00004");
+    const yearRaw = cell(row, "year");
+    const year = yearRaw ? Number.parseInt(yearRaw, 10) : null;
+    if (yearRaw && (year === null || !catalog.yearLevels.includes(year))) {
+      return fail(`Year must be one of ${catalog.yearLevels.join(", ")}`);
+    }
+
+    const term = cell(row, "term").toUpperCase() || catalog.currentTerm?.id || "";
+    if (!term) return fail("Missing term (no term exists yet)");
+    if (!termIds.has(term)) return fail(`Unknown term "${term}"`);
 
     const current = byNo.get(studentNo);
     if (current) {
-      return { line, action: "update", student: { ...current, term, year: year ?? current.year } };
+      if (!current.careerCode || !current.program || current.year === null) {
+        return fail("Existing student has no enrollment to update");
+      }
+      return {
+        line,
+        action: "update",
+        student: {
+          ...current,
+          careerCode: career ?? current.careerCode,
+          program: program ?? current.program,
+          year: year ?? current.year,
+          term,
+        },
+      };
     }
-    const middleName = cell(row, "middle_name") || undefined;
+
+    const careerCode = career ?? onlyCareer;
+    if (!careerCode) return fail("Missing career");
+    if (!program) return fail("Missing program");
+    if (year === null) return fail("Missing year");
+
     return {
       line,
       action: "new",
@@ -173,12 +227,13 @@ export function previewCsvImport(text: string, existing: readonly Student[]): { 
         studentNo,
         lastName,
         firstName,
-        middleName,
+        middleName: cell(row, "middle_name") || undefined,
         email: buildStudentEmail(lastName, studentNo),
-        program: program ?? "BSIT",
-        year: year ?? 1,
+        careerCode,
+        program,
+        year,
         term,
-        inactive: false,
+        enrollmentStatus: "Active",
       },
     };
   });

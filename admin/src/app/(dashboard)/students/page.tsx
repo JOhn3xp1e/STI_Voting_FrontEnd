@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "Students",
 };
 
-/** Students management (frontend mock with fictional sample data; no backend yet). */
+/** Students management, backed by the ASP.NET Core Web API (`/api/admin/students`). */
 export default function Page() {
   return <StudentsPage />;
 }

@@ -2,34 +2,38 @@
 
 import { useState, type FormEvent, type ReactNode, type Ref } from "react";
 
-import { CURRENT_TERM, PROGRAMS, TERMS, TERM_LABELS, YEAR_LEVELS, buildStudentEmail } from "@/lib/mock/students.mock";
-import { STUDENT_NO_PATTERN, formatYear } from "@/lib/students";
+import { STUDENT_NO_PATTERN, buildStudentEmail, formatYear } from "@/lib/students";
 import { cn } from "@/lib/utils";
 import type { ProgramCode, Student, YearLevel } from "@/types/student.types";
 
 import { Caret, OptionMenu } from "./option-menu";
+import { useStudentCatalog } from "./student-catalog";
 import styles from "./students.module.css";
 
 /** Example values shown as placeholders (the reference's sample student). */
 const EXAMPLE = { studentNo: "02000799331", lastName: "Acosta", firstName: "Angelina Kate", middleName: "Millena" };
-/** Defaults used when a dropdown is left untouched (shown as its placeholder). */
-const DEFAULTS = { program: "BSIT" as ProgramCode, year: 1 as YearLevel, term: CURRENT_TERM };
-
-const PROGRAM_OPTIONS = PROGRAMS.map((p) => ({ value: p, label: p }));
-const YEAR_OPTIONS = YEAR_LEVELS.map((y) => ({ value: y, label: formatYear(y) }));
-const TERM_OPTIONS = TERMS.map((t) => ({ value: t, label: t, hint: TERM_LABELS[t] }));
 
 interface FormValues {
   studentNo: string;
   lastName: string;
   firstName: string;
   middleName: string;
+  career: string | null;
   program: ProgramCode | null;
   year: YearLevel | null;
   term: string | null;
 }
 
-const EMPTY: FormValues = { studentNo: "", lastName: "", firstName: "", middleName: "", program: null, year: null, term: null };
+const EMPTY: FormValues = {
+  studentNo: "",
+  lastName: "",
+  firstName: "",
+  middleName: "",
+  career: null,
+  program: null,
+  year: null,
+  term: null,
+};
 
 type Errors = Partial<Record<"studentNo" | "lastName" | "firstName", string>>;
 
@@ -63,16 +67,40 @@ function Field({ id, label, error, children, className }: { id: string; label: s
 
 interface AddStudentFormProps {
   existingStudentNos: ReadonlySet<string>;
-  onAdd: (student: Student) => void;
+  /** Saves the student; rejects with a user-facing message when the API refuses it. */
+  onAdd: (student: Student) => Promise<void>;
   /** First field, focused by the toolbar's "+ Add student". */
   firstFieldRef?: Ref<HTMLInputElement>;
   className?: string;
 }
 
-/** "Add student" card: validates locally and adds the student to the page's local list only. */
+/** "Add student" card: validates locally, then creates the student and their enrollment through the Web API. */
 export function AddStudentForm({ existingStudentNos, onAdd, firstFieldRef, className }: AddStudentFormProps) {
+  const { careers, programs, terms, currentTerm, yearLevels } = useStudentCatalog();
+
   const [values, setValues] = useState<FormValues>(EMPTY);
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  // Defaults used when a dropdown is left untouched (shown as its placeholder).
+  const defaults = {
+    career: careers[0]?.code ?? null,
+    program: programs.includes("BSIT") ? "BSIT" : (programs[0] ?? null),
+    year: yearLevels[0] ?? null,
+    term: currentTerm?.id ?? null,
+  };
+  const career = values.career ?? defaults.career;
+  const program = values.program ?? defaults.program;
+  const year = values.year ?? defaults.year;
+  const term = values.term ?? defaults.term;
+
+  const missingSetup = [!careers.length && "careers", !programs.length && "programs", !terms.length && "terms"].filter(Boolean);
+
+  const careerOptions = careers.map((c) => ({ value: c.code, label: c.code, hint: c.name }));
+  const programOptions = programs.map((p) => ({ value: p, label: p }));
+  const yearOptions = yearLevels.map((y) => ({ value: y, label: formatYear(y) }));
+  const termOptions = terms.map((t) => ({ value: t.id, label: t.id, hint: t.label }));
 
   const studentNo = values.studentNo.trim();
   const lastName = values.lastName.trim();
@@ -84,7 +112,9 @@ export function AddStudentForm({ existingStudentNos, onAdd, firstFieldRef, class
     else if (!STUDENT_NO_PATTERN.test(studentNo)) errors.studentNo = "Student No. must be 11 digits.";
     else if (existingStudentNos.has(studentNo)) errors.studentNo = "This student is already on the roster.";
     if (!lastName) errors.lastName = "Required.";
+    else if (lastName.length < 2) errors.lastName = "At least 2 letters.";
     if (!firstName) errors.firstName = "Required.";
+    else if (firstName.length < 2) errors.firstName = "At least 2 letters.";
   }
 
   // Email preview follows what's typed; falls back to the example while incomplete.
@@ -93,34 +123,52 @@ export function AddStudentForm({ existingStudentNos, onAdd, firstFieldRef, class
 
   function set<K extends keyof FormValues>(key: K, value: FormValues[K]) {
     setValues((v) => ({ ...v, [key]: value }));
+    setServerError(null);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saving) return;
     setSubmitted(true);
+    setServerError(null);
 
+    const form = event.currentTarget;
     const valid =
-      STUDENT_NO_PATTERN.test(studentNo) && !existingStudentNos.has(studentNo) && lastName.length > 0 && firstName.length > 0;
+      STUDENT_NO_PATTERN.test(studentNo) &&
+      !existingStudentNos.has(studentNo) &&
+      lastName.length >= 2 &&
+      firstName.length >= 2;
     if (!valid) {
-      const form = event.currentTarget;
       requestAnimationFrame(() => form.querySelector<HTMLElement>("[aria-invalid=true]")?.focus());
       return;
     }
+    if (!career || !program || year === null || !term) {
+      setServerError(`Add ${missingSetup.join(", ") || "the missing options"} first, then try again.`);
+      return;
+    }
 
-    onAdd({
-      studentNo,
-      lastName,
-      firstName,
-      middleName: values.middleName.trim() || undefined,
-      email: buildStudentEmail(lastName, studentNo),
-      program: values.program ?? DEFAULTS.program,
-      year: values.year ?? DEFAULTS.year,
-      term: values.term ?? DEFAULTS.term,
-      inactive: false,
-    });
-    setValues(EMPTY);
-    setSubmitted(false);
-    event.currentTarget.querySelector<HTMLInputElement>("#add-studentNo")?.focus();
+    setSaving(true);
+    try {
+      await onAdd({
+        studentNo,
+        lastName,
+        firstName,
+        middleName: values.middleName.trim() || undefined,
+        email: buildStudentEmail(lastName, studentNo),
+        careerCode: career,
+        program,
+        year,
+        term,
+        enrollmentStatus: "Active",
+      });
+      setValues(EMPTY);
+      setSubmitted(false);
+      form.querySelector<HTMLInputElement>("#add-studentNo")?.focus();
+    } catch (error) {
+      setServerError(error instanceof Error ? error.message : "Couldn't add the student. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   const describedBy = (key: keyof Errors) => (errors[key] ? `add-${key}-error` : undefined);
@@ -140,7 +188,7 @@ export function AddStudentForm({ existingStudentNos, onAdd, firstFieldRef, class
         Add student
       </h2>
 
-      <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-2.75 px-5 pt-4 pb-5">
+      <form noValidate onSubmit={handleSubmit} aria-busy={saving} className="flex flex-col gap-2.75 px-5 pt-4 pb-5">
         <Field id="add-studentNo" label="Student No." error={errors.studentNo}>
           <input
             ref={firstFieldRef}
@@ -210,17 +258,31 @@ export function AddStudentForm({ existingStudentNos, onAdd, firstFieldRef, class
           </p>
         </div>
 
-        <div className="grid grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-2 gap-2.5">
+          <div>
+            <p className="mb-1 text-[0.75rem] leading-4 font-semibold text-foreground">Career</p>
+            <OptionMenu<string>
+              label="Career"
+              value={values.career}
+              options={careerOptions}
+              onChange={(v) => set("career", v)}
+              triggerClassName={selectClassName}
+            >
+              <span className={cn("min-w-0 truncate", !values.career && "text-muted-foreground")}>{career ?? "—"}</span>
+              <Caret />
+            </OptionMenu>
+          </div>
           <div>
             <p className="mb-1 text-[0.75rem] leading-4 font-semibold text-foreground">Program</p>
             <OptionMenu<ProgramCode>
               label="Program"
               value={values.program}
-              options={PROGRAM_OPTIONS}
+              options={programOptions}
               onChange={(v) => set("program", v)}
+              align="end"
               triggerClassName={selectClassName}
             >
-              <span className={cn("min-w-0 truncate", !values.program && "text-muted-foreground")}>{values.program ?? DEFAULTS.program}</span>
+              <span className={cn("min-w-0 truncate", !values.program && "text-muted-foreground")}>{program ?? "—"}</span>
               <Caret />
             </OptionMenu>
           </div>
@@ -229,13 +291,11 @@ export function AddStudentForm({ existingStudentNos, onAdd, firstFieldRef, class
             <OptionMenu<YearLevel>
               label="Year"
               value={values.year}
-              options={YEAR_OPTIONS}
+              options={yearOptions}
               onChange={(v) => set("year", v)}
               triggerClassName={selectClassName}
             >
-              <span className={cn("min-w-0 truncate", !values.year && "text-muted-foreground")}>
-                {formatYear(values.year ?? DEFAULTS.year)}
-              </span>
+              <span className={cn("min-w-0 truncate", values.year === null && "text-muted-foreground")}>{formatYear(year)}</span>
               <Caret />
             </OptionMenu>
           </div>
@@ -244,27 +304,41 @@ export function AddStudentForm({ existingStudentNos, onAdd, firstFieldRef, class
             <OptionMenu<string>
               label="Term"
               value={values.term}
-              options={TERM_OPTIONS}
+              options={termOptions}
               onChange={(v) => set("term", v)}
               align="end"
               triggerClassName={selectClassName}
             >
-              <span className={cn("min-w-0 truncate", !values.term && "text-muted-foreground")}>{values.term ?? DEFAULTS.term}</span>
+              <span className={cn("min-w-0 truncate", !values.term && "text-muted-foreground")}>{term ?? "—"}</span>
               <Caret />
             </OptionMenu>
           </div>
         </div>
 
+        {missingSetup.length ? (
+          <p className="text-[0.6875rem] leading-4 text-muted-foreground">
+            No {missingSetup.join(", ")} yet. Add them first so students can be enrolled.
+          </p>
+        ) : null}
+
+        {serverError ? (
+          <p role="alert" className="rounded-md bg-destructive/8 px-3 py-2 text-[0.75rem] leading-4.5 text-destructive">
+            {serverError}
+          </p>
+        ) : null}
+
         <button
           type="submit"
+          disabled={saving}
           className={cn(
             "h-8.5 w-full cursor-pointer rounded-md bg-primary text-[0.8125rem] font-semibold text-primary-foreground outline-none",
-            "transition-[background-color,box-shadow,translate] duration-200 ease-out",
+            "transition-[background-color,box-shadow,translate,opacity] duration-200 ease-out",
             "hover:-translate-y-px hover:bg-[color-mix(in_oklab,var(--color-brand-navy)_86%,var(--color-brand-blue))] hover:shadow-[0_10px_22px_-12px_var(--color-brand-blue)]",
             "focus-visible:ring-3 focus-visible:ring-brand-blue/30 active:translate-y-0 motion-reduce:hover:translate-y-0 dark:hover:bg-white/90",
+            "disabled:cursor-wait disabled:opacity-60 disabled:hover:translate-y-0",
           )}
         >
-          Add student &amp; enroll
+          {saving ? "Saving…" : "Add student & enroll"}
         </button>
       </form>
     </section>

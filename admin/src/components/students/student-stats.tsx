@@ -9,8 +9,8 @@ export interface StudentStat {
   detail: string;
   /** Blue = growing / healthy, gold = needs attention. */
   tone: "blue" | "gold";
-  /** Sparkline points (any scale). */
-  trend: readonly number[];
+  /** Sparkline points (any scale). Omitted when there's no history to plot. */
+  trend?: readonly number[];
 }
 
 const SPARK_W = 78;
@@ -91,9 +91,11 @@ export function StudentStats({ stats }: { stats: readonly StudentStat[] }) {
               {stat.detail}
             </p>
           </div>
-          <div className="mb-0.5 self-end">
-            <Sparkline points={stat.trend} tone={stat.tone} index={index} />
-          </div>
+          {stat.trend && stat.trend.length > 1 ? (
+            <div className="mb-0.5 self-end">
+              <Sparkline points={stat.trend} tone={stat.tone} index={index} />
+            </div>
+          ) : null}
         </div>
       ))}
     </section>
