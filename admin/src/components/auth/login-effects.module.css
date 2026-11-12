@@ -444,7 +444,7 @@
   .card {
     transition-duration: 250ms;
   }
-
+  
   /* Composition switch: a short cross-fade, no movement. */
   .stage[data-morphing],
   .stage[data-morphing] * {

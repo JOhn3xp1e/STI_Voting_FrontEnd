@@ -107,18 +107,18 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  /* Dashboard sidebar: light slate-gray panel with white cards (see reference). */
-  --sidebar: #e4e9f1;
+  /* Dashboard sidebar: near-white slate panel with white cards (see reference). */
+  --sidebar: #f4f6f9;
   --sidebar-foreground: #0f172a;
   --sidebar-primary: #0f4c9e;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #ffffff;
   --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: color-mix(in oklab, #64748b 18%, #e4e9f1);
+  --sidebar-border: color-mix(in oklab, #64748b 20%, #f4f6f9);
   --sidebar-ring: #0f4c9e;
   /* Nav item text and section labels: Dark Navy / Secondary Text blended toward the panel. */
   --shell-item: color-mix(in oklab, #0f172a 62%, #64748b);
-  --shell-label: color-mix(in oklab, #64748b 72%, #e4e9f1);
+  --shell-label: color-mix(in oklab, #64748b 72%, #f4f6f9);
   /* Raised surfaces inside the sidebar (brand card, search, active item). */
   --shell-surface: #ffffff;
 }

@@ -72,9 +72,20 @@ function useActiveIndicator(activeIndex: number): IndicatorState {
  * `--collapsible-panel-height`); a tree line draws down to the nested links,
  * and one shared white highlight slides between them to follow the active route.
  */
+/** Square + pill colours per election status. */
+const STATUS_STYLES = {
+  live: { label: "LIVE", square: "bg-brand-gold", pill: "bg-brand-gold text-brand-navy" },
+  upcoming: {
+    label: "UPCOMING",
+    square: "bg-brand-blue dark:bg-[#7aa7e6]",
+    pill: "bg-[#e2e8f0] text-[#64748b] dark:bg-white/10 dark:text-shell-item",
+  },
+} as const;
+
 export function SidebarDropdown({ group, open, onOpenChange, activeHref, onNavigate }: SidebarDropdownProps) {
   const labelId = useId();
-  const isLive = group.badge?.toUpperCase() === "LIVE";
+  const isLive = group.status === "live";
+  const status = group.status ? STATUS_STYLES[group.status] : null;
 
   const activeIndex = group.children.findIndex((child) => child.href === activeHref);
   const indicator = useActiveIndicator(activeIndex);
@@ -89,22 +100,28 @@ export function SidebarDropdown({ group, open, onOpenChange, activeHref, onNavig
       <Collapsible.Trigger
         className={cn(
           navRowClassName,
-          "cursor-pointer gap-2 pr-2 text-left font-semibold text-sidebar-foreground hover:bg-shell-surface/55",
+          "cursor-pointer gap-1 pr-1 text-left font-semibold text-sidebar-foreground hover:bg-shell-surface/55",
         )}
       >
-        {/* Gold status square. */}
+        {/* Status square: gold (live, with a soft ping) or blue (upcoming). */}
         <span aria-hidden className="relative flex size-3.5 shrink-0 items-center justify-center">
           {isLive ? (
             <span className="absolute size-2 animate-ping rounded-[2px] bg-brand-gold/60 [animation-duration:2.4s] motion-reduce:hidden" />
           ) : null}
-          <span className="relative size-2 rounded-[2px] bg-brand-gold" />
+          <span className={cn("relative size-2 rounded-[2px]", status?.square ?? "bg-brand-gold")} />
         </span>
-        <span id={labelId} className="min-w-0 flex-1 truncate">
+        <span id={labelId} className="ml-1 min-w-0 flex-1 truncate">
           {group.label}
         </span>
-        {group.badge ? (
-          <span className="rounded-[0.25rem] bg-brand-gold px-1.5 py-px font-mono text-[0.625rem] leading-4 font-semibold tracking-wider text-brand-navy">
-            {group.badge}
+        {status ? (
+          <span
+            className={cn(
+              "shrink-0 rounded-[0.25rem] py-px font-mono leading-4",
+              isLive ? "px-1.5 text-[0.625rem] font-semibold tracking-wider" : "px-1 text-[0.5625rem] font-medium tracking-normal",
+              status.pill,
+            )}
+          >
+            {status.label}
           </span>
         ) : null}
         <ChevronDown
@@ -126,12 +143,12 @@ export function SidebarDropdown({ group, open, onOpenChange, activeHref, onNavig
           "data-ending-style:duration-250 motion-reduce:transition-none",
         )}
       >
-        <ul aria-labelledby={labelId} className="relative flex flex-col pt-0.5 pb-1">
+        <ul aria-labelledby={labelId} className="relative flex flex-col pt-0.5">
           {/* Vertical stem from the parent row to the middle of the last link; draws downward on open. */}
           <span
             aria-hidden
             className={cn(
-              "pointer-events-none absolute top-0 bottom-[calc(0.25rem+1.1875rem)] left-4.75 w-px origin-top bg-shell-label/45",
+              "pointer-events-none absolute top-0 bottom-[1.1875rem] left-4.75 w-px origin-top bg-shell-label/45",
               "transition-transform duration-450 delay-50",
               EASE_OUT,
               "group-data-starting-style/panel:scale-y-0 group-data-ending-style/panel:scale-y-0",
@@ -145,7 +162,7 @@ export function SidebarDropdown({ group, open, onOpenChange, activeHref, onNavig
             aria-hidden
             style={{ transform: `scaleY(${trailScale})` }}
             className={cn(
-              "pointer-events-none absolute top-0 bottom-[calc(0.25rem+1.1875rem)] left-4.75 w-px origin-top bg-sidebar-foreground",
+              "pointer-events-none absolute top-0 bottom-[1.1875rem] left-4.75 w-px origin-top bg-sidebar-foreground",
               "transition-[transform,scale] duration-450 delay-50",
               EASE_OUT,
               "group-data-starting-style/panel:scale-y-0 group-data-ending-style/panel:scale-y-0",

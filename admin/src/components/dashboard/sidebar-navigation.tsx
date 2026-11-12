@@ -34,11 +34,19 @@ export function SidebarNavigation({
           No pages match “{query.trim()}”.
         </p>
       ) : (
-        sections.map((section) => (
-          <section key={section.id} aria-labelledby={`${id}-${section.id}`}>
+        sections.map((section, index) => (
+          <section
+            key={section.id}
+            aria-labelledby={`${id}-${section.id}`}
+            // An attached section (MY ELECTIONS) hangs right under the one before it.
+            className={cn(section.attached && index > 0 && "-mt-4")}
+          >
             <h2
               id={`${id}-${section.id}`}
-              className="mb-2 px-2.5 font-mono text-[0.625rem] font-medium tracking-[0.16em] text-shell-label uppercase"
+              className={cn(
+                "px-2.5 font-mono text-[0.625rem] font-medium tracking-[0.16em] text-shell-label uppercase",
+                section.attached ? "mb-0 leading-3" : "mb-2",
+              )}
             >
               {section.label}
             </h2>

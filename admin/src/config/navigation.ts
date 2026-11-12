@@ -1,4 +1,4 @@
-import { Briefcase, Calendar, Flag, LayoutDashboard, SquareCheck, Users, type LucideIcon } from "lucide-react";
+import { Briefcase, Calendar, ChartColumn, Flag, LayoutDashboard, SquareCheck, Users, type LucideIcon } from "lucide-react";
 
 /**
  * Dashboard sidebar navigation.
@@ -15,13 +15,16 @@ export interface NavLink {
   icon: LucideIcon;
 }
 
+/** An election's state in the sidebar: sets the square's colour and the pill. */
+export type NavGroupStatus = "live" | "upcoming";
+
 /** Expandable entry (e.g. an election) with nested links. */
 export interface NavGroup {
   type: "group";
   id: string;
   label: string;
-  /** Short status pill shown next to the label, e.g. "LIVE". */
-  badge?: string;
+  /** "live": gold square + gold LIVE pill; "upcoming": blue square + grey UPCOMING pill. */
+  status?: NavGroupStatus;
   children: NavLink[];
 }
 
@@ -31,6 +34,17 @@ export interface NavSection {
   id: string;
   label: string;
   items: NavItem[];
+  /** Sits tight under the previous section, as its sub-list (MY ELECTIONS under MAIN). */
+  attached?: boolean;
+}
+
+/** The three pages every election has in the sidebar. */
+function electionLinks(slug: string): NavLink[] {
+  return [
+    { type: "link", id: `${slug}-metrics`, label: "Metrics", href: `/elections/${slug}/metrics`, icon: ChartColumn },
+    { type: "link", id: `${slug}-party-lists`, label: "Party lists", href: `/elections/${slug}/party-lists`, icon: Flag },
+    { type: "link", id: `${slug}-candidates`, label: "Candidates", href: `/elections/${slug}/candidates`, icon: Users },
+  ];
 }
 
 export const DASHBOARD_HOME = "/dashboard";
@@ -45,6 +59,14 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    id: "my-elections",
+    label: "My elections",
+    attached: true,
+    items: [
+      { type: "group", id: "csc-elections", label: "CSC Elections", status: "live", children: electionLinks("csc") },
+    ],
+  },
+  {
     id: "academic",
     label: "Academic",
     items: [
@@ -56,23 +78,6 @@ export const NAV_SECTIONS: NavSection[] = [
     id: "people",
     label: "People",
     items: [{ type: "link", id: "students", label: "Students", href: "/students", icon: Users }],
-  },
-  {
-    id: "my-elections",
-    label: "My elections",
-    items: [
-      {
-        type: "group",
-        id: "csc-elections",
-        label: "CSC Elections",
-        badge: "LIVE",
-        children: [
-          { type: "link", id: "csc-metrics", label: "Metrics", href: "/elections/csc/metrics", icon: LayoutDashboard },
-          { type: "link", id: "csc-party-lists", label: "Party lists", href: "/elections/csc/party-lists", icon: Flag },
-          { type: "link", id: "csc-candidates", label: "Candidates", href: "/elections/csc/candidates", icon: Users },
-        ],
-      },
-    ],
   },
 ];
 
@@ -119,8 +124,7 @@ const PAGE_META: Record<string, PageMetaConfig> = {
   "/students": { title: "Students" },
   "/elections/csc/metrics": { title: "Election Metrics", description: "CSC Elections" },
   "/elections/csc/party-lists": { title: "Party Lists", description: "CSC Elections" },
-  "/elections/csc/candidates": { title: "Candidates", description: "CSC Elections" },
-  [ACCOUNT_LINKS.profile]: { title: "Profile", description: "Your admin account" },
+  "/elections/csc/candidates": { title: "Candidates", description: "CSC Elections" },  [ACCOUNT_LINKS.profile]: { title: "Profile", description: "Your admin account" },
   [ACCOUNT_LINKS.settings]: { title: "Account settings", description: "Your admin account" },
 };
 
@@ -172,6 +176,13 @@ export function getActiveHref(pathname: string): string | null {
     if (matches && (best === null || href.length > best.length)) best = href;
   }
   return best;
+}
+
+/** Groups shown expanded on first load: the live elections. */
+export function defaultOpenGroupIds(): string[] {
+  return NAV_SECTIONS.flatMap((section) => section.items).flatMap((item) =>
+    item.type === "group" && item.status === "live" ? [item.id] : [],
+  );
 }
 
 /** `id` of the group containing the link `href`, if any. */

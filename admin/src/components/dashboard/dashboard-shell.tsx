@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { Dialog } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 
-import { findGroupIdOf, getActiveHref } from "@/config/navigation";
+import { defaultOpenGroupIds, findGroupIdOf, getActiveHref } from "@/config/navigation";
 import { endDashboardEntrance } from "@/lib/dashboard-entrance";
 import { cn } from "@/lib/utils";
 import type { AdminProfile } from "@/types/auth.types";
@@ -37,10 +37,12 @@ export function DashboardShell({ admin, children }: DashboardShellProps) {
   const activeHref = getActiveHref(pathname);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // Election groups start collapsed, except the one containing the current page.
+  // Live elections start expanded, plus the one containing the current page; the rest start collapsed.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const open: Record<string, boolean> = Object.fromEntries(defaultOpenGroupIds().map((id) => [id, true]));
     const groupId = findGroupIdOf(activeHref);
-    return groupId ? { [groupId]: true } : {};
+    if (groupId) open[groupId] = true;
+    return open;
   });
 
   const desktopSearchRef = useRef<HTMLInputElement>(null);
