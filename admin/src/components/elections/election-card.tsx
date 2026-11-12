@@ -119,8 +119,8 @@ export function ElectionCard({ election, onDelete }: ElectionCardProps) {
     >
       {/* Banner (3:1 slot) */}
       <div
-        className={cn("relative h-35 bg-cover bg-center", !election.photoPath && styles.banner)}
-        style={election.photoPath ? { backgroundImage: `url("${election.photoPath}")` } : undefined}
+        className={cn("relative h-35 bg-cover bg-center", !election.photoUrl && styles.banner)}
+        style={election.photoUrl ? { backgroundImage: `url("${election.photoUrl}")` } : undefined}
       >
         <span
           className={cn(
@@ -130,7 +130,7 @@ export function ElectionCard({ election, onDelete }: ElectionCardProps) {
         >
           {election.status}
         </span>
-        {!election.photoPath ? (
+        {!election.photoUrl ? (
           <span className="absolute right-3 bottom-2.5 font-mono text-[0.625rem] tracking-[0.08em] text-white/55 uppercase">
             Banner <span aria-hidden>·</span> 3:1
           </span>

@@ -24,7 +24,10 @@ interface ElectionDto {
   title: string;
   description: string;
   electionRules?: string | null;
+  /** Storage key in the `voting-images` bucket, e.g. `elections/<guid>.png`. Not loadable as is. */
   photoPath?: string | null;
+  /** Public URL of the banner, built by the API from `photoPath`. */
+  photoUrl?: string | null;
   electionCategory: string | number;
   careerScope?: string[] | null;
   academicProgramScope?: string[] | null;
@@ -69,7 +72,7 @@ function toElection(dto: ElectionDto): Election {
     title: dto.title,
     description: dto.description,
     rules: dto.electionRules ?? null,
-    photoPath: dto.photoPath ?? null,
+    photoUrl: dto.photoUrl ?? null,
     category: toEnum(ELECTION_CATEGORIES, dto.electionCategory, "Council"),
     careerScope: dto.careerScope ?? [],
     programScope: dto.academicProgramScope ?? [],

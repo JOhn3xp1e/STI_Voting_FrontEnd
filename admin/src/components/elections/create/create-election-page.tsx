@@ -371,7 +371,7 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
         <aside className="xl:sticky xl:top-6">
           <SummaryPanel
             form={form}
-            bannerUrl={banner?.url ?? election?.photoPath ?? null}
+            bannerUrl={banner?.url ?? election?.photoUrl ?? null}
             eligible={eligible}
             badge={election ? `${election.status} · ${election.id}` : "Draft"}
             secondaryLabel={secondaryLabel}

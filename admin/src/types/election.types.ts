@@ -13,7 +13,8 @@ export interface Election {
   title: string;
   description: string;
   rules: string | null;
-  photoPath: string | null;
+  /** Banner image URL, or `null` when the election has no banner. */
+  photoUrl: string | null;
   category: ElectionCategory;
   /** Career codes that can vote; empty = every career. */
   careerScope: string[];
