@@ -94,6 +94,8 @@ interface PageMetaConfig {
   description?: string;
   /** Applies to this exact route only; nested routes always default to `plain`. */
   headerTheme?: HeaderTheme;
+  /** `false` hides the hairline under the `plain` header (exact route only). */
+  headerDivider?: boolean;
 }
 
 /** Resolved header content for the current route. */
@@ -101,6 +103,7 @@ export interface PageMeta {
   title: string;
   description?: string;
   headerTheme: HeaderTheme;
+  headerDivider: boolean;
 }
 
 const PAGE_META: Record<string, PageMetaConfig> = {
@@ -109,7 +112,8 @@ const PAGE_META: Record<string, PageMetaConfig> = {
     description: "Welcome back, {firstName}. Here's what's happening this term.",
     headerTheme: "hero",
   },
-  "/elections": { title: "Elections", description: "Election schedules and settings" },
+  "/elections": { title: "Elections", headerDivider: false },
+  "/elections/new": { title: "Elections/Create Election", headerDivider: false },
   "/terms": { title: "Terms", description: "School terms" },
   "/programs": { title: "Programs & careers" },
   "/students": { title: "Students" },
@@ -141,6 +145,7 @@ export function getPageMeta(pathname: string, firstName: string): PageMeta {
     title: config?.title ?? FALLBACK_TITLE,
     description: config?.description?.replace("{firstName}", firstName),
     headerTheme: exact?.headerTheme ?? "plain",
+    headerDivider: exact?.headerDivider ?? true,
   };
 }
 

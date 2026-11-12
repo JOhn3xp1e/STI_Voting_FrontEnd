@@ -33,7 +33,7 @@ interface DashboardHeaderProps {
 export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, className }: DashboardHeaderProps) {
   const pathname = usePathname();
   const meta = getPageMeta(pathname, admin.firstName);
-  const { title, headerTheme } = meta;
+  const { title, headerTheme, headerDivider } = meta;
   const description = usePageDescriptionOverride(pathname) ?? meta.description;
   const hero = headerTheme === "hero";
 
@@ -66,7 +66,7 @@ export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, class
             "flex items-center gap-3 border-b py-3 transition-[min-height,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             hero
               ? "min-h-32 border-transparent sm:min-h-40 lg:min-h-50"
-              : "min-h-16 border-[#e2e8f0] sm:min-h-20 dark:border-border",
+              : cn("min-h-16 sm:min-h-20", headerDivider ? "border-[#e2e8f0] dark:border-border" : "border-transparent"),
           )}
         >
           <button

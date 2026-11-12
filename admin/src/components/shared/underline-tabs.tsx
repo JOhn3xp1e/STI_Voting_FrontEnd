@@ -18,10 +18,12 @@ interface UnderlineTabsProps<T extends string> {
   /** Accessible name of the tab list. */
   label: string;
   className?: string;
+  /** Extra classes for the tab list, e.g. a different `gap-*`. */
+  listClassName?: string;
 }
 
 /** Text tabs with an underline that slides to the active tab (arrow keys move between tabs). */
-export function UnderlineTabs<T extends string>({ tabs, value, onChange, label, className }: UnderlineTabsProps<T>) {
+export function UnderlineTabs<T extends string>({ tabs, value, onChange, label, className, listClassName }: UnderlineTabsProps<T>) {
   const listRef = useRef<HTMLDivElement>(null);
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
   const tabKey = tabs.map((t) => t.value).join("|");
@@ -52,7 +54,7 @@ export function UnderlineTabs<T extends string>({ tabs, value, onChange, label, 
 
   return (
     <div className={cn("border-b border-border", className)}>
-      <div ref={listRef} role="tablist" aria-label={label} onKeyDown={onKeyDown} className="relative flex gap-7 overflow-x-auto [scrollbar-width:none]">
+      <div ref={listRef} role="tablist" aria-label={label} onKeyDown={onKeyDown} className={cn("relative flex gap-7 overflow-x-auto [scrollbar-width:none]", listClassName)}>
         {tabs.map((tab) => {
           const active = tab.value === value;
           return (
