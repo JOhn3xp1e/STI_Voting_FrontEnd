@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, CalendarDays, Flag, LayoutDashboard, SquareCheck, Users, type LucideIcon } from "lucide-react";
+import { Briefcase, Calendar, Flag, LayoutDashboard, SquareCheck, Users, type LucideIcon } from "lucide-react";
 
 /**
  * Dashboard sidebar navigation.
@@ -48,8 +48,8 @@ export const NAV_SECTIONS: NavSection[] = [
     id: "academic",
     label: "Academic",
     items: [
-      { type: "link", id: "terms", label: "Terms", href: "/terms", icon: CalendarDays },
-      { type: "link", id: "programs", label: "Programs & Careers", href: "/programs", icon: BriefcaseBusiness },
+      { type: "link", id: "terms", label: "Terms", href: "/terms", icon: Calendar },
+      { type: "link", id: "programs", label: "Programs & Careers", href: "/programs", icon: Briefcase },
     ],
   },
   {

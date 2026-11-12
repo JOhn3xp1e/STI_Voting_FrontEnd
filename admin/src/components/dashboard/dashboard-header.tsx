@@ -25,7 +25,7 @@ interface DashboardHeaderProps {
 
 /**
  * Page header shared by every admin route. Title, subtitle and theme come from
- * the route (`getPageMeta`): the Dashboard gets the dark gradient `hero`
+ * the route (`getPageMeta`): the Dashboard gets the gradient `hero`
  * banner, every other page the white `plain` header. The same elements are
  * kept across routes so height, colours and the banner cross-fade smoothly.
  */
@@ -80,7 +80,9 @@ export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, class
             <h1
               className={cn(
                 "truncate text-xl leading-tight font-semibold tracking-tight transition-colors duration-500 sm:text-2xl",
-                hero ? "font-display text-brand-white" : "font-sans text-brand-navy dark:text-brand-white",
+                hero
+                  ? "font-display text-brand-navy dark:text-brand-white"
+                  : "font-sans text-brand-navy dark:text-brand-white",
               )}
             >
               {title}
@@ -89,7 +91,7 @@ export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, class
               <p
                 className={cn(
                   "line-clamp-2 font-mono text-[0.6875rem] transition-colors duration-500 sm:text-xs",
-                  hero ? "text-brand-white/65 xl:truncate" : "text-brand-muted lg:truncate dark:text-shell-item",
+                  hero ? "text-brand-navy/60 xl:truncate dark:text-brand-white/65" :"text-brand-muted lg:truncate dark:text-shell-item",
                 )}
               >
                 {description}
