@@ -207,6 +207,28 @@
 }
 
 /*
+ * Signed in: the card turns navy (see LoginCard), and the page darkens with it
+ * so the card doesn't stand out as a black box: the backdrop's glow and texture
+ * fade under the navy base, and the pixel map dims.
+ */
+.backdropDim {
+  opacity: 0;
+  transition: opacity 700ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stage:has([data-card-dark]) .backdropDim {
+  opacity: 0.9;
+}
+
+.stage :global([data-morph="map"]) {
+  transition: opacity 700ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stage:has([data-card-dark]) :global([data-morph="map"]) {
+  opacity: 0.3;
+}
+
+/*
  * Leaving: once the success state has been shown, everything on the page
  * (backdrop artwork, branding, card) fades out to the plain navy base, which
  * the dashboard's entrance curtain picks up seamlessly.

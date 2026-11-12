@@ -61,6 +61,9 @@ export function LoginBackdrop() {
       />
 
       <PointerGlow />
+
+      {/* After signing in: the navy base covers the glow and texture, so the dark card blends in. */}
+      <div className={cn("absolute inset-0 bg-login-background", styles.backdropDim)} />
     </div>
   );
 }
