@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CircleAlert, CircleCheck, LoaderCircle, Search, X } from "lucide-react";
+import { CircleAlert, CircleCheck, Search, X } from "lucide-react";
 
 import { toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
 import { cn } from "@/lib/utils";
@@ -10,14 +10,7 @@ import { cn } from "@/lib/utils";
 /*                              Loading / error                               */
 /* -------------------------------------------------------------------------- */
 
-export function PageLoading({ label }: { label: string }) {
-  return (
-    <div className="flex min-h-80 items-center justify-center gap-2.5 px-4 text-[0.875rem] text-muted-foreground" role="status">
-      <LoaderCircle aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
-      {label}
-    </div>
-  );
-}
+export { PageLoading } from "./page-loader";
 
 export function PageError({ title, message, onRetry }: { title: string; message: string; onRetry: () => void }) {
   return (

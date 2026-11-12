@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert, CircleCheck, LoaderCircle } from "lucide-react";
+import { CircleAlert, CircleCheck } from "lucide-react";
+
+import { PageLoading } from "@/components/shared/page-loader";
 
 import { NO_FACETS, countByStatus, countFacets, formatStudentName, formatYear, matchesFilters } from "@/lib/students";
 import { cn } from "@/lib/utils";
@@ -59,14 +61,7 @@ export function StudentsPage() {
     setAttempt((n) => n + 1);
   }
 
-  if (state.status === "loading") {
-    return (
-      <div className="flex min-h-80 items-center justify-center gap-2.5 px-4 text-[0.875rem] text-muted-foreground" role="status">
-        <LoaderCircle aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
-        Loading students…
-      </div>
-    );
-  }
+  if (state.status === "loading") return <PageLoading label="Loading students…" />;
 
   if (state.status === "error") {
     return (
