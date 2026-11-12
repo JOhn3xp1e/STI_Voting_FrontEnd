@@ -29,12 +29,14 @@ export interface Election {
   createdAt: string;
 }
 
-/** Body of a create / update request (the backend sets the id and status). */
+/**
+ * Fields of a create / update request (the backend sets the id and status).
+ * The banner image goes alongside it as a file; see `createElection` / `updateElection`.
+ */
 export interface ElectionInput {
   title: string;
   description: string;
   rules: string | null;
-  photoPath: string | null;
   category: ElectionCategory;
   careerScope: string[];
   programScope: string[];

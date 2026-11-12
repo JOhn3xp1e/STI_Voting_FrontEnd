@@ -221,13 +221,11 @@ function newElectionForm(catalog: Catalog, today: string): ElectionForm {
   };
 }
 
-function toInput(form: ElectionForm, photoPath: string | null): ElectionInput {
+function toInput(form: ElectionForm): ElectionInput {
   return {
     title: form.title,
     description: form.description,
     rules: form.rules,
-    // The API has no banner upload yet; an existing banner path is kept as is.
-    photoPath,
     category: form.category,
     careerScope: form.careerScope,
     programScope: form.programScope,
@@ -258,12 +256,13 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
   const [votersErrors, setVotersErrors] = useState<VotersErrors>({});
   const [busy, setBusy] = useState<"secondary" | "primary" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  /** A newly picked banner: the file to upload on save, plus its preview URL. */
+  const [banner, setBanner] = useState<{ file: File; url: string } | null>(null);
   const { notice, say } = useNotice();
   const topRef = useRef<HTMLDivElement>(null);
 
   // Free the banner preview's object URL when it changes or the page closes.
-  useEffect(() => (bannerUrl ? () => URL.revokeObjectURL(bannerUrl) : undefined), [bannerUrl]);
+  useEffect(() => (banner ? () => URL.revokeObjectURL(banner.url) : undefined), [banner]);
 
   const eligible = useMemo(() => countEligibleVoters(catalog.enrollments, form), [catalog.enrollments, form]);
 
@@ -308,8 +307,9 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
     setBusy(kind);
     setError(null);
     try {
-      const input = toInput(form, election?.photoPath ?? null);
-      const saved = election ? await updateElection(election.id, input) : await createElection(input);
+      const input = toInput(form);
+      const photo = banner?.file ?? null;
+      const saved = election ? await updateElection(election.id, input, photo) : await createElection(input, photo);
       onSaved(saved);
       router.push(ELECTIONS_HREF);
     } catch (cause) {
@@ -352,8 +352,8 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
                 errors={detailsErrors}
                 terms={catalog.terms}
                 today={today}
-                bannerUrl={bannerUrl}
-                onBannerPick={(file) => setBannerUrl(file ? URL.createObjectURL(file) : null)}
+                bannerUrl={banner?.url ?? null}
+                onBannerPick={(file) => setBanner(file ? { file, url: URL.createObjectURL(file) } : null)}
                 onBannerError={(message) => say(message, "error")}
               />
             ) : step === 1 ? (
@@ -371,7 +371,7 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
         <aside className="xl:sticky xl:top-6">
           <SummaryPanel
             form={form}
-            bannerUrl={bannerUrl ?? election?.photoPath ?? null}
+            bannerUrl={banner?.url ?? election?.photoPath ?? null}
             eligible={eligible}
             badge={election ? `${election.status} · ${election.id}` : "Draft"}
             secondaryLabel={secondaryLabel}

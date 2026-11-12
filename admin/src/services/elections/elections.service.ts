@@ -3,7 +3,6 @@ import {
   ELECTION_CATEGORIES,
   ELECTION_STATUSES,
   type Election,
-  type ElectionCategory,
   type ElectionInput,
   type ElectionStatus,
   type VoterEnrollment,
@@ -35,21 +34,6 @@ interface ElectionDto {
   startDate: string;
   endDate: string;
   createdAt: string;
-}
-
-/** CreateElectionDetailsRequest / UpdateElectionDetailsRequest */
-interface ElectionRequestDto {
-  title: string;
-  description: string;
-  electionRules: string | null;
-  photoPath: string | null;
-  electionCategory: ElectionCategory;
-  careerScope: string[];
-  academicProgramScope: string[];
-  levelScope: number[];
-  termId: string;
-  startDate: string;
-  endDate: string;
 }
 
 /** EnrollmentDtos.EnrollmentResponse (only the fields used here). */
@@ -98,20 +82,27 @@ function toElection(dto: ElectionDto): Election {
   };
 }
 
-function toRequest(input: ElectionInput): ElectionRequestDto {
-  return {
-    title: input.title.trim(),
-    description: input.description.trim(),
-    electionRules: input.rules?.trim() || null,
-    photoPath: input.photoPath,
-    electionCategory: input.category,
-    careerScope: input.careerScope,
-    academicProgramScope: input.programScope,
-    levelScope: input.levelScope,
-    termId: input.termId,
-    startDate: input.startsAt,
-    endDate: input.endsAt,
-  };
+/**
+ * Create / Update body. The endpoints bind `[FromForm]` fields plus an optional `photo` file,
+ * so this is sent as multipart/form-data. The browser sets the Content-Type (with its boundary)
+ * itself, so no header is set here. Lists repeat their key once per value; leaving out `photo`
+ * keeps the current banner on update.
+ */
+function toFormData(input: ElectionInput, photo?: File | null): FormData {
+  const data = new FormData();
+  data.append("title", input.title.trim());
+  data.append("description", input.description.trim());
+  const rules = input.rules?.trim();
+  if (rules) data.append("electionRules", rules);
+  data.append("electionCategory", input.category);
+  for (const code of input.careerScope) data.append("careerScope", code);
+  for (const code of input.programScope) data.append("academicProgramScope", code);
+  for (const level of input.levelScope) data.append("levelScope", String(level));
+  data.append("termId", input.termId);
+  data.append("startDate", input.startsAt);
+  data.append("endDate", input.endsAt);
+  if (photo) data.append("photo", photo, photo.name);
+  return data;
 }
 
 interface RequestOptions {
@@ -133,13 +124,14 @@ export async function deleteElection(id: string): Promise<void> {
   await apiClient.delete(electionPath(id));
 }
 
-/** The database assigns the id (ELC-00007); new elections start as Draft. */
-export async function createElection(input: ElectionInput): Promise<Election> {
-  return toElection(await apiClient.post<ElectionDto, ElectionRequestDto>(ROUTES.elections, toRequest(input)));
+/** The database assigns the id (ELC-00007); new elections start as Draft. `photo` is the banner, if one was picked. */
+export async function createElection(input: ElectionInput, photo?: File | null): Promise<Election> {
+  return toElection(await apiClient.post<ElectionDto, FormData>(ROUTES.elections, toFormData(input, photo)));
 }
 
-export async function updateElection(id: string, input: ElectionInput): Promise<Election> {
-  return toElection(await apiClient.put<ElectionDto, ElectionRequestDto>(electionPath(id), toRequest(input)));
+/** Without a new `photo`, the election keeps its current banner. */
+export async function updateElection(id: string, input: ElectionInput, photo?: File | null): Promise<Election> {
+  return toElection(await apiClient.put<ElectionDto, FormData>(electionPath(id), toFormData(input, photo)));
 }
 
 /** Every enrollment with its level, to count who an election's filters let vote. */

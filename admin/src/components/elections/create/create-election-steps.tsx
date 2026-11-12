@@ -36,7 +36,9 @@ export function termOptionLabel(term: Term): string {
 /*                               Step 1: Details                              */
 /* -------------------------------------------------------------------------- */
 
+/** Same limits as the election endpoints in SLVP-BE (5 MB; JPG, PNG or WebP). */
 const MAX_BANNER_BYTES = 5 * 1024 * 1024;
+const BANNER_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 interface BannerDropzoneProps {
   previewUrl: string | null;
@@ -44,17 +46,14 @@ interface BannerDropzoneProps {
   onError: (message: string) => void;
 }
 
-/**
- * Banner picker. Preview only for now: the API has no upload endpoint yet,
- * so the image isn't sent with the election.
- */
+/** Banner picker. The picked image is previewed here and uploaded with the election when it's saved. */
 function BannerDropzone({ previewUrl, onPick, onError }: BannerDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
   function accept(file: File | undefined) {
     if (!file) return;
-    if (!["image/png", "image/jpeg"].includes(file.type)) return onError("Use a PNG or JPG image.");
+    if (!BANNER_TYPES.includes(file.type)) return onError("Use a PNG, JPG or WebP image.");
     if (file.size > MAX_BANNER_BYTES) return onError("The image is over 5 MB.");
     onPick(file);
   }
@@ -83,7 +82,7 @@ function BannerDropzone({ previewUrl, onPick, onError }: BannerDropzoneProps) {
         {previewUrl ? (
           <>
             <span className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/55 to-transparent px-3 pt-6 pb-2 text-left font-mono text-[0.65625rem] text-white/85">
-              Preview only · not uploaded yet
+              Uploads when you save
             </span>
             <button
               type="button"
@@ -104,14 +103,14 @@ function BannerDropzone({ previewUrl, onPick, onError }: BannerDropzoneProps) {
               Drop a banner image or <span className="underline-offset-2 transition-colors group-hover/drop:text-brand-blue group-hover/drop:underline dark:group-hover/drop:text-[#7aa7e6]">browse</span>
             </span>
             <span className="font-mono text-[0.65625rem] text-muted-foreground">
-              1600 × 500 <span aria-hidden>·</span> PNG or JPG <span aria-hidden>·</span> up to 5 MB
+              1600 × 500 <span aria-hidden>·</span> PNG, JPG or WebP <span aria-hidden>·</span> up to 5 MB
             </span>
           </button>
         )}
         <input
           ref={inputRef}
           type="file"
-          accept="image/png,image/jpeg"
+          accept={BANNER_TYPES.join(",")}
           className="sr-only"
           tabIndex={-1}
           aria-hidden
