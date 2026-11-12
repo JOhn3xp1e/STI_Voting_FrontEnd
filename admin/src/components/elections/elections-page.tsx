@@ -4,14 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 
-import { PageError, PageLoading } from "@/components/shared/page-feedback";
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
+import { PageError, PageLoading, Toast, useNotice } from "@/components/shared/page-feedback";
 import { UnderlineTabs, type UnderlineTab } from "@/components/shared/underline-tabs";
 import { OptionMenu } from "@/components/students/option-menu";
 import { primaryButtonClassName } from "@/components/students/student-toolbar-styles";
 import { formatTermTitle, sortTerms } from "@/lib/terms";
 import { cn } from "@/lib/utils";
 import { getApiErrorMessage } from "@/services/api/error-message";
-import { fetchElections } from "@/services/elections/elections.service";
+import { deleteElection, fetchElections } from "@/services/elections/elections.service";
 import { fetchTerms } from "@/services/terms/terms.service";
 import type { Election, ElectionStatus } from "@/types/election.types";
 import type { Term } from "@/types/term.types";
@@ -73,6 +74,21 @@ export function ElectionsPage() {
   const [attempt, setAttempt] = useState(0);
   const [tab, setTab] = useState<ElectionTab>("all");
   const [termId, setTermId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<Election | null>(null);
+  const { notice, say } = useNotice();
+
+  async function confirmDelete(election: Election) {
+    try {
+      await deleteElection(election.id);
+    } catch (cause) {
+      // Shown inside the dialog, which stays open.
+      throw new Error(getApiErrorMessage(cause));
+    }
+    setState((current) =>
+      current.status === "ready" ? { ...current, elections: current.elections.filter((e) => e.id !== election.id) } : current,
+    );
+    say(`Deleted ${election.id} · ${election.title}.`);
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -153,7 +169,7 @@ export function ElectionsPage() {
           <ul className="grid grid-cols-1 gap-x-5 gap-y-5.5 md:grid-cols-2 xl:grid-cols-3">
             {visible.map((election) => (
               <li key={election.id}>
-                <ElectionCard election={election} />
+                <ElectionCard election={election} onDelete={setDeleting} />
               </li>
             ))}
             <li>
@@ -162,6 +178,22 @@ export function ElectionsPage() {
           </ul>
         )}
       </div>
+
+      <ConfirmDeleteDialog
+        item={deleting}
+        getKey={(e) => e.id}
+        title={(e) => `Delete ${e.id}?`}
+        description={(e) => (
+          <>
+            This permanently deletes the draft <span className="font-medium text-foreground">{e.title}</span>. It can&apos;t be undone.
+          </>
+        )}
+        summary={(e) => `${e.id} · ${e.category} · ${e.termId} · ${e.status}`}
+        confirmLabel="Delete election"
+        onClose={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+      />
+      <Toast notice={notice} />
     </div>
   );
 }

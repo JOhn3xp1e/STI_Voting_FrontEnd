@@ -12,8 +12,8 @@ interface SummaryPanelProps {
   form: ElectionForm;
   bannerUrl: string | null;
   eligible: number;
-  /** Id once the draft has been saved (ELC-00007). */
-  savedId: string | null;
+  /** Header badge: "Draft", or "Draft · ELC-00016" when editing. */
+  badge: string;
   secondaryLabel: string;
   onSecondary: () => void;
   primaryLabel: string;
@@ -37,7 +37,7 @@ export function SummaryPanel({
   form,
   bannerUrl,
   eligible,
-  savedId,
+  badge,
   secondaryLabel,
   onSecondary,
   primaryLabel,
@@ -52,7 +52,7 @@ export function SummaryPanel({
           Summary
         </h2>
         <span className="inline-flex h-5.5 items-center rounded-[0.1875rem] border border-[#d5dbe3] px-2 font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground uppercase dark:border-border">
-          {savedId ? `Draft · ${savedId}` : "Draft"}
+          {badge}
         </span>
       </header>
 

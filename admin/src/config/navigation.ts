@@ -124,6 +124,11 @@ const PAGE_META: Record<string, PageMetaConfig> = {
   [ACCOUNT_LINKS.settings]: { title: "Account settings", description: "Your admin account" },
 };
 
+/** Routes with a dynamic segment, e.g. `/elections/ELC-00016/edit`. */
+const PAGE_META_PATTERNS: { pattern: RegExp; config: PageMetaConfig }[] = [
+  { pattern: /^\/elections\/[^/]+\/edit$/, config: { title: "Elections/Edit Election", headerDivider: false } },
+];
+
 /** Title used when no configured route matches. */
 const FALLBACK_TITLE = "Admin Portal";
 
@@ -133,7 +138,7 @@ const FALLBACK_TITLE = "Admin Portal";
  * ancestor but always gets the `plain` header unless configured itself.
  */
 export function getPageMeta(pathname: string, firstName: string): PageMeta {
-  const exact = PAGE_META[pathname];
+  const exact = PAGE_META[pathname] ?? PAGE_META_PATTERNS.find((p) => p.pattern.test(pathname))?.config;
   const config =
     exact ??
     Object.keys(PAGE_META)

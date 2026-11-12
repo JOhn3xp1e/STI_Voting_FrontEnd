@@ -1,5 +1,5 @@
 import type { Career, Program } from "@/types/program.types";
-import type { ElectionCategory, VoterEnrollment } from "@/types/election.types";
+import type { Election, ElectionCategory, ElectionStatus, VoterEnrollment } from "@/types/election.types";
 
 /*
  * Election helpers: date-times, voter filters and form validation.
@@ -164,6 +164,29 @@ export function countEligibleVoters(enrollments: readonly VoterEnrollment[], fil
 export const sortProgramsByCode = (programs: readonly Program[]) => [...programs].sort((a, b) => a.code.localeCompare(b.code));
 
 /* -------------------------------------------------------------------------- */
+/*                              Edit and delete                               */
+/* -------------------------------------------------------------------------- */
+
+export const electionEditHref = (id: string) => `/elections/${encodeURIComponent(id)}/edit`;
+
+/** Settings can change until voting starts. */
+export function canEditElection(status: ElectionStatus): boolean {
+  return status === "Draft" || status === "Upcoming";
+}
+
+/** Only drafts can be deleted (nothing has been sent to voters yet). */
+export function canDeleteElection(status: ElectionStatus): boolean {
+  return status === "Draft";
+}
+
+/** Why an election can't be edited, for menus and the edit page. */
+export function editBlockedReason(status: ElectionStatus): string {
+  if (status === "Ongoing") return "Voting is ongoing, so its settings are locked.";
+  if (status === "Completed") return "Voting has ended, so its settings are locked.";
+  return "It was cancelled, so its settings are locked.";
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                 Validation                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -178,6 +201,30 @@ export interface ElectionForm {
   careerScope: string[];
   programScope: string[];
   levelScope: number[];
+}
+
+/**
+ * The form for an existing election. An empty career / level filter means
+ * "everyone" in the database; the form spells that out (every career, all
+ * their levels) so the chips show what the election really covers.
+ */
+export function electionToForm(election: Election, careers: readonly Career[]): ElectionForm {
+  const careerScope = election.careerScope.length ? election.careerScope : careers.map((c) => c.code);
+  const levelScope = election.levelScope.length
+    ? election.levelScope
+    : [...new Set(careers.filter((c) => careerScope.includes(c.code)).flatMap(careerLevels))].sort((a, b) => a - b);
+  return {
+    title: election.title,
+    category: election.category,
+    description: election.description,
+    termId: election.termId,
+    rules: election.rules ?? "",
+    opensAt: instantToLocal(election.startsAt),
+    closesAt: instantToLocal(election.endsAt),
+    careerScope: [...careerScope],
+    programScope: [...election.programScope],
+    levelScope: [...levelScope],
+  };
 }
 
 export type DetailsErrors = Partial<Record<"title" | "description" | "termId" | "opensAt" | "closesAt", string>>;

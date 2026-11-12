@@ -118,8 +118,19 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
+const electionPath = (id: string) => `${ROUTES.elections}/${encodeURIComponent(id)}`;
+
 export async function fetchElections({ signal }: RequestOptions = {}): Promise<Election[]> {
   return (await apiClient.get<ElectionDto[]>(ROUTES.elections, { signal })).map(toElection);
+}
+
+/** Rejects with a 404 `ApiError` when there's no election with this id. */
+export async function fetchElection(id: string, { signal }: RequestOptions = {}): Promise<Election> {
+  return toElection(await apiClient.get<ElectionDto>(electionPath(id), { signal }));
+}
+
+export async function deleteElection(id: string): Promise<void> {
+  await apiClient.delete(electionPath(id));
 }
 
 /** The database assigns the id (ELC-00007); new elections start as Draft. */
@@ -128,9 +139,7 @@ export async function createElection(input: ElectionInput): Promise<Election> {
 }
 
 export async function updateElection(id: string, input: ElectionInput): Promise<Election> {
-  return toElection(
-    await apiClient.put<ElectionDto, ElectionRequestDto>(`${ROUTES.elections}/${encodeURIComponent(id)}`, toRequest(input)),
-  );
+  return toElection(await apiClient.put<ElectionDto, ElectionRequestDto>(electionPath(id), toRequest(input)));
 }
 
 /** Every enrollment with its level, to count who an election's filters let vote. */
