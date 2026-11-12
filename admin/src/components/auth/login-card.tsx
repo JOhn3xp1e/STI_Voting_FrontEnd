@@ -21,26 +21,23 @@ import { SuccessCheck } from "./success-check";
  * dashboard transition (`useLoginTransition`). `data-auth-phase` exposes the
  * transition phase to CSS (see `.card` / `.stage` in login-effects.module.css).
  *
- * Also picks the screen's composition:
- * - empty form → dark page (form without a card);
- * - something typed → white card;
- * - signed in → dark again, and the success checkmark only appears once the
- *   card has turned dark, so it always plays in its dark version.
+ * Also picks the screen's composition: empty form → dark page (form without a
+ * card); something typed → white card. After signing in the layout stays put
+ * and only the card itself turns dark (`data-card-dark`), so the success
+ * checkmark plays in its dark version on a dark card.
  */
 export function LoginCard({ className }: { className?: string }) {
   const { status, error, signIn, clearError } = useAdminSignIn();
-  const { variant, settled, requestVariant } = useLoginLayout();
+  const { requestVariant } = useLoginLayout();
   const [hasText, setHasText] = useState(false);
 
   const authenticated = status === "authenticated";
-  const wanted = authenticated || !hasText ? 2 : 1;
 
   useEffect(() => {
-    requestVariant(wanted);
-  }, [wanted, requestVariant]);
+    requestVariant(hasText ? 1 : 2);
+  }, [hasText, requestVariant]);
 
-  // Start the success timeline only after the morph to the dark composition has finished.
-  const phase = useLoginTransition(authenticated && variant === 2 && settled, DASHBOARD_HOME);
+  const phase = useLoginTransition(authenticated, DASHBOARD_HOME);
 
   const announcement =
     status === "verifying"
@@ -50,7 +47,12 @@ export function LoginCard({ className }: { className?: string }) {
         : "";
 
   return (
-    <div data-login-card data-auth-phase={phase} className={cn("group/card relative w-full", styles.card, className)}>
+    <div
+      data-login-card
+      data-auth-phase={phase}
+      data-card-dark={authenticated || undefined}
+      className={cn("group/card relative w-full", styles.card, className)}
+    >
       {/* Blue ambient glow, faded in on hover, while the form has focus, or after signing in (opacity only, no movement). */}
       <div
         aria-hidden
@@ -59,15 +61,16 @@ export function LoginCard({ className }: { className?: string }) {
 
       <section
         aria-labelledby="admin-sign-in-title"
-        className="relative w-full overflow-hidden rounded-3xl px-6 pt-24 pb-10 text-brand-navy transition-colors duration-500 sm:px-12 sm:py-20 lg:pt-31 lg:pb-28 login-alt:text-brand-white lg:login-alt:pt-36 lg:login-alt:pr-10.5 lg:login-alt:pb-23 lg:login-alt:pl-13.5"
+        className="relative w-full overflow-hidden rounded-3xl px-6 pt-24 pb-10 text-brand-navy transition-colors duration-500 sm:px-12 sm:py-20 lg:pt-31 lg:pb-28 login-alt:text-brand-white group-data-[card-dark]/card:text-brand-white lg:login-alt:pt-36 lg:login-alt:pr-10.5 lg:login-alt:pb-23 lg:login-alt:pl-13.5"
       >
         {/*
          * The card's white surface. In the alternate composition it melts away
          * (fades and shrinks slightly), leaving the form directly on the page.
+         * After signing in it turns navy (the card goes dark; the layout stays).
          */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 rounded-3xl bg-brand-white shadow-2xl shadow-black/40 transition-[opacity,scale,box-shadow] duration-500 ease-out group-hover/card:shadow-black/50 login-alt:scale-[0.96] login-alt:opacity-0"
+          className="pointer-events-none absolute inset-0 rounded-3xl bg-brand-white shadow-2xl shadow-black/40 ring-white/10 transition-[opacity,scale,box-shadow,background-color] duration-500 ease-out group-hover/card:shadow-black/50 login-alt:scale-[0.96] login-alt:opacity-0 group-data-[card-dark]/card:bg-login-background group-data-[card-dark]/card:shadow-black/60 group-data-[card-dark]/card:ring-1"
         />
 
         <Image
@@ -106,7 +109,7 @@ export function LoginCard({ className }: { className?: string }) {
             <SuccessCheck className="size-18" />
             <p
               className={cn(
-                "mt-7 text-lg font-semibold tracking-tight text-brand-navy sm:text-xl login-alt:text-brand-white",
+                "mt-7 text-lg font-semibold tracking-tight text-brand-navy sm:text-xl login-alt:text-brand-white group-data-[card-dark]/card:text-brand-white",
                 styles.successText,
               )}
             >

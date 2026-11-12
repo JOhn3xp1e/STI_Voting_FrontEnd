@@ -53,6 +53,7 @@
 }
 
 /* Navigation: section labels, then their links, ~50 ms apart. */
+
 :global(html[data-dashboard-entrance]) .sidebar nav h2,
 :global(html[data-dashboard-entrance]) .sidebar nav li {
   animation: nav-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;

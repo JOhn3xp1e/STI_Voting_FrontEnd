@@ -49,12 +49,14 @@
   fill: color-mix(in oklab, var(--color-brand-blue) 7%, var(--color-brand-white));
 }
 
-/* On the sign-in screen's dark composition (no white card behind it). */
-:global([data-login-variant="2"]) .disc {
+/* On a dark surface: the sign-in screen's dark composition, or the card once it turns dark after signing in. */
+:global([data-login-variant="2"]) .disc,
+:global([data-card-dark]) .disc {
   fill: color-mix(in oklab, var(--color-brand-blue) 24%, var(--color-login-background));
 }
 
-:global([data-login-variant="2"]) .tick {
+:global([data-login-variant="2"]) .tick,
+:global([data-card-dark]) .tick {
   stroke: var(--color-brand-gold) !important;
 }
 
