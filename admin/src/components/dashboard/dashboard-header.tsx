@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Menu as MenuIcon } from "lucide-react";
 
@@ -46,10 +47,17 @@ export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, class
         aria-hidden
         className={cn(styles.backdrop, "transition-opacity duration-500 ease-out", hero ? "opacity-100" : "opacity-0")}
       >
-        <div className={styles.gradient} />
-        <div className={styles.shade} />
-        <div className={styles.glow} />
-        <div className={styles.grain} />
+        {/* Light theme: header artwork. */}
+        <div className={styles.artwork}>
+          <Image src="/images/headerdesign.png" alt="" fill loading="eager" sizes="140vw" className="object-cover" />
+        </div>
+        {/* Dark theme: animated navy gradient. */}
+        <div className={styles.darkLayers}>
+          <div className={styles.gradient} />
+          <div className={styles.shade} />
+          <div className={styles.glow} />
+          <div className={styles.grain} />
+        </div>
       </div>
 
       <div className="relative px-4 sm:px-6 lg:px-8">

@@ -1,45 +1,60 @@
 /*
- * Dashboard (`hero`) header backdrop, with a soft glow and film grain.
- * Light theme: pale grey on the left (behind the navy title) sweeping through
- * STI Gold and Primary Blue into the dark navy on the right.
- * Dark theme: dark navy base lit by STI Gold and Primary Blue (white title).
+ * Dashboard (`hero`) header backdrop.
+ * Light theme: the `headerdesign.png` artwork — pale grey with a soft white
+ * ring on the left (behind the navy title), sweeping through STI Gold and
+ * Primary Blue into dark navy on the right.
+ * Dark theme: animated dark navy gradient lit by STI Gold and Primary Blue,
+ * with a soft glow and film grain (white title).
  */
 
 .backdrop {
-  --hero-light: #e8e9eb;
   position: absolute;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  background-color: var(--hero-light);
-}
-
-/* Oversized so it can drift sideways without exposing an edge. */
-.gradient {
-  position: absolute;
-  inset: 0 -8%;
-  background: linear-gradient(
-    90deg,
-    #ededee 0%,
-    var(--hero-light) 17%,
-    color-mix(in oklab, var(--color-brand-gold) 40%, var(--hero-light)) 26%,
-    color-mix(in oklab, var(--color-brand-gold) 90%, var(--hero-light)) 32%,
-    var(--color-brand-gold) 39%,
-    color-mix(in oklab, var(--color-brand-gold) 35%, var(--color-brand-blue)) 46%,
-    var(--color-brand-blue) 52%,
-    color-mix(in oklab, var(--color-brand-blue) 45%, var(--color-brand-background)) 61%,
-    var(--color-brand-background) 71%,
-    var(--color-brand-background) 100%
-  );
-  animation: drift 26s ease-in-out infinite alternate;
-  will-change: transform;
+  background-color: #efefef;
+  transition: background-color 500ms ease-out;
 }
 
 :global([data-theme="dark"]) .backdrop {
   background-color: var(--color-brand-background);
 }
 
-:global([data-theme="dark"]) .gradient {
+/*
+ * Light artwork, scaled to 137% of the header width and shifted so the small
+ * white ring sits in the top-left corner and the navy fills the right side.
+ * Sized from the width (aspect-ratio), so the crop stays the same at every size.
+ */
+.artwork {
+  position: absolute;
+  top: 0;
+  left: -36.9%;
+  width: 137%;
+  aspect-ratio: 2116 / 922;
+  transform: translate3d(0, -23.3%, 0);
+  transition: opacity 500ms ease-out;
+}
+
+:global([data-theme="dark"]) .artwork {
+  opacity: 0;
+}
+
+/* Dark-theme layers (gradient, shade, glow, grain). */
+.darkLayers {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 500ms ease-out;
+}
+
+:global([data-theme="dark"]) .darkLayers {
+  opacity: 1;
+}
+
+/* Oversized so it can drift sideways without exposing an edge. */
+.gradient {
+  position: absolute;
+  inset: 0 -8%;
   background: linear-gradient(
     90deg,
     var(--color-brand-background) 0%,
@@ -60,10 +75,6 @@
 .shade {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgb(11 18 32 / 0.04) 0%, transparent 45%, rgb(11 18 32 / 0.12) 100%);
-}
-
-:global([data-theme="dark"]) .shade {
   background: linear-gradient(180deg, rgb(11 18 32 / 0.25) 0%, transparent 45%, rgb(11 18 32 / 0.4) 100%);
 }
 
