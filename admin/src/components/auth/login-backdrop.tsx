@@ -3,7 +3,7 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 import { BuildingBackdrop } from "./building-backdrop";
-import { GlowField } from "./glow-field";
+import { FluidField } from "./fluid-field";
 import styles from "./login-effects.module.css";
 import { PointerGlow } from "./pointer-glow";
 
@@ -19,8 +19,8 @@ const GLOW_IMAGE = { src: "/images/bglogin-glow.png", fill: true, loading: "eage
  * Decorative page background: navy base, blue wash, glow artwork, dot texture and cursor light.
  *
  * Alternate composition (`login-alt:`): the blue wash and the right-hand glow
- * fade away, and the same glow artwork rises in full strength on the left,
- * expanding outward from the left edge.
+ * fade away, and a live blue/gold fluid glow rises on the left, expanding
+ * outward from the left edge; the mouse stirs it.
  */
 export function LoginBackdrop() {
   return (
@@ -40,13 +40,12 @@ export function LoginBackdrop() {
       </div>
 
       {/*
-       * Alternate composition: the full glow on the left (the artwork's own left 69%),
-       * as separate gold and blue layers that drift apart around the cursor.
+       * Alternate composition: the blue/gold fluid glow on the left, stirred by the mouse.
        * Small screens: kept behind the brand at the top, fading out before the form.
-       * `lighten` lets only the glow's blue/gold add light: the artwork's own dark
-       * navy areas give way to the page's base colour instead of tinting it.
+       * `lighten` lets only the glow's blue/gold add light: the simulation's dark
+       * areas give way to the page's base colour instead of tinting it.
        */}
-      <GlowField
+      <FluidField
         className={cn(
           "absolute top-0 left-0 h-[55%] w-full origin-left mix-blend-lighten mask-r-from-80% mask-b-from-35% lg:inset-y-0 lg:h-auto lg:w-[68.75%] lg:mask-b-from-100%",
           "scale-x-[0.55] opacity-0 transition-[opacity,scale] login-alt:scale-100 login-alt:opacity-100",
