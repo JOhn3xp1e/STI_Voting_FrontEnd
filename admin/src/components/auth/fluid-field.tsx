@@ -21,7 +21,7 @@ interface FluidFieldProps {
 /**
  * Blue and gold glow of the sign-in screen, as a live fluid simulation:
  * moving the mouse over it stirs the colours, which then drift back into
- * place. Gentle currents keep it moving on its own.
+ * place. At rest it only drifts very slowly (no random currents).
  *
  * Mouse only (no touch); with reduced motion it shows the resting
  * composition without animating. The loop runs only while its composition is

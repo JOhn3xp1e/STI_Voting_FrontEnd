@@ -28,7 +28,7 @@ export function LoginBackdrop() {
         mirror
         className={cn(
           "absolute inset-y-0 right-0 hidden w-2/5 mix-blend-lighten mask-l-from-60% lg:block",
-          "opacity-40 transition-[opacity,scale] login-alt:scale-110 login-alt:opacity-0",
+          "opacity-20 transition-[opacity,scale] login-alt:scale-110 login-alt:opacity-0",
         )}
       />
 
@@ -41,7 +41,7 @@ export function LoginBackdrop() {
       <FluidField
         className={cn(
           "absolute top-0 left-0 h-[55%] w-full origin-left mix-blend-lighten mask-r-from-80% mask-b-from-35% lg:inset-y-0 lg:h-auto lg:w-[68.75%] lg:mask-b-from-100%",
-          "scale-x-[0.55] opacity-0 transition-[opacity,scale] login-alt:scale-100 login-alt:opacity-100",
+          "scale-x-[0.55] opacity-0 transition-[opacity,scale] login-alt:scale-100 login-alt:opacity-50",
         )}
       />
 

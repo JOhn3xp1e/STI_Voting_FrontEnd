@@ -7,7 +7,8 @@
  *
  * The dye is continuously eased back towards a soft brand composition (gold
  * top-left, blue down the left edge; or mirrored), so stirring leaves swirls that heal
- * over a few seconds instead of washing the colours away.
+ * over a few seconds instead of washing the colours away. Only the mouse moves
+ * the fluid; at rest the composition just drifts very slowly.
  */
 
 export interface FluidSim {
@@ -66,10 +67,10 @@ const VISCOSITY = 45;
 const VISCOSITY_ITERATIONS = 10;
 /** Seconds for stirred dye to settle back towards the resting composition. */
 const RELAX_TAU = 2.6;
-const POINTER_FORCE = 3400;
-/** Splat variance: 0.75² of the original 0.02, i.e. a stroke 25% smaller across. */
-const POINTER_RADIUS = 0.01125;
-const AMBIENT_RADIUS = 0.035;
+/** How hard the mouse drags the fluid. */
+const POINTER_FORCE = 1700;
+/** Splat variance (the stroke's width grows with its square root): 0.5² of 0.01125, i.e. half as wide. */
+const POINTER_RADIUS = 0.0028125;
 
 /** Brand colours as display RGB (brand-gold #ffc200, a lit brand-blue). */
 const GOLD: [number, number, number] = [0.96, 0.74, 0.04];
@@ -281,7 +282,8 @@ void main () {
   vec3 c = clamp(texture2D(uTexture, vUv).rgb, 0.0, 1.0);
   float dx = length(texture2D(uTexture, vR).rgb) - length(texture2D(uTexture, vL).rgb);
   float dy = length(texture2D(uTexture, vT).rgb) - length(texture2D(uTexture, vB).rgb);
-  vec3 n = normalize(vec3(dx, dy, length(texelSize) * 2.5));
+  // Large z: only the sharper folds left by stirring get shaded, not the resting gradient.
+  vec3 n = normalize(vec3(dx, dy, length(texelSize) * 7.0));
   vec3 light = normalize(vec3(-0.35, 0.45, 1.0));
   float diffuse = clamp(dot(n, light) + 0.25, 0.72, 1.08);
   float sheen = pow(max(dot(n, normalize(light + vec3(0.0, 0.0, 1.0))), 0.0), 40.0) * 0.12;
@@ -576,7 +578,6 @@ export function createFluidSim(canvas: HTMLCanvasElement, { animate = true, mirr
   /* ------------------------------ interaction ------------------------------ */
 
   const pointer = { active: false, x: 0, y: 0, dx: 0, dy: 0 };
-  let nextAmbient = 0;
 
   const applyInput = () => {
     if (pointer.dx !== 0 || pointer.dy !== 0) {
@@ -584,14 +585,6 @@ export function createFluidSim(canvas: HTMLCanvasElement, { animate = true, mirr
       splat(velocity, pointer.x, pointer.y, [pointer.dx * POINTER_FORCE, pointer.dy * POINTER_FORCE, 0], POINTER_RADIUS);
       pointer.dx = 0;
       pointer.dy = 0;
-    }
-    // Gentle ambient currents inside the coloured area, so it keeps flowing on its own.
-    if (time > nextAmbient) {
-      nextAmbient = time + 0.8 + Math.random() * 0.9;
-      const angle = Math.random() * Math.PI * 2;
-      const strength = 40 + Math.random() * 60;
-      const x = Math.random() * 0.45;
-      splat(velocity, mirror ? 1 - x : x, 0.1 + Math.random() * 0.85, [Math.cos(angle) * strength, Math.sin(angle) * strength, 0], AMBIENT_RADIUS);
     }
   };
 
