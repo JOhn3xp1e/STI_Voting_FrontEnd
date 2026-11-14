@@ -62,7 +62,8 @@ function MapIllustration({ className }: { className?: string }) {
           <Image
             {...MAP_IMAGE}
             alt=""
-            className="block w-full opacity-45 transition-opacity lg:opacity-55 lg:login-alt:opacity-75"
+            // Dark composition: fully opaque, with a dark halo around the glyphs, so the map reads in front of the fluid glow.
+            className="block w-full opacity-45 transition-opacity lg:opacity-55 lg:login-alt:opacity-100 lg:login-alt:drop-shadow-[0_0_5px_var(--color-login-background)]"
           />
           <div className={styles.mapSweepWindow}>
             <div className={styles.mapSweepInner}>
