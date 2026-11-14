@@ -61,6 +61,16 @@ export function LoginBackdrop() {
       />
 
       {/*
+       * The same dot grid over the fluid, so the glow sits behind the dots. `overlay`
+       * makes them show up on the bright blue/gold while staying faint on the navy.
+       * Same 24px grid from the same origin, so these dots line up with the ones above;
+       * not scaled with the fluid, so they never smear during the composition switch.
+       */}
+      <div className="absolute top-0 left-0 h-[55%] w-full mix-blend-overlay mask-r-from-80% mask-b-from-35% lg:inset-y-0 lg:h-auto lg:w-[68.75%] lg:mask-b-from-100% opacity-0 transition-opacity login-alt:opacity-100">
+        <div className={cn("absolute inset-0 bg-dot-grid [--dot-color:rgb(255_255_255/0.5)]", styles.dotsBreathe)} />
+      </div>
+
+      {/*
        * While typing (white card): the rotating building over the left three
        * quarters of the page. Small screens: behind the brand at the top.
        */}

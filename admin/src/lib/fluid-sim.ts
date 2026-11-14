@@ -1,7 +1,8 @@
 /**
- * Small WebGL fluid simulation (stable fluids: advection, vorticity
- * confinement, Jacobi pressure solve) used as the sign-in screen's animated
- * blue/gold glow. No dependencies; works on WebGL 2 and WebGL 1 with
+ * Small WebGL fluid simulation (stable fluids: advection, viscous diffusion,
+ * light vorticity confinement, Jacobi pressure solve) used as the sign-in
+ * screen's animated blue/gold glow. Tuned to move like a thick, viscous liquid
+ * rather than smoke. No dependencies; works on WebGL 2 and WebGL 1 with
  * half-float textures.
  *
  * The dye is continuously eased back towards a soft brand composition (gold
@@ -55,13 +56,17 @@ const DYE_RESOLUTION = 384;
 const CANVAS_SCALE = 0.6;
 const PRESSURE_ITERATIONS = 20;
 const PRESSURE_DECAY = 0.8;
-const VELOCITY_DISSIPATION = 0.35;
-const CURL = 22;
+const VELOCITY_DISSIPATION = 0.9;
+/** Vorticity confinement: kept low, since strong swirl forcing is what makes it look like smoke. */
+const CURL = 3;
+/** Kinematic viscosity (texels²/s): damps small eddies so motion folds like thick paint. */
+const VISCOSITY = 45;
+const VISCOSITY_ITERATIONS = 10;
 /** Seconds for stirred dye to settle back towards the resting composition. */
 const RELAX_TAU = 2.6;
-const POINTER_FORCE = 2600;
-const POINTER_RADIUS = 0.006;
-const AMBIENT_RADIUS = 0.012;
+const POINTER_FORCE = 3400;
+const POINTER_RADIUS = 0.02;
+const AMBIENT_RADIUS = 0.035;
 
 /** Brand colours as display RGB (brand-gold #ffc200, a lit brand-blue). */
 const GOLD: [number, number, number] = [0.96, 0.74, 0.04];
@@ -206,6 +211,22 @@ void main () {
   gl_FragColor = vec4(velocity, 0.0, 1.0);
 }`;
 
+/** One Jacobi step of implicit viscous diffusion: (1 + 4a) v = v0 + a (L + R + T + B). */
+const VISCOSITY_SHADER = `
+precision highp float;
+varying vec2 vUv, vL, vR, vT, vB;
+uniform sampler2D uVelocity;
+uniform sampler2D uVelocity0;
+uniform float alpha;
+void main () {
+  vec2 L = texture2D(uVelocity, vL).xy;
+  vec2 R = texture2D(uVelocity, vR).xy;
+  vec2 T = texture2D(uVelocity, vT).xy;
+  vec2 B = texture2D(uVelocity, vB).xy;
+  vec2 v0 = texture2D(uVelocity0, vUv).xy;
+  gl_FragColor = vec4((v0 + alpha * (L + R + T + B)) / (1.0 + 4.0 * alpha), 0.0, 1.0);
+}`;
+
 const SCALE = `
 precision highp float;
 varying vec2 vUv;
@@ -238,17 +259,28 @@ void main () {
   gl_FragColor = vec4(mix(current, composition(vUv), amount), 1.0);
 }`;
 
-/** Final output with a fine film grain (also hides banding in the soft gradients). */
+/**
+ * Final output: soft surface shading from the dye's slopes (so folds read as a
+ * glossy liquid rather than mist), plus a fine film grain that also hides banding.
+ */
 const DISPLAY = `
 precision highp float;
-varying vec2 vUv;
+varying vec2 vUv, vL, vR, vT, vB;
 uniform sampler2D uTexture;
+uniform vec2 texelSize;
 uniform float time;
 float hash (vec2 p) {
   return fract(sin(dot(p, vec2(12.9898, 78.233)) + time) * 43758.5453);
 }
 void main () {
   vec3 c = clamp(texture2D(uTexture, vUv).rgb, 0.0, 1.0);
+  float dx = length(texture2D(uTexture, vR).rgb) - length(texture2D(uTexture, vL).rgb);
+  float dy = length(texture2D(uTexture, vT).rgb) - length(texture2D(uTexture, vB).rgb);
+  vec3 n = normalize(vec3(dx, dy, length(texelSize) * 2.5));
+  vec3 light = normalize(vec3(-0.35, 0.45, 1.0));
+  float diffuse = clamp(dot(n, light) + 0.25, 0.72, 1.08);
+  float sheen = pow(max(dot(n, normalize(light + vec3(0.0, 0.0, 1.0))), 0.0), 40.0) * 0.12;
+  c = c * diffuse + sheen * c;
   c += (hash(gl_FragCoord.xy) - 0.5) * 0.035;
   gl_FragColor = vec4(c, 1.0);
 }`;
@@ -305,6 +337,7 @@ export function createFluidSim(canvas: HTMLCanvasElement, { animate = true }: Fl
   const gradientProgram = program(GRADIENT_SUBTRACT);
   const scaleProgram = program(SCALE);
   const relaxProgram = program(RELAX);
+  const viscosityProgram = program(VISCOSITY_SHADER);
   const displayProgram = program(DISPLAY);
 
   // Full-screen quad.
@@ -383,6 +416,7 @@ export function createFluidSim(canvas: HTMLCanvasElement, { animate = true }: Fl
   let pressure: DoubleFBO;
   let divergence: FBO;
   let curl: FBO;
+  let velocity0: FBO;
   let ready = false;
 
   const resolution = (size: number) => {
@@ -395,7 +429,7 @@ export function createFluidSim(canvas: HTMLCanvasElement, { animate = true }: Fl
 
   const initFramebuffers = () => {
     if (ready) {
-      [dye.read, dye.write, velocity.read, velocity.write, pressure.read, pressure.write, divergence, curl].forEach(deleteFBO);
+      [dye.read, dye.write, velocity.read, velocity.write, pressure.read, pressure.write, divergence, curl, velocity0].forEach(deleteFBO);
     }
     const sim = resolution(SIM_RESOLUTION);
     const dyeRes = resolution(DYE_RESOLUTION);
@@ -404,6 +438,7 @@ export function createFluidSim(canvas: HTMLCanvasElement, { animate = true }: Fl
     pressure = createDoubleFBO(sim.width, sim.height);
     divergence = createFBO(sim.width, sim.height);
     curl = createFBO(sim.width, sim.height);
+    velocity0 = createFBO(sim.width, sim.height);
     ready = true;
     relax(1); // start from the resting composition
   };
@@ -467,6 +502,20 @@ export function createFluidSim(canvas: HTMLCanvasElement, { animate = true }: Fl
     gl.uniform1f(u.dt, dt);
     blit(velocity.write);
     velocity.swap();
+
+    // Viscosity: implicit diffusion of the velocity, solved with a few Jacobi steps.
+    u = bind(scaleProgram, tx, ty);
+    gl.uniform1i(u.uTexture, velocity.read.attach(0));
+    gl.uniform1f(u.value, 1);
+    blit(velocity0);
+    u = bind(viscosityProgram, tx, ty);
+    gl.uniform1i(u.uVelocity0, velocity0.attach(1));
+    gl.uniform1f(u.alpha, VISCOSITY * dt);
+    for (let i = 0; i < VISCOSITY_ITERATIONS; i++) {
+      gl.uniform1i(u.uVelocity, velocity.read.attach(0));
+      blit(velocity.write);
+      velocity.swap();
+    }
 
     u = bind(divergenceProgram, tx, ty);
     gl.uniform1i(u.uVelocity, velocity.read.attach(0));
@@ -534,7 +583,7 @@ export function createFluidSim(canvas: HTMLCanvasElement, { animate = true }: Fl
     if (time > nextAmbient) {
       nextAmbient = time + 0.8 + Math.random() * 0.9;
       const angle = Math.random() * Math.PI * 2;
-      const strength = 60 + Math.random() * 90;
+      const strength = 40 + Math.random() * 60;
       splat(velocity, Math.random() * 0.45, 0.1 + Math.random() * 0.85, [Math.cos(angle) * strength, Math.sin(angle) * strength, 0], AMBIENT_RADIUS);
     }
   };
@@ -605,7 +654,7 @@ export function createFluidSim(canvas: HTMLCanvasElement, { animate = true }: Fl
       running = false;
       cancelAnimationFrame(raf);
       observer.disconnect();
-      if (ready) [dye.read, dye.write, velocity.read, velocity.write, pressure.read, pressure.write, divergence, curl].forEach(deleteFBO);
+      if (ready) [dye.read, dye.write, velocity.read, velocity.write, pressure.read, pressure.write, divergence, curl, velocity0].forEach(deleteFBO);
       programs.forEach((p) => gl.deleteProgram(p.program));
       gl.deleteBuffer(vertexBuffer);
       gl.deleteBuffer(indexBuffer);
