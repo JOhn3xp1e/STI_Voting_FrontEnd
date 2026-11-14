@@ -2,7 +2,7 @@ import Image from "next/image";
 
 import { cn } from "@/lib/utils";
 
-import styles from "./login-effects.module.css";
+import { MapIllustration } from "./map-illustration";
 
 /** Path to the SLVP/STI logo in `public/images/` (rendered at 40×40). */
 const STI_LOGO_SRC: string | null = "/images/slvp logo.png";
@@ -31,40 +31,6 @@ export function BrandMark({ className }: { className?: string }) {
       >
         SLVP · Admin Portal
       </p>
-    </div>
-  );
-}
-
-/** Shared props so both map layers resolve to the same (cached) image file. */
-const MAP_IMAGE = {
-  src: "/images/image1.png",
-  width: 1319,
-  height: 889,
-  loading: "eager",
-  sizes: "(min-width: 1440px) 860px, (min-width: 1024px) 60vw, 90vw",
-} as const;
-
-/**
- * Gold pixel-art map with a slow drift and a periodic light sweep.
- * The outer element is positioned (and FLIP-animated on the composition
- * switch); the inner one carries the drift animation, so they never fight
- * over `transform`.
- */
-function MapIllustration({ className }: { className?: string }) {
-  return (
-    <div aria-hidden data-morph="map" className={cn("pointer-events-none select-none", className)}>
-      <div className={styles.mapFloat}>
-        <Image
-          {...MAP_IMAGE}
-          alt=""
-          className="block w-full opacity-45 transition-opacity lg:opacity-55 lg:login-alt:opacity-75"
-        />
-        <div className={styles.mapSweepWindow}>
-          <div className={styles.mapSweepInner}>
-            <Image {...MAP_IMAGE} alt="" className="block w-full opacity-60" />
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

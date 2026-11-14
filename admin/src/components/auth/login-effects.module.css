@@ -280,6 +280,17 @@
  * Window width = 35% of the map: travel is -100% → 285.71% (= 100% / 0.35),
  * and the counter-move is 35% → -100% of the copy's width.
  */
+/* The 3D building fading in when it replaces the map (press "C" on the sign-in screen). */
+.artFadeIn {
+  animation: art-fade-in 700ms ease-out both;
+}
+
+@keyframes art-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
 .mapSweepWindow {
   position: absolute;
   inset-block: 0;
