@@ -37,5 +37,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # NEXT_PUBLIC_* values are baked into the bundle at build time.
           NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
-          NEXT_PUBLIC_AUTH_DEMO_MODE: ${{ vars.NEXT_PUBLIC_AUTH_DEMO_MODE }}
-          NEXT_PUBLIC_ALLOW_DEMO_ON_DEPLOY: ${{ vars.NEXT_PUBLIC_ALLOW_DEMO_ON_DEPLOY }}
+          # Public by design (browser key); access is enforced by Supabase RLS and the API.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
