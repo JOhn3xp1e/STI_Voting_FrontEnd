@@ -6,7 +6,7 @@
  * half-float textures.
  *
  * The dye is continuously eased back towards a soft brand composition (gold
- * top-left, blue down the left edge), so stirring leaves swirls that heal
+ * top-left, blue down the left edge; or mirrored), so stirring leaves swirls that heal
  * over a few seconds instead of washing the colours away.
  */
 
@@ -23,6 +23,8 @@ export interface FluidSim {
 export interface FluidOptions {
   /** False renders the resting composition once (reduced motion) and never animates. */
   animate?: boolean;
+  /** Mirror the resting composition horizontally (gold top-right, blue down the right edge). */
+  mirror?: boolean;
 }
 
 type GL = WebGLRenderingContext;
@@ -65,7 +67,8 @@ const VISCOSITY_ITERATIONS = 10;
 /** Seconds for stirred dye to settle back towards the resting composition. */
 const RELAX_TAU = 2.6;
 const POINTER_FORCE = 3400;
-const POINTER_RADIUS = 0.02;
+/** Splat variance: 0.75² of the original 0.02, i.e. a stroke 25% smaller across. */
+const POINTER_RADIUS = 0.01125;
 const AMBIENT_RADIUS = 0.035;
 
 /** Brand colours as display RGB (brand-gold #ffc200, a lit brand-blue). */
@@ -245,6 +248,7 @@ uniform float amount;
 uniform float time;
 uniform vec3 gold;
 uniform vec3 blue;
+uniform float mirror;
 vec3 composition (vec2 uv) {
   // Blue down the left edge, with a softly waving inner boundary.
   float edge = uv.x + 0.045 * sin(uv.y * 3.1 + time * 0.35) + 0.03 * sin(uv.y * 7.0 - time * 0.5);
@@ -256,7 +260,8 @@ vec3 composition (vec2 uv) {
 }
 void main () {
   vec3 current = texture2D(uSource, vUv).rgb;
-  gl_FragColor = vec4(mix(current, composition(vUv), amount), 1.0);
+  vec2 uv = mix(vUv, vec2(1.0 - vUv.x, vUv.y), mirror);
+  gl_FragColor = vec4(mix(current, composition(uv), amount), 1.0);
 }`;
 
 /**
@@ -287,7 +292,7 @@ void main () {
 
 /* ---------------------------------- setup ---------------------------------- */
 
-export function createFluidSim(canvas: HTMLCanvasElement, { animate = true }: FluidOptions = {}): FluidSim {
+export function createFluidSim(canvas: HTMLCanvasElement, { animate = true, mirror = false }: FluidOptions = {}): FluidSim {
   const attributes: WebGLContextAttributes = {
     alpha: false,
     depth: false,
@@ -470,6 +475,7 @@ export function createFluidSim(canvas: HTMLCanvasElement, { animate = true }: Fl
     gl.uniform1f(u.time, time);
     gl.uniform3f(u.gold, ...GOLD);
     gl.uniform3f(u.blue, ...BLUE);
+    gl.uniform1f(u.mirror, mirror ? 1 : 0);
     blit(dye.write);
     dye.swap();
   }
@@ -584,7 +590,8 @@ export function createFluidSim(canvas: HTMLCanvasElement, { animate = true }: Fl
       nextAmbient = time + 0.8 + Math.random() * 0.9;
       const angle = Math.random() * Math.PI * 2;
       const strength = 40 + Math.random() * 60;
-      splat(velocity, Math.random() * 0.45, 0.1 + Math.random() * 0.85, [Math.cos(angle) * strength, Math.sin(angle) * strength, 0], AMBIENT_RADIUS);
+      const x = Math.random() * 0.45;
+      splat(velocity, mirror ? 1 - x : x, 0.1 + Math.random() * 0.85, [Math.cos(angle) * strength, Math.sin(angle) * strength, 0], AMBIENT_RADIUS);
     }
   };
 

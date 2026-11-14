@@ -3,23 +3,32 @@
 import { useEffect, useRef, useState } from "react";
 
 import { createFluidSim, type FluidSim } from "@/lib/fluid-sim";
+import { cn } from "@/lib/utils";
 
-import { useLoginLayout } from "./login-stage";
+import { useLoginLayout, type LoginVariant } from "./login-stage";
 
 /** Matches the composition cross-fade (MORPH_MS in login-stage.tsx), so the loop stops once it's invisible. */
 const STOP_AFTER_MS = 1000;
 
+interface FluidFieldProps {
+  className?: string;
+  /** Composition this glow belongs to: the loop and stirring run only while it shows. */
+  activeVariant?: LoginVariant;
+  /** Gold top-right and blue down the right edge instead of the left. */
+  mirror?: boolean;
+}
+
 /**
- * Blue and gold glow of the dark sign-in composition, as a live fluid
- * simulation: moving the mouse over it stirs the colours, which then drift
- * back into place. Gentle currents keep it moving on its own.
+ * Blue and gold glow of the sign-in screen, as a live fluid simulation:
+ * moving the mouse over it stirs the colours, which then drift back into
+ * place. Gentle currents keep it moving on its own.
  *
  * Mouse only (no touch); with reduced motion it shows the resting
- * composition without animating. The loop runs only while the dark
- * composition is showing and the tab is visible. Without WebGL it falls back
- * to a static CSS gradient.
+ * composition without animating. The loop runs only while its composition is
+ * showing and the tab is visible. Without WebGL it falls back to a static CSS
+ * gradient.
  */
-export function FluidField({ className }: { className?: string }) {
+export function FluidField({ className, activeVariant = 2, mirror = false }: FluidFieldProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simRef = useRef<FluidSim | null>(null);
   const activeRef = useRef(false);
@@ -35,7 +44,7 @@ export function FluidField({ className }: { className?: string }) {
 
     let sim: FluidSim;
     try {
-      sim = createFluidSim(canvas, { animate: !reducedMotion });
+      sim = createFluidSim(canvas, { animate: !reducedMotion, mirror });
     } catch (error) {
       console.error(error);
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -72,11 +81,11 @@ export function FluidField({ className }: { className?: string }) {
       sim.dispose();
       simRef.current = null;
     };
-  }, []);
+  }, [mirror]);
 
-  // Run while the dark composition shows; stop once it has faded out.
+  // Run while this glow's composition shows; stop once it has faded out.
   useEffect(() => {
-    if (variant === 2) {
+    if (variant === activeVariant) {
       activeRef.current = true;
       simRef.current?.setRunning(!document.hidden);
       return;
@@ -85,12 +94,17 @@ export function FluidField({ className }: { className?: string }) {
     simRef.current?.pointerLeave();
     const timer = setTimeout(() => simRef.current?.setRunning(false), STOP_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [variant]);
+  }, [variant, activeVariant]);
 
   return (
     <div className={className}>
       {failed ? (
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_32%_42%_at_3%_20%,#f5bd0a_0%,transparent_75%),linear-gradient(90deg,#1557b8_12%,transparent_52%)]" />
+        <div
+          className={cn(
+            "absolute inset-0 bg-[radial-gradient(ellipse_32%_42%_at_3%_20%,#f5bd0a_0%,transparent_75%),linear-gradient(90deg,#1557b8_12%,transparent_52%)]",
+            mirror && "-scale-x-100",
+          )}
+        />
       ) : (
         <canvas ref={canvasRef} className="absolute inset-0 block size-full" />
       )}
