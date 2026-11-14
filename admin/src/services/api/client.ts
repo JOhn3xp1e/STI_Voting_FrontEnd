@@ -1,4 +1,5 @@
 import { env } from "@/config/env";
+import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import type {
   ApiErrorKind,
   ApiRequestOptions,
@@ -162,6 +163,54 @@ function createTimeoutSignal(timeoutMs: number): AbortSignal | undefined {
   return timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
 }
 
+/**
+ * The signed-in admin's Supabase access token, or `null` (signed out, on the
+ * server, or Supabase not configured). `getSession` refreshes an expired
+ * token first, so the backend always gets a current one.
+ */
+async function getAccessToken(): Promise<string | null> {
+  if (typeof window === "undefined" || !isSupabaseConfigured()) return null;
+  try {
+    const { data } = await getSupabase().auth.getSession();
+    return data.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                             401 / 403 handling                             */
+/* -------------------------------------------------------------------------- */
+
+/** Called for every 401 / 403 response (see `setAuthFailureHandler`). */
+export type AuthFailureHandler = (status: 401 | 403) => void;
+
+let authFailureHandler: AuthFailureHandler | null = null;
+
+/**
+ * Registers the app-wide reaction to 401 (session expired → sign out) and 403
+ * (not an active admin → re-check `/auth/me` and route). Registered by the
+ * dashboard's session gate; returns a function that unregisters it.
+ */
+export function setAuthFailureHandler(handler: AuthFailureHandler): () => void {
+  authFailureHandler = handler;
+  return () => {
+    if (authFailureHandler === handler) authFailureHandler = null;
+  };
+}
+
+/**
+ * Message of an error body. The backend answers in a few shapes:
+ * `{ error }` (most 400/403/409/429), `{ message }` (some 404s) and
+ * ProblemDetails `{ title, detail }` (500/502).
+ */
+function problemMessage(problem: ProblemDetails): string | undefined {
+  for (const value of [problem.error, problem.message, problem.detail, problem.title]) {
+    if (typeof value === "string" && value) return value;
+  }
+  return undefined;
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                Core request                                */
 /* -------------------------------------------------------------------------- */
@@ -181,12 +230,25 @@ export async function request<TResponse>(
   body?: RequestBody,
   options: ApiRequestOptions = {},
 ): Promise<TResponse> {
-  const { params, timeoutMs = DEFAULT_TIMEOUT_MS, headers: headersInit, signal, ...init } = options;
+  const {
+    params,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    headers: headersInit,
+    signal,
+    skipAuthHandling = false,
+    ...init
+  } = options;
 
   const url = buildUrl(method, path, params);
 
   const headers = new Headers(headersInit);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
+
+  // Every call carries the admin's token (uploads included).
+  if (!headers.has("Authorization")) {
+    const token = await getAccessToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
 
   let payload: BodyInit | undefined;
   if (body !== undefined) {
@@ -250,10 +312,16 @@ export async function request<TResponse>(
 
   if (!response.ok) {
     const problem = toProblemDetails(data, response);
-    throw new ApiError(
-      problem.detail ?? problem.title ?? `Request failed with status ${response.status}.`,
-      { kind: "http", method, url, status: response.status, problem },
-    );
+    if ((response.status === 401 || response.status === 403) && !skipAuthHandling) {
+      authFailureHandler?.(response.status);
+    }
+    throw new ApiError(problemMessage(problem) ?? `Request failed with status ${response.status}.`, {
+      kind: "http",
+      method,
+      url,
+      status: response.status,
+      problem,
+    });
   }
 
   return data as TResponse;

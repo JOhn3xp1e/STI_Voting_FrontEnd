@@ -28,6 +28,11 @@ export interface ApiRequestOptions extends Omit<RequestInit, "method" | "body"> 
   params?: QueryParams;
   /** Request timeout in milliseconds. Defaults to 30 seconds. Use `0` to disable. */
   timeoutMs?: number;
+  /**
+   * Don't hand 401/403 responses to the global auth handler (sign out / re-route).
+   * For the auth endpoints themselves, whose callers handle those statuses.
+   */
+  skipAuthHandling?: boolean;
 }
 
 /**

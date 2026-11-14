@@ -1,0 +1,9 @@
+/** Up to two initials, e.g. "Juan Admin" → "JA". */
+export function getInitials(fullName: string): string {
+  return fullName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");
+}

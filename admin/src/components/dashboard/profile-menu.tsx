@@ -2,18 +2,15 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Menu } from "@base-ui/react/menu";
 import { LogOut, Settings, UserRound } from "lucide-react";
 
+import { useAdminSession } from "@/components/auth/admin-session";
 import { ACCOUNT_LINKS } from "@/config/navigation";
 import { cn } from "@/lib/utils";
 import type { AdminProfile } from "@/types/auth.types";
 
 import { menuItemClassName, popupClassName } from "./popup-styles";
-
-/** Where "Sign out" leads until the auth service exposes a real sign-out. */
-const SIGN_IN_ROUTE = "/login";
 
 interface ProfileMenuProps {
   admin: AdminProfile;
@@ -38,12 +35,7 @@ export function ProfileMenu({
   align = "end",
   showIdentity = false,
 }: ProfileMenuProps) {
-  const router = useRouter();
-
-  // Placeholder: no session exists yet, so signing out only returns to the sign-in screen.
-  function signOut() {
-    router.push(SIGN_IN_ROUTE);
-  }
+  const { signOut } = useAdminSession();
 
   return (
     <Menu.Root modal={false}>
@@ -71,7 +63,7 @@ export function ProfileMenu({
               Account settings
             </Menu.LinkItem>
             <Menu.Separator className="mx-1 my-1 h-px bg-border" />
-            <Menu.Item onClick={signOut} className={menuItemClassName}>
+            <Menu.Item onClick={() => void signOut()} className={menuItemClassName}>
               <LogOut aria-hidden />
               Sign out
             </Menu.Item>

@@ -8,17 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { env } from "@/config/env";
 import type { SignInStatus } from "@/hooks/use-admin-sign-in";
+import { AUTH_ROUTES } from "@/lib/auth-routing";
 import { cn } from "@/lib/utils";
 import type { AdminSignInRequest } from "@/types/auth.types";
 
 import { FormField, authInputClassName, fieldErrorId } from "./form-field";
+import { GoogleIcon } from "./google-icon";
 import styles from "./login-effects.module.css";
 import { PasswordInput } from "./password-input";
-
-/** Route of the password-recovery screen (not implemented yet). */
-const FORGOT_PASSWORD_HREF = "/forgot-password";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -42,6 +40,8 @@ interface LoginFormProps {
   /** Message of the last failed sign-in. */
   error: string | null;
   onSignIn: (request: AdminSignInRequest) => Promise<boolean>;
+  /** Leaves for Google sign-in (only admins who linked Google on the accept page can use it). */
+  onGoogleSignIn: (rememberMe: boolean) => void;
   /** Called when the user edits a field (clears a stale sign-in error). */
   onEdit: () => void;
   /** Called when the email / password go from empty to typed or back (drives the screen's layout). */
@@ -49,7 +49,7 @@ interface LoginFormProps {
   className?: string;
 }
 
-export function LoginForm({ status, error, onSignIn, onEdit, onHasTextChange, className }: LoginFormProps) {
+export function LoginForm({ status, error, onSignIn, onGoogleSignIn, onEdit, onHasTextChange, className }: LoginFormProps) {
   const [values, setValues] = useState<AdminSignInRequest>({
     email: "",
     password: "",
@@ -61,8 +61,9 @@ export function LoginForm({ status, error, onSignIn, onEdit, onHasTextChange, cl
   const passwordRef = useRef<HTMLInputElement>(null);
 
   const verifying = status === "verifying";
-  // Stays locked after success while the transition plays.
-  const locked = verifying || status === "authenticated";
+  const redirecting = status === "redirecting";
+  // Stays locked after success while the transition plays (and while leaving for Google).
+  const locked = verifying || redirecting || status === "authenticated";
 
   // Errors appear after the first submit attempt, then update as the user types.
   const errors = submitted ? validate(values) : {};
@@ -91,10 +92,11 @@ export function LoginForm({ status, error, onSignIn, onEdit, onHasTextChange, cl
     await onSignIn({ ...values, email: values.email.trim() });
   }
 
-  // After a failed attempt the fields are enabled again: put the cursor back in the password.
+  // After a failed password attempt the fields are enabled again: put the cursor back in the password.
+  // (Not for messages shown on arrival, e.g. "Your session has expired".)
   useEffect(() => {
-    if (error) passwordRef.current?.focus();
-  }, [error]);
+    if (error && submitted) passwordRef.current?.focus();
+  }, [error, submitted]);
 
   // Never keep the password around once the screen is left.
   useLayoutEffect(() => {
@@ -105,7 +107,7 @@ export function LoginForm({ status, error, onSignIn, onEdit, onHasTextChange, cl
   }, []);
 
   return (
-    <form noValidate onSubmit={handleSubmit} aria-busy={verifying} className={cn(className)}>
+    <form noValidate onSubmit={handleSubmit} aria-busy={verifying || redirecting} className={cn(className)}>
       {error ? (
         <div
           role="alert"
@@ -168,7 +170,7 @@ export function LoginForm({ status, error, onSignIn, onEdit, onHasTextChange, cl
           </Label>
 
           <Link
-            href={FORGOT_PASSWORD_HREF}
+            href={AUTH_ROUTES.forgotPassword}
             prefetch={false}
             className="rounded-sm text-[0.8125rem] font-semibold text-brand-blue transition-colors outline-none hover:underline hover:underline-offset-4 focus-visible:ring-3 focus-visible:ring-brand-blue/30 login-alt:text-brand-gold"
           >
@@ -196,7 +198,7 @@ export function LoginForm({ status, error, onSignIn, onEdit, onHasTextChange, cl
             locked && "disabled:opacity-100",
           )}
         >
-          {locked ? (
+          {locked && !redirecting ? (
             <>
               <LoaderCircle className="animate-spin" aria-hidden />
               Verifying credentials…
@@ -206,11 +208,29 @@ export function LoginForm({ status, error, onSignIn, onEdit, onHasTextChange, cl
           )}
         </Button>
 
-        {env.authDemoMode ? (
-          <p className="-mt-2 text-center font-mono text-[0.6875rem] leading-4 text-brand-muted">
-            Animation preview: sign-in is simulated, no account is checked.
-          </p>
-        ) : null}
+        <div aria-hidden className="-my-1 flex items-center gap-3 text-[0.6875rem] font-medium tracking-wide text-brand-muted uppercase">
+          <span className="h-px flex-1 bg-brand-navy/10 transition-colors login-alt:bg-brand-white/15" />
+          or
+          <span className="h-px flex-1 bg-brand-navy/10 transition-colors login-alt:bg-brand-white/15" />
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onGoogleSignIn(values.rememberMe)}
+          disabled={locked}
+          className={cn(
+            "h-9 w-full gap-2.5 rounded-md border-brand-navy/15 bg-brand-white text-[0.8125rem] font-semibold text-brand-navy",
+            "duration-200 ease-out hover:border-brand-navy/25 hover:bg-[#f5f7fb] hover:text-brand-navy",
+            "focus-visible:border-brand-blue focus-visible:ring-brand-blue/30",
+            "login-alt:border-brand-white/15 login-alt:bg-brand-white/6 login-alt:text-brand-white",
+            "login-alt:hover:border-brand-white/30 login-alt:hover:bg-brand-white/10 login-alt:hover:text-brand-white",
+            redirecting && "disabled:opacity-100",
+          )}
+        >
+          {redirecting ? <LoaderCircle className="animate-spin" aria-hidden /> : <GoogleIcon className="size-4" />}
+          {redirecting ? "Opening Google…" : "Continue with Google"}
+        </Button>
       </div>
     </form>
   );

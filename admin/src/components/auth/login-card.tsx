@@ -1,13 +1,15 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 
 import { DASHBOARD_HOME } from "@/config/navigation";
 import { useAdminSignIn } from "@/hooks/use-admin-sign-in";
-import { useEffect, useState } from "react";
-
 import { useLoginTransition } from "@/hooks/use-login-transition";
+import { AUTH_ROUTES, decideFromMe, LOGIN_NOTICES, readLoginNotice, safeNext } from "@/lib/auth-routing";
 import { cn } from "@/lib/utils";
+import { getMe, getSession } from "@/services/auth/admin-auth.service";
 
 import styles from "./login-effects.module.css";
 import { LoginForm } from "./login-form";
@@ -27,24 +29,71 @@ import { SuccessCheck } from "./success-check";
  * checkmark plays in its dark version on a dark card.
  */
 export function LoginCard({ className }: { className?: string }) {
-  const { status, error, signIn, clearError } = useAdminSignIn();
+  const router = useRouter();
+  /** Page to open after signing in (`?next=`), read once on mount. */
+  const [next, setNext] = useState<string | null>(null);
+  /** Why the screen was opened (`?error=` / `?expired=1`), shown until the user acts. */
+  const [notice, setNotice] = useState<string | null>(null);
+  const { status, error, destination, signIn, signInGoogle, clearError } = useAdminSignIn(next);
   const { requestVariant } = useLoginLayout();
   const [hasText, setHasText] = useState(false);
 
   const authenticated = status === "authenticated";
+  const target = destination ?? DASHBOARD_HOME;
+  const settingUp = target.startsWith(AUTH_ROUTES.acceptInvite);
 
   useEffect(() => {
     requestVariant(hasText ? 1 : 2);
   }, [hasText, requestVariant]);
 
-  const phase = useLoginTransition(authenticated, DASHBOARD_HOME);
+  // Query string: `?next=` (where to go after signing in) and `?error=` / `?expired=1` (why we're here).
+  // Read in an effect rather than with useSearchParams, so the page keeps its static shell.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const requested = safeNext(url.searchParams.get("next"));
+    const notice = readLoginNotice(url.searchParams);
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setNext(requested);
+    // Only ever set here (never cleared), so Strict Mode's re-run after the URL is cleaned keeps it.
+    if (notice) setNotice(LOGIN_NOTICES[notice]);
+    /* eslint-enable react-hooks/set-state-in-effect */
+
+    // Drop the notice from the address bar, so a refresh doesn't show it again.
+    if (notice) {
+      url.searchParams.delete("error");
+      url.searchParams.delete("expired");
+      window.history.replaceState(window.history.state, "", url);
+      return;
+    }
+
+    // Already signed in as an active admin (e.g. opened /login in a new tab): go straight in.
+    let cancelled = false;
+    void (async () => {
+      if (!(await getSession())) return;
+      try {
+        const decision = decideFromMe(await getMe(), requested);
+        if (!cancelled && decision.kind === "go") router.replace(decision.href);
+      } catch {
+        // Couldn't check: stay on the sign-in screen.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  const phase = useLoginTransition(authenticated, target);
 
   const announcement =
     status === "verifying"
       ? "Verifying credentials…"
-      : status === "authenticated"
-        ? "Authentication successful. Opening the admin dashboard."
-        : "";
+      : status === "redirecting"
+        ? "Opening Google sign-in…"
+        : status === "authenticated"
+          ? settingUp
+            ? "Signed in. Opening account setup."
+            : "Authentication successful. Opening the admin dashboard."
+          : "";
 
   return (
     <div
@@ -91,7 +140,24 @@ export function LoginCard({ className }: { className?: string }) {
             Use your STI admin account to manage terms and elections.
           </p>
 
-          <LoginForm status={status} error={error} onSignIn={signIn} onEdit={clearError} onHasTextChange={setHasText} className="mt-4" />
+          <LoginForm
+            status={status}
+            error={error ?? notice}
+            onSignIn={(request) => {
+              setNotice(null);
+              return signIn(request);
+            }}
+            onGoogleSignIn={(rememberMe) => {
+              setNotice(null);
+              signInGoogle(rememberMe);
+            }}
+            onEdit={() => {
+              clearError();
+              setNotice(null);
+            }}
+            onHasTextChange={setHasText}
+            className="mt-4"
+          />
 
           <p className="mt-5 text-center text-xs leading-4 text-brand-muted">
             Admins are added by a Super Admin. For access issues, contact the MIS office.
@@ -113,10 +179,10 @@ export function LoginCard({ className }: { className?: string }) {
                 styles.successText,
               )}
             >
-              Authentication successful
+              {settingUp ? "Signed in" : "Authentication successful"}
             </p>
             <p className={cn("mt-1.5 font-mono text-xs text-brand-muted", styles.successText)}>
-              Opening the admin dashboard…
+              {settingUp ? "Opening account setup…" : "Opening the admin dashboard…"}
             </p>
           </div>
         ) : null}

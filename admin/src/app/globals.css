@@ -11,10 +11,12 @@
 @custom-variant dark (&:is([data-theme="dark"] [data-themed], [data-theme="dark"] [data-themed] *));
 
 /*
- * Sign-in screen, alternate composition ("Set 2"), toggled with the C key.
- * `login-alt:` styles apply inside `<main data-login-variant="2">` (see LoginStage).
+ * Sign-in screen, dark composition (empty form).
+ * `login-alt:` styles apply inside `<main data-login-variant="2">` (see LoginStage),
+ * except inside an element marked `data-login-variant="1"` (e.g. the white card of
+ * the other auth screens, which sit on the dark composition's background).
  */
-@custom-variant login-alt (&:is([data-login-variant="2"] *));
+@custom-variant login-alt (&:is([data-login-variant="2"] *):not([data-login-variant="1"] *));
 
 /*
  * Official SLVP / STI palette. Use these tokens (e.g. `bg-brand-navy`,

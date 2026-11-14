@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** No authenticated area exists yet, so the root sends admins to sign in. */
+/** The root opens the sign-in screen, which forwards admins who are already signed in to the dashboard. */
 export default function Home() {
   redirect("/login");
 }

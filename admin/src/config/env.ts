@@ -3,28 +3,17 @@
  *
  * `NEXT_PUBLIC_*` variables are inlined into the client bundle at build time,
  * so they must be referenced with a literal `process.env.NAME` expression.
- * Never place secrets in `NEXT_PUBLIC_*` variables.
+ * Everything in them is public: only put values here that are safe for any
+ * visitor to read (the Supabase anon / publishable key is; the service-role
+ * key is NOT and must never be added).
  */
 export const env = {
-  /** Base URL of the ASP.NET Core Web API, e.g. `https://localhost:7001/api`. */
+  /** Base URL of the ASP.NET Core Web API, including `/api`, e.g. `https://slvp-api.kape-dev.workers.dev/api`. */
   apiUrl: process.env.NEXT_PUBLIC_API_URL?.trim() ?? "",
 
-  /**
-   * Sign-in ANIMATION PREVIEW — a visual demonstration only, not authentication.
-   *
-   * When on, "Sign in" waits ~2 seconds and then plays the success animation
-   * and dashboard transition without contacting the Web API. No credentials
-   * are checked, and no token or session is created.
-   *
-   * On only when `NEXT_PUBLIC_AUTH_DEMO_MODE=true` AND either:
-   * - the app runs with `next dev` (local development), or
-   * - `NEXT_PUBLIC_ALLOW_DEMO_ON_DEPLOY=true` is ALSO set: a deliberate
-   *   opt-in for a demo deployment (e.g. a Vercel preview for showing the UI).
-   *   Never set it on the real production deployment.
-   *
-   * Both are build-time values: after changing them on Vercel, redeploy.
-   */
-  authDemoMode:
-    process.env.NEXT_PUBLIC_AUTH_DEMO_MODE?.trim() === "true" &&
-    (process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_ALLOW_DEMO_ON_DEPLOY?.trim() === "true"),
+  /** Supabase project URL, e.g. `https://abcd.supabase.co`. */
+  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "",
+
+  /** Supabase anon / publishable key (public by design; access is enforced by the backend and RLS). */
+  supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ?? "",
 } as const;

@@ -122,7 +122,7 @@ export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, class
                 "focus-visible:shadow-[0_0_0_2px_#fff,0_0_0_5px_var(--color-brand-blue)] motion-reduce:hover:translate-y-0",
               )}
             >
-              <AdminAvatar name={admin.fullName} tone="blue" />
+              <AdminAvatar name={admin.fullName} src={admin.avatarUrl} tone="blue" />
             </ProfileMenu>
           </div>
         </div>

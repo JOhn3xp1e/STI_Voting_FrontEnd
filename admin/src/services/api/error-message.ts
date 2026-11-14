@@ -25,8 +25,12 @@ export function getApiErrorMessage(error: unknown): string {
       }
       // Plain-text or list-of-messages errors, e.g. "There's no current term."
       if (error.status === 400 && typeof detail === "string" && detail) return detail;
+      // Some 404s carry `{ message: "..." }`.
+      const message = error.problem?.message;
+      if (typeof message === "string" && message) return message;
       if (error.status === 404) return "Not found. It may have been removed.";
-      if (error.status === 401 || error.status === 403) return "You're not allowed to do this. Sign in again.";
+      if (error.status === 401) return "Your session has expired. Sign in again.";
+      if (error.status === 403) return "Your account doesn't have access to this.";
       if (error.status !== null && error.status >= 500) {
         return `The server ran into a problem (${error.status}). Check the backend console for details.`;
       }

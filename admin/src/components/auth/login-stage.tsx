@@ -60,17 +60,26 @@ export function useLoginLayout(): LoginLayout {
  * The form lives inside `children`, so switching never remounts it: typed
  * values, focus and sign-in state are kept.
  */
-export function LoginStage({ children, className }: { children: ReactNode; className?: string }) {
+export function LoginStage({
+  children,
+  className,
+  initialVariant = INITIAL_VARIANT,
+}: {
+  children: ReactNode;
+  className?: string;
+  /** Composition to start in (the sign-in screen starts dark; the other auth screens start on the 3D building). */
+  initialVariant?: LoginVariant;
+}) {
   const rootRef = useRef<HTMLElement>(null);
-  const [variant, setVariant] = useState<LoginVariant>(INITIAL_VARIANT);
+  const [variant, setVariant] = useState<LoginVariant>(initialVariant);
   const [settled, setSettled] = useState(true);
 
   const snapshotRef = useRef<Snapshot | null>(null);
   const busyRef = useRef(false);
   /** Composition currently shown (or being morphed to). */
-  const shownRef = useRef<LoginVariant>(INITIAL_VARIANT);
+  const shownRef = useRef<LoginVariant>(initialVariant);
   /** Latest requested composition. */
-  const targetRef = useRef<LoginVariant>(INITIAL_VARIANT);
+  const targetRef = useRef<LoginVariant>(initialVariant);
 
   /** Starts a morph towards the requested composition, unless one is already running. */
   const applyTarget = useCallback(() => {

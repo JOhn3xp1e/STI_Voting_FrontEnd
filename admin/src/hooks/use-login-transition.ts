@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { AUTH_ROUTES } from "@/lib/auth-routing";
 import { beginDashboardEntrance } from "@/lib/dashboard-entrance";
 
 /**
@@ -23,7 +24,7 @@ const REDUCED_LEAVE_MS = 250;
 /**
  * Animation timeline that runs once sign-in has succeeded:
  * success checkmark → fade out the sign-in screen → navigate to `destination`,
- * where the dashboard plays its entrance. Contains no authentication logic.
+ * where the dashboard plays its entrance (not for account setup). Contains no authentication logic.
  */
 export function useLoginTransition(authenticated: boolean, destination: string): LoginTransitionPhase {
   const router = useRouter();
@@ -40,7 +41,8 @@ export function useLoginTransition(authenticated: boolean, destination: string):
 
     const leaveTimer = setTimeout(() => setLeaving(true), hold);
     const navigateTimer = setTimeout(() => {
-      beginDashboardEntrance();
+      // The entrance belongs to the dashboard shell; account setup has none.
+      if (!destination.startsWith(AUTH_ROUTES.acceptInvite)) beginDashboardEntrance();
       router.push(destination);
     }, hold + leave);
 
