@@ -7,7 +7,7 @@ import * as THREE from "three";
  * @param {HTMLCanvasElement} canvas  WebGL canvas (also receives drag / zoom input)
  * @param {HTMLCanvasElement} layer   2D canvas drawn on top for the ASCII glyphs
  * @param {object} [options]
- * @returns controls: setView, setLight, setAscii, setDensity, setSpacing, setAutoRotate, dispose
+ * @returns controls: setView, setLight, setAscii, setDensity, setSpacing, setAutoRotate, setPaused, dispose
  */
 export function createBuildingScene(canvas, layer, options = {}) {
   const {
@@ -17,6 +17,7 @@ export function createBuildingScene(canvas, layer, options = {}) {
     light = 'noon',        // 'noon' | 'golden' | 'dusk'
     view = 'street',       // 'street' | 'front' | 'aerial' | 'side' | 'rear'
     distanceScale = 1,     // >1 pulls the camera back (useful in narrow columns)
+    projection = 'perspective', // 'perspective' | 'isometric' (orthographic, fitted to the container; ignores `view`)
     theme = 'dark',        // 'dark' (gold on navy), 'light' (bronze on white), 'gold' (brand gold on a transparent page)
     onViewChange = () => {},   // called with the view name, or null when the user drags away from a preset
   } = options;
@@ -39,7 +40,8 @@ export function createBuildingScene(canvas, layer, options = {}) {
   renderer.physicallyCorrectLights=true;
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   const scene=new THREE.Scene();
-  const camera=new THREE.PerspectiveCamera(42,1,0.3,1200);
+  const iso=projection==='isometric';
+  const camera=iso?new THREE.OrthographicCamera(-1,1,1,-1,1,1000):new THREE.PerspectiveCamera(42,1,0.3,1200);
 
   /* ---------- small utilities ---------- */
   const lin=c=>new THREE.Color(c).convertSRGBToLinear();
@@ -246,6 +248,22 @@ export function createBuildingScene(canvas, layer, options = {}) {
   function pan(dx,dy){const s=goal.r*0.0016;goal.t.addScaledVector(new THREE.Vector3(Math.cos(sph.theta),0,-Math.sin(sph.theta)),-dx*s);goal.t.y=Math.max(0,goal.t.y+dy*s);}
   setView('street');Object.assign(sph,{r:goal.r,theta:goal.theta,phi:goal.phi});target.copy(goal.t);
 
+  /* ---------- isometric: orthographic camera at the classic 35.26° elevation ---------- */
+  const ISO_R=300,ISO_PHI=Math.acos(1/Math.sqrt(3)),ISO_THETA=-Math.PI/4;
+  // Largest projected half-width / half-height of the building's bounding box over a full turn,
+  // so the fit never changes while it rotates.
+  function measureIso(){scene.updateMatrixWorld(true);const bb=new THREE.Box3().setFromObject(bld),c=bb.getCenter(new THREE.Vector3());
+    const corners=[];for(const x of[bb.min.x,bb.max.x])for(const y of[bb.min.y,bb.max.y])for(const z of[bb.min.z,bb.max.z])corners.push(new THREE.Vector3(x,y,z));
+    const cam=new THREE.OrthographicCamera(),v=new THREE.Vector3();let mx=0,my=0;
+    for(let i=0;i<72;i++){const th=i/72*Math.PI*2;
+      cam.position.set(c.x+ISO_R*Math.sin(ISO_PHI)*Math.sin(th),c.y+ISO_R*Math.cos(ISO_PHI),c.z+ISO_R*Math.sin(ISO_PHI)*Math.cos(th));cam.lookAt(c);cam.updateMatrixWorld();
+      for(const p of corners){v.copy(p).applyMatrix4(cam.matrixWorldInverse);mx=Math.max(mx,Math.abs(v.x));my=Math.max(my,Math.abs(v.y));}}
+    return{c,mx,my};}
+  const isoExt=iso?measureIso():null;
+  function fitIso(aspect){const hh=Math.max(isoExt.my,isoExt.mx/aspect)*1.04*distanceScale;
+    camera.top=hh;camera.bottom=-hh;camera.left=-hh*aspect;camera.right=hh*aspect;camera.updateProjectionMatrix();}
+  if(iso){Object.assign(goal,{r:ISO_R,theta:ISO_THETA,phi:ISO_PHI});goal.t.copy(isoExt.c);Object.assign(sph,{r:ISO_R,theta:ISO_THETA,phi:ISO_PHI});target.copy(isoExt.c);}
+
   let spin=false;
 
   /* ---------- ASCII filter: render small, then draw one glyph per cell ---------- */
@@ -290,11 +308,12 @@ export function createBuildingScene(canvas, layer, options = {}) {
   // empty gap between glyph cells (the glyph keeps its size, the grid gets looser)
   function setSpacing(px){GAP=Math.max(0,Number(px));setupAscii();}
 
-  function resize(){const w=box0.clientWidth||1,h=box0.clientHeight||1;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();setupAscii();}
+  function resize(){const w=box0.clientWidth||1,h=box0.clientHeight||1;renderer.setSize(w,h,false);if(iso)fitIso(w/h);else{camera.aspect=w/h;camera.updateProjectionMatrix();}setupAscii();}
   const ro=new ResizeObserver(resize);ro.observe(box0);resize();setAscii(ascii);setDensity(density);setSpacing(spacing);
   const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let raf=0,alive=true;
+  let raf=0,alive=true,paused=false;
   function frame(){
+    if(paused){raf=0;return;}
     if(spin)goal.theta+=0.0012;   // ≈ one turn every 90 s at 60 fps
     const k=reduce?1:0.1;
     sph.r+=(goal.r-sph.r)*k;sph.theta+=(goal.theta-sph.theta)*k;sph.phi+=(goal.phi-sph.phi)*k;target.lerp(goal.t,k);
@@ -303,12 +322,14 @@ export function createBuildingScene(canvas, layer, options = {}) {
   frame();
 
   if (light !== 'noon') setLight(light);
-  if (view !== 'street') setView(view);
-  if (distanceScale !== 1) { goal.r *= distanceScale; sph.r = goal.r; }
+  if (!iso && view !== 'street') setView(view);
+  if (!iso && distanceScale !== 1) { goal.r *= distanceScale; sph.r = goal.r; }
 
   return {
     setView, setLight, setAscii, setDensity, setSpacing,
     setAutoRotate(v) { spin = !!v; },
+    // Stops the render loop (e.g. while hidden) and resumes it where it left off.
+    setPaused(v) { paused = !!v; if (!paused && alive && !raf) raf = requestAnimationFrame(frame); },
     dispose() {
       alive = false; cancelAnimationFrame(raf); ro.disconnect(); abort.abort();
       if (rt) rt.dispose();

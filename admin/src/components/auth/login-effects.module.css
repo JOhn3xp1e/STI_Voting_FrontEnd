@@ -282,7 +282,7 @@
  */
 /* The 3D building fading in when it replaces the map (press "C" on the sign-in screen). */
 .artFadeIn {
-  animation: art-fade-in 700ms ease-out both;
+  animation: art-fade-in 700ms ease-out backwards;
 }
 
 @keyframes art-fade-in {
