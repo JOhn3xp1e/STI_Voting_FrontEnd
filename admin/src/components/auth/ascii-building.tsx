@@ -13,8 +13,10 @@ interface AsciiBuildingProps {
   autoRotate?: boolean;
   /** Stops rendering (e.g. while hidden) without tearing the scene down. */
   paused?: boolean;
-  /** "isometric": orthographic camera fitted to the container. */
-  projection?: "perspective" | "isometric";
+  /** Aim at the building's centre and fit it to the container, viewed from slightly above. */
+  fit?: boolean;
+  /** Camera height above the horizon in degrees (with `fit`). */
+  elevation?: number;
   /** Glyph cell size in px (smaller = finer). */
   density?: number;
   /** Gap between glyph cells in px. */
@@ -35,7 +37,8 @@ export default function AsciiBuilding({
   className,
   autoRotate = true,
   paused = false,
-  projection = "perspective",
+  fit = false,
+  elevation = 24,
   density = 7,
   spacing = 0,
   distanceScale = 1,
@@ -52,7 +55,7 @@ export default function AsciiBuilding({
 
     let scene: BuildingScene | undefined;
     try {
-      scene = createBuildingScene(gl, text, { theme: "gold", projection, density, spacing, distanceScale, view: "street", light: "noon" });
+      scene = createBuildingScene(gl, text, { theme: "gold", fit, elevation, density, spacing, distanceScale, view: "street", light: "noon" });
       sceneRef.current = scene;
     } catch (error) {
       // No WebGL: leave the area empty rather than breaking the sign-in page.
@@ -62,15 +65,15 @@ export default function AsciiBuilding({
       scene?.dispose();
       sceneRef.current = null;
     };
-  }, [projection, density, spacing, distanceScale]);
+  }, [fit, elevation, density, spacing, distanceScale]);
 
   // Declared after the creation effect, so they also run against a freshly built scene.
   useEffect(() => {
     sceneRef.current?.setAutoRotate(autoRotate);
-  }, [autoRotate, projection, density, spacing, distanceScale]);
+  }, [autoRotate, fit, elevation, density, spacing, distanceScale]);
   useEffect(() => {
     sceneRef.current?.setPaused(paused);
-  }, [paused, projection, density, spacing, distanceScale]);
+  }, [paused, fit, elevation, density, spacing, distanceScale]);
 
   return (
     <div aria-hidden className={cn("relative overflow-hidden", className)}>

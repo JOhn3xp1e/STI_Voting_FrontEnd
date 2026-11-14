@@ -2,7 +2,7 @@ import Image from "next/image";
 
 import { cn } from "@/lib/utils";
 
-import { MapIllustration } from "./map-illustration";
+import { HeroBuilding } from "./hero-building";
 
 /** Path to the SLVP/STI logo in `public/images/` (rendered at 40×40). */
 const STI_LOGO_SRC: string | null = "/images/slvp logo.png";
@@ -42,18 +42,18 @@ export function LoginHero({ className }: { className?: string }) {
       className={cn(
         "relative flex flex-col justify-end",
         // Alternate composition: the headline is centred under the large brand,
-        // and the map anchors to the whole page (bottom-left) instead of this column.
+        // and the building spreads over the page instead of this column.
         "lg:login-alt:static lg:login-alt:justify-center",
         className,
       )}
     >
-      <MapIllustration
+      <HeroBuilding
         className={cn(
-          "absolute -top-12 -right-[15%] w-[85%] max-w-lg",
-          // Desktop: the illustration fills the branding column, sitting just above the headline.
-          "lg:top-auto lg:right-auto lg:bottom-16 lg:-left-[7.2%] lg:w-[115.6%] lg:max-w-none",
-          // Alternate: spread along the bottom of the page, running off the lower edge.
-          "lg:login-alt:top-[59%] lg:login-alt:bottom-auto lg:login-alt:left-0 lg:login-alt:w-[66%]",
+          "absolute -top-12 -right-[15%] aspect-[3/2] w-[85%] max-w-lg opacity-50",
+          // Desktop: fills the branding column, sitting just above the headline.
+          "lg:top-auto lg:right-auto lg:bottom-24 lg:-left-[7.2%] lg:w-[115.6%] lg:max-w-none lg:opacity-75",
+          // Alternate: the left three quarters of the page, softer so the large headline stays readable.
+          "lg:login-alt:inset-y-0 lg:login-alt:left-0 lg:login-alt:aspect-auto lg:login-alt:w-3/4 lg:login-alt:opacity-50 lg:login-alt:mask-r-from-65%",
         )}
       />
       <div data-morph="hero-text" className="relative">
