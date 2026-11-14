@@ -2,6 +2,7 @@ import Image from "next/image";
 
 import { cn } from "@/lib/utils";
 
+import { BuildingBackdrop } from "./building-backdrop";
 import { GlowField } from "./glow-field";
 import styles from "./login-effects.module.css";
 import { PointerGlow } from "./pointer-glow";
@@ -59,6 +60,12 @@ export function LoginBackdrop() {
           styles.dotsBreathe,
         )}
       />
+
+      {/*
+       * While typing (white card): the rotating building over the left three
+       * quarters of the page. Small screens: behind the brand at the top.
+       */}
+      <BuildingBackdrop className="absolute inset-x-0 top-0 h-[55%] mask-b-from-50% lg:inset-y-0 lg:right-auto lg:h-auto lg:w-3/4 lg:mask-b-from-100% lg:mask-r-from-85%" />
 
       <PointerGlow />
 

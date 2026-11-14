@@ -209,7 +209,7 @@
 /*
  * Signed in: the card turns navy (see LoginCard), and the page darkens with it
  * so the card doesn't stand out as a black box: the backdrop's glow and texture
- * fade under the navy base, and the building dims.
+ * fade under the navy base, and the pixel map dims.
  */
 .backdropDim {
   opacity: 0;
@@ -254,7 +254,73 @@
 }
 
 /* -------------------------------------------------------------------------- */
-/*                          3D ASCII building (HeroBuilding)                  */
+/*                          Pixel-art map: drift + shimmer                    */
+/* -------------------------------------------------------------------------- */
+
+.mapFloat {
+  animation: map-float 14s ease-in-out infinite;
+}
+
+@keyframes map-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+  50% {
+    transform: translate3d(0, -6px, 0);
+    opacity: 0.84;
+  }
+}
+
+/*
+ * Shimmer: a soft-edged window slides across the map while its contents
+ * (a brighter copy of the map) counter-slide, so the copy stays aligned with
+ * the original. Both moves are transforms, so nothing is repainted.
+ * Window width = 35% of the map: travel is -100% → 285.71% (= 100% / 0.35),
+ * and the counter-move is 35% → -100% of the copy's width.
+ */
+.mapSweepWindow {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 35%;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 50%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 50%, transparent);
+  animation: map-sweep-window 10s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.mapSweepInner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% / 0.35);
+  animation: map-sweep-inner 10s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes map-sweep-window {
+  0% {
+    transform: translateX(-100%);
+  }
+  40%,
+  100% {
+    transform: translateX(285.7143%);
+  }
+}
+
+@keyframes map-sweep-inner {
+  0% {
+    transform: translateX(35%);
+  }
+  40%,
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                     3D ASCII building (BuildingBackdrop)                   */
 /* -------------------------------------------------------------------------- */
 
 /* Fades the building in once three.js has loaded and drawn its first frame. */
@@ -369,10 +435,12 @@
     background: var(--field-accent);
   }
 
-  .submit::before {
+  .submit::before,
+  .mapSweepWindow {
     display: none;
   }
 
+  .mapFloat,
   .dotsBreathe,
   .submit[data-pending] {
     animation: none;
