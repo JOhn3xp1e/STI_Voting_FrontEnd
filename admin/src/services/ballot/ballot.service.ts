@@ -104,6 +104,42 @@ export async function deletePosition(id: string): Promise<void> {
   await apiClient.delete(`${ROUTES.positions}/${encodeURIComponent(id)}`);
 }
 
+export interface CandidateInput {
+  studentId: string;
+  positionId: string;
+  electionId: string;
+  /** `null` = independent. */
+  partylistId: string | null;
+  platform: string | null;
+}
+
+/**
+ * Create / Update body. The endpoints bind `[FromForm]` fields plus an optional `portraitImage`
+ * file, so this is sent as multipart/form-data. Leaving out `partylistId` makes the candidate
+ * independent, leaving out `platform` clears it, and leaving out the image keeps the current one.
+ */
+function candidateFormData(input: CandidateInput, portrait?: File | null): FormData {
+  const data = new FormData();
+  data.append("studentId", input.studentId);
+  data.append("positionId", input.positionId);
+  data.append("electionId", input.electionId);
+  if (input.partylistId) data.append("partylistId", input.partylistId);
+  const platform = input.platform?.trim();
+  if (platform) data.append("platform", platform);
+  if (portrait) data.append("portraitImage", portrait, portrait.name);
+  return data;
+}
+
+/** The database assigns the id (CAND-00007). A student can run for one position per election. */
+export async function createCandidate(input: CandidateInput, portrait?: File | null): Promise<Candidate> {
+  return toCandidate(await apiClient.post<CandidateDto, FormData>(ROUTES.candidates, candidateFormData(input, portrait)));
+}
+
+/** Without a new `portrait`, the candidate keeps the current one. */
+export async function updateCandidate(id: string, input: CandidateInput, portrait?: File | null): Promise<Candidate> {
+  return toCandidate(await apiClient.put<CandidateDto, FormData>(`${ROUTES.candidates}/${encodeURIComponent(id)}`, candidateFormData(input, portrait)));
+}
+
 export async function deleteCandidate(id: string): Promise<void> {
   await apiClient.delete(`${ROUTES.candidates}/${encodeURIComponent(id)}`);
 }

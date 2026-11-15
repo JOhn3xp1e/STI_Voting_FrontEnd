@@ -22,6 +22,7 @@ import type { Candidate, Position } from "@/types/ballot.types";
 import type { Partylist } from "@/types/partylist.types";
 import type { Student } from "@/types/student.types";
 
+import { CandidateDialog, type CandidateDialogTarget } from "./candidate-dialog";
 import { CreatePositionDialog } from "./create-position-dialog";
 
 type LoadState =
@@ -41,9 +42,6 @@ const INDEPENDENT = "__independent__";
 
 const iconButtonClassName =
   "flex size-7.5 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-blue/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground";
-
-/** Not built yet: adding and editing candidates comes in the next step. */
-const CANDIDATE_FORMS_PENDING = "Adding and editing candidates comes next.";
 
 /** `/elections/[id]/ballot`: positions with their candidates, from `/api/admin/positions` and `/api/admin/candidates`. */
 export function BallotPage({ electionId }: { electionId: string }) {
@@ -117,6 +115,7 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [creatingPosition, setCreatingPosition] = useState(false);
   const [deletingPosition, setDeletingPosition] = useState<Position | null>(null);
+  const [candidateTarget, setCandidateTarget] = useState<CandidateDialogTarget>(null);
   const { notice, say } = useNotice();
 
   const partyById = useMemo(() => new Map(parties.map((p) => [p.id, p])), [parties]);
@@ -285,10 +284,10 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
                     </button>
                     <button
                       type="button"
-                      disabled
+                      onClick={() => setCandidateTarget({ mode: "create", positionId: position.id })}
                       aria-label={`Add a candidate for ${position.title}`}
-                      title={CANDIDATE_FORMS_PENDING}
-                      className="flex size-6.5 items-center justify-center rounded-md border border-border bg-background text-foreground outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Add candidate"
+                      className="flex size-6.5 cursor-pointer items-center justify-center rounded-md border border-border bg-background text-foreground outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand-blue/30"
                     >
                       <Plus aria-hidden className="size-3.5" strokeWidth={2} />
                     </button>
@@ -302,13 +301,13 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
                   ) : showPhotos ? (
                     <div className="flex flex-wrap gap-3 border-b border-border py-3 pl-15.5 pr-2">
                       {shown.map((row) => (
-                        <CandidateCard key={row.candidate.id} row={row} party={partyById.get(row.candidate.partylistId ?? "")} checked={selected.has(row.candidate.id)} onCheck={(checked) => setChecked([row.candidate.id], checked)} />
+                        <CandidateCard key={row.candidate.id} row={row} party={partyById.get(row.candidate.partylistId ?? "")} checked={selected.has(row.candidate.id)} onCheck={(checked) => setChecked([row.candidate.id], checked)} onEdit={() => setCandidateTarget({ mode: "edit", candidate: row.candidate })} />
                       ))}
                     </div>
                   ) : (
                     <ul>
                       {shown.map((row) => (
-                        <CandidateListRow key={row.candidate.id} row={row} party={partyById.get(row.candidate.partylistId ?? "")} checked={selected.has(row.candidate.id)} onCheck={(checked) => setChecked([row.candidate.id], checked)} />
+                        <CandidateListRow key={row.candidate.id} row={row} party={partyById.get(row.candidate.partylistId ?? "")} checked={selected.has(row.candidate.id)} onCheck={(checked) => setChecked([row.candidate.id], checked)} onEdit={() => setCandidateTarget({ mode: "edit", candidate: row.candidate })} />
                       ))}
                     </ul>
                   )
@@ -329,6 +328,27 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
         onCreated={(position) => {
           setPositions((current) => sortPositions([...current, position]));
           say(`Created ${position.title}.`);
+        }}
+      />
+
+      <CandidateDialog
+        target={candidateTarget}
+        electionId={electionId}
+        positions={positions}
+        parties={parties}
+        students={students}
+        candidates={candidates}
+        onClose={() => setCandidateTarget(null)}
+        onSaved={(saved, created) => {
+          setCandidates((current) => (created ? [...current, saved] : current.map((c) => (c.id === saved.id ? saved : c))));
+          // Show the position the candidate is in, even if it was collapsed.
+          setCollapsed((current) => (current.has(saved.positionId) ? new Set([...current].filter((id) => id !== saved.positionId)) : current));
+          say(created ? "Added the candidate." : "Saved the candidate.");
+        }}
+        onRemoved={(removed) => {
+          setCandidates((current) => current.filter((c) => c.id !== removed.id));
+          setSelected((current) => new Set([...current].filter((id) => id !== removed.id)));
+          say("Removed the candidate.");
         }}
       />
 
@@ -412,6 +432,7 @@ interface CandidateItemProps {
   party: Partylist | undefined;
   checked: boolean;
   onCheck: (checked: boolean) => void;
+  onEdit: () => void;
 }
 
 function Initials({ row, className }: { row: CandidateRow; className?: string }) {
@@ -422,7 +443,7 @@ function Initials({ row, className }: { row: CandidateRow; className?: string })
   );
 }
 
-function CandidateListRow({ row, party, checked, onCheck }: CandidateItemProps) {
+function CandidateListRow({ row, party, checked, onCheck, onEdit }: CandidateItemProps) {
   const hasPhoto = row.candidate.portraitUrl !== null;
   return (
     <li
@@ -437,7 +458,13 @@ function CandidateListRow({ row, party, checked, onCheck }: CandidateItemProps) 
         <span aria-hidden className="absolute top-0 left-2 h-1/2 w-3 rounded-bl-[3px] border-b border-l border-border" />
         <Initials row={row} className="size-7 text-[0.5625rem]" />
         <div className="min-w-0">
-          <p className="truncate text-[0.875rem] leading-4.5 font-medium text-foreground">{row.name}</p>
+          <button
+            type="button"
+            onClick={onEdit}
+            className="block max-w-full cursor-pointer truncate rounded-sm text-left text-[0.875rem] leading-4.5 font-medium text-foreground outline-none hover:underline hover:underline-offset-2 focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+          >
+            {row.name}
+          </button>
           <p className="truncate font-mono text-[0.65625rem] leading-4 text-muted-foreground">{row.candidate.studentId}</p>
         </div>
       </div>
@@ -454,7 +481,7 @@ function CandidateListRow({ row, party, checked, onCheck }: CandidateItemProps) 
         </span>
       </span>
       <span className="flex justify-center">
-        <button type="button" disabled aria-label={`Edit ${row.name}`} title={CANDIDATE_FORMS_PENDING} className={iconButtonClassName}>
+        <button type="button" onClick={onEdit} aria-label={`Edit ${row.name}`} title="Edit candidate" className={iconButtonClassName}>
           <Pencil aria-hidden className="size-4" strokeWidth={1.75} />
         </button>
       </span>
@@ -462,7 +489,7 @@ function CandidateListRow({ row, party, checked, onCheck }: CandidateItemProps) 
   );
 }
 
-function CandidateCard({ row, party, checked, onCheck }: CandidateItemProps) {
+function CandidateCard({ row, party, checked, onCheck, onEdit }: CandidateItemProps) {
   const portrait = row.candidate.portraitUrl;
   return (
     <div
@@ -473,20 +500,33 @@ function CandidateCard({ row, party, checked, onCheck }: CandidateItemProps) {
         className={cn("relative flex h-38 items-center justify-center bg-cover bg-top", portrait ? "bg-muted" : "bg-linear-to-b from-[#e8eef7] to-[#d5deeb] dark:from-white/8 dark:to-white/4")}
         style={portrait ? { backgroundImage: `url("${portrait}")` } : undefined}
       >
-        {portrait ? null : (
-          <>
-            <span className="absolute top-2.5 left-2.5 rounded-[0.1875rem] bg-brand-gold px-1.5 py-0.5 font-mono text-[0.5625rem] font-semibold tracking-wider text-brand-navy">MISSING</span>
-            <span aria-hidden className="text-[2rem] font-semibold tracking-wide text-brand-muted/70">
-              {row.initials}
-            </span>
-          </>
-        )}
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={portrait ? `Edit ${row.name}` : `Add a photo for ${row.name}`}
+          className="group/photo absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-1 outline-none focus-visible:ring-3 focus-visible:ring-brand-blue/30 focus-visible:ring-inset"
+        >
+          {portrait ? null : (
+            <>
+              <span className="absolute top-2.5 left-2.5 rounded-[0.1875rem] bg-brand-gold px-1.5 py-0.5 font-mono text-[0.5625rem] font-semibold tracking-wider text-brand-navy">MISSING</span>
+              <Plus aria-hidden className="size-5 text-brand-muted transition-transform duration-200 group-hover/photo:scale-110" strokeWidth={1.75} />
+              <span className="text-[0.8125rem] text-brand-muted">Add photo</span>
+              <span className="font-mono text-[0.625rem] text-brand-muted/80">JPG/PNG · 4:5</span>
+            </>
+          )}
+        </button>
         <span className="absolute top-2.5 right-2.5">
           <Checkbox aria-label={`Select ${row.name}`} checked={checked} onCheckedChange={onCheck} className={checkboxClassName} />
         </span>
       </div>
       <div className="px-3.5 pt-2.5 pb-3">
-        <p className="truncate text-[0.9375rem] leading-5 font-semibold text-foreground">{row.name}</p>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="block max-w-full cursor-pointer truncate rounded-sm text-left text-[0.9375rem] leading-5 font-semibold text-foreground outline-none hover:underline hover:underline-offset-2 focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+        >
+          {row.name}
+        </button>
         <p className="truncate font-mono text-[0.6875rem] text-muted-foreground">{row.candidate.studentId}</p>
         <div className="mt-2">
           <PartyTag party={party} />

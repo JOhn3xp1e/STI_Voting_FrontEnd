@@ -6,7 +6,14 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** What the image endpoints in SLVP-BE accept. */
-const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+
+/** Why `file` can't be uploaded, or `null` when it's fine. */
+export function checkImage(file: File, maxBytes: number): string | null {
+  if (!IMAGE_TYPES.includes(file.type)) return "Use a PNG, JPG or WebP image.";
+  if (file.size > maxBytes) return `The image is over ${Math.round(maxBytes / (1024 * 1024))} MB.`;
+  return null;
+}
 
 interface ImageDropzoneProps {
   /** e.g. "Drop a banner image" */
@@ -30,8 +37,8 @@ export function ImageDropzone({ title, hint, maxBytes, previewUrl, picked = fals
 
   function accept(file: File | undefined) {
     if (!file) return;
-    if (!IMAGE_TYPES.includes(file.type)) return onError("Use a PNG, JPG or WebP image.");
-    if (file.size > maxBytes) return onError(`The image is over ${Math.round(maxBytes / (1024 * 1024))} MB.`);
+    const problem = checkImage(file, maxBytes);
+    if (problem) return onError(problem);
     onPick(file);
   }
 

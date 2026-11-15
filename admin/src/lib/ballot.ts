@@ -29,6 +29,37 @@ export function toCandidateRow(candidate: Candidate, student: Student | undefine
 }
 
 /* -------------------------------------------------------------------------- */
+/*                                  Candidate                                 */
+/* -------------------------------------------------------------------------- */
+
+export const PORTRAIT_MAX_BYTES = 2 * 1024 * 1024;
+
+export interface CandidateForm {
+  studentId: string;
+  positionId: string | null;
+  /** `null` = independent. */
+  partylistId: string | null;
+  platform: string;
+}
+
+export type CandidateErrors = Partial<Record<"studentId" | "positionId", string>>;
+
+/**
+ * A student and a position are required, and a student can run for only one
+ * position per election (`takenBy` maps student numbers to the candidate already using them).
+ */
+export function validateCandidate(form: CandidateForm, takenBy: ReadonlyMap<string, Candidate>, editingId: string | null): CandidateErrors {
+  const errors: CandidateErrors = {};
+  const studentId = form.studentId.trim();
+  const taken = takenBy.get(studentId);
+  if (!studentId) errors.studentId = "Pick a student.";
+  else if (!/^\d{11}$/.test(studentId)) errors.studentId = "Use the 11-digit student number.";
+  else if (taken && taken.id !== editingId) errors.studentId = "This student is already running in this election.";
+  if (!form.positionId) errors.positionId = "Pick a position.";
+  return errors;
+}
+
+/* -------------------------------------------------------------------------- */
 /*                               Create position                              */
 /* -------------------------------------------------------------------------- */
 
