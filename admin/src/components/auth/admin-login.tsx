@@ -17,7 +17,7 @@ import { LoginStage } from "./login-stage";
  */
 export function AdminLogin() {
   return (
-    <LoginStage className="relative isolate flex flex-1 flex-col overflow-hidden bg-login-background">
+    <LoginStage className="relative isolate flex flex-1 flex-col overflow-hidden bg-login-background select-none [&_input]:select-text [&_textarea]:select-text [&_img]:pointer-events-none">
       <LoginBackdrop />
 
       <div className="relative mx-auto flex w-full max-w-360 flex-1 flex-col px-4 py-8 sm:px-8 sm:py-12 lg:px-14 lg:py-10 xl:px-18">
