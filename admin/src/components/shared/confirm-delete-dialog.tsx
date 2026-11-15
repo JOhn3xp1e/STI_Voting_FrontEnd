@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import Image from "next/image";
 import { Dialog } from "@base-ui/react/dialog";
-import { Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -27,7 +27,7 @@ interface ConfirmDeleteDialogProps<T> {
   onConfirm: (item: T) => Promise<void>;
 }
 
-/** Red trash badge, "Delete X?", why it can or can't be deleted, and a summary box. */
+/** Mascot in a trash can, "Delete X?", why it can or can't be deleted, and a summary box. Every delete confirmation uses it. */
 export function ConfirmDeleteDialog<T>({
   item,
   getKey,
@@ -65,29 +65,34 @@ export function ConfirmDeleteDialog<T>({
   }
 
   return (
-    <DialogFrame open={item !== null} onOpenChange={(open) => !open && onClose()} locked={deleting} widthClassName="w-[min(30rem,calc(100vw-2rem))]">
+    <DialogFrame open={item !== null} onOpenChange={(open) => !open && onClose()} locked={deleting} widthClassName="w-[min(33rem,calc(100vw-2rem))]">
       {shown ? (
         <>
-          <div className="px-6 pt-6 pb-5">
-            <span className={cn("flex size-10 items-center justify-center rounded-full bg-destructive/10 text-destructive", styles.trashIn)}>
-              <Trash2 aria-hidden className="size-4.5" strokeWidth={1.9} />
-            </span>
-            <Dialog.Title className="mt-4 text-[1.375rem] leading-7 font-semibold tracking-tight text-foreground">{title(shown)}</Dialog.Title>
-            <Dialog.Description className="mt-2.5 text-[0.875rem] leading-5 text-muted-foreground">{description(shown)}</Dialog.Description>
-            <p className="mt-4 rounded-md border border-border px-3 py-2.5 font-mono text-[0.75rem] text-foreground">{summary(shown)}</p>
+          <div className="px-6 pt-5 pb-6">
+            <Image
+              src="/images/deletemascot.png"
+              alt=""
+              width={70}
+              height={91}
+              className={cn("h-22.75 w-auto origin-bottom select-none", styles.trashIn)}
+              draggable={false}
+            />
+            <Dialog.Title className="mt-3.5 text-[1.5rem] leading-8 font-semibold tracking-tight text-foreground">{title(shown)}</Dialog.Title>
+            <Dialog.Description className="mt-2.5 text-[0.9375rem] leading-5.5 text-muted-foreground">{description(shown)}</Dialog.Description>
+            <p className="mt-4 truncate rounded-lg border border-border px-3.5 py-3 text-[0.875rem] text-foreground">{summary(shown)}</p>
             {error ? (
               <p role="alert" className={cn("mt-3 rounded-md bg-destructive/8 px-3 py-2 text-[0.8125rem] text-destructive", styles.fieldError)}>
                 {error}
               </p>
             ) : null}
           </div>
-          <div className="flex justify-end gap-2.5 border-t border-border px-6 py-4">
+          <div className="flex justify-end gap-3 border-t border-border px-6 py-4.5">
             <DialogCancel disabled={deleting} />
             <button
               type="button"
               disabled={deleting || isBlocked}
               onClick={() => void confirm()}
-              className="h-9 cursor-pointer rounded-md bg-[#b42318] px-4 text-[0.875rem] font-semibold text-white outline-none transition-[background-color,opacity] duration-200 hover:bg-[#9a1d14] focus-visible:ring-3 focus-visible:ring-destructive/30 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-9 cursor-pointer rounded-lg bg-[#b42318] px-5 text-[0.875rem] font-semibold text-white outline-none transition-[background-color,opacity] duration-200 hover:bg-[#9a1d14] focus-visible:ring-3 focus-visible:ring-destructive/30 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {deleting ? "Deleting…" : confirmLabel}
             </button>

@@ -150,7 +150,7 @@
   }
 }
 
-/* Delete dialog: the trash badge wobbles once on open. */
+/* Delete dialog: the trash-can mascot wobbles once on open. */
 .trashIn {
   animation: trash-in 520ms cubic-bezier(0.34, 1.56, 0.64, 1) 80ms both;
 }

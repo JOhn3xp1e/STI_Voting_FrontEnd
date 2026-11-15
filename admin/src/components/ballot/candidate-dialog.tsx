@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { CircleCheck, LoaderCircle, Pencil, Search, Upload, X } from "lucide-react";
 
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { DialogCancel, DialogFrame, DialogHeading, dialogDangerLinkClassName, dialogPrimaryClassName } from "@/components/shared/dialog-frame";
 import { errorClassName, fieldClassName, labelClassName } from "@/components/shared/form-styles";
 import { IMAGE_TYPES, checkImage } from "@/components/shared/image-dropzone";
@@ -57,8 +58,9 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
   const [form, setForm] = useState<CandidateForm>(() => initialForm(target));
   const [errors, setErrors] = useState<CandidateErrors>({});
   const [portrait, setPortrait] = useState<{ file: File; url: string } | null>(null);
-  const [busy, setBusy] = useState<"save" | "remove" | null>(null);
-  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [busy, setBusy] = useState<"save" | null>(null);
+  /** The candidate being confirmed for removal (the delete confirmation is open). */
+  const [removing, setRemoving] = useState<Candidate | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Start from the target each time the dialog opens for something new.
@@ -69,7 +71,7 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
       setForm(initialForm(target));
       setErrors({});
       setPortrait(null);
-      setConfirmRemove(false);
+      setRemoving(null);
       setError(null);
     }
   }
@@ -115,21 +117,15 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
     }
   }
 
-  async function remove() {
-    if (!editing) return;
-    if (!confirmRemove) return setConfirmRemove(true);
-    setBusy("remove");
-    setError(null);
+  /** Runs from the delete confirmation; a failure is shown there. */
+  async function remove(candidate: Candidate) {
     try {
-      await deleteCandidate(editing.id);
-      onRemoved(editing);
-      onClose();
+      await deleteCandidate(candidate.id);
     } catch (cause) {
-      setError(getApiErrorMessage(cause));
-      setConfirmRemove(false);
-    } finally {
-      setBusy(null);
+      throw new Error(getApiErrorMessage(cause));
     }
+    onRemoved(candidate);
+    onClose();
   }
 
   const portraitUrl = portrait?.url ?? editing?.portraitUrl ?? null;
@@ -250,8 +246,8 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
 
           <div className="flex items-center justify-between gap-3 border-t border-border px-6 py-4">
             {editing ? (
-              <button type="button" onClick={() => void remove()} disabled={busy !== null} className={dialogDangerLinkClassName}>
-                {busy === "remove" ? "Removing…" : confirmRemove ? "Click again to remove" : "Remove candidate"}
+              <button type="button" onClick={() => setRemoving(editing)} disabled={busy !== null} className={dialogDangerLinkClassName}>
+                Remove candidate
               </button>
             ) : (
               <span />
@@ -266,6 +262,17 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
           </div>
         </>
       ) : null}
+
+      <ConfirmDeleteDialog
+        item={removing}
+        getKey={(c) => c.id}
+        title={() => `Remove ${student ? `${student.firstName} ${student.lastName}`.trim() : "this candidate"}?`}
+        description={() => "They're taken off the ballot. This can't be undone."}
+        summary={(c) => (student ? `${c.studentId} · ${formatStudentName(student)}` : c.studentId)}
+        confirmLabel="Remove candidate"
+        onClose={() => setRemoving(null)}
+        onConfirm={remove}
+      />
     </DialogFrame>
   );
 }
