@@ -127,7 +127,7 @@ const ONGOING_ELECTIONS: OngoingElection[] = [
     title: "CSC Elections 2025–2026",
     termId: "TRM-00004",
     scope: "Council",
-    href: "/elections/csc/metrics",
+    href: "/elections",
   },
 ];
 

@@ -23,7 +23,7 @@ import { ELECTION_CATEGORIES } from "@/types/election.types";
 import type { Career, Program } from "@/types/program.types";
 import type { Term } from "@/types/term.types";
 
-import { Chip, DateTimePicker, ReviewRow, SectionCard, cardClassName, outlineButtonClassName } from "./create-election-ui";
+import { Chip, DateTimePicker, ReviewRow, SectionCard, cardClassName } from "./create-election-ui";
 
 const inputClassName = cn(fieldClassName, "rounded-[0.25rem] border-[#e2e8f0] dark:border-border");
 
@@ -150,7 +150,7 @@ export function DetailsStep({ form, update, errors, terms, today, bannerUrl, onB
     <>
       <BannerDropzone previewUrl={bannerUrl} onPick={onBannerPick} onError={onBannerError} />
 
-      <SectionCard title="Details" aside="step 1 of 4">
+      <SectionCard title="Details" aside="step 1 of 3">
         <div className="grid grid-cols-1 gap-x-3 gap-y-3.5 sm:grid-cols-2">
           <div>
             <label htmlFor="election-title" className={labelClassName}>
@@ -387,28 +387,7 @@ export function VotersStep({ form, update, errors, careers, programs, eligible }
 }
 
 /* -------------------------------------------------------------------------- */
-/*                         Step 3: not connected yet                          */
-/* -------------------------------------------------------------------------- */
-
-export function AdminsStep() {
-  return (
-    <SectionCard
-      title="Election admins"
-      aside={
-        <button type="button" disabled title="Not available yet" className={outlineButtonClassName}>
-          + Add admin
-        </button>
-      }
-      bodyClassName="px-5 pt-5 pb-4.5"
-    >
-      <p className="py-4 text-center text-[0.8125rem] text-muted-foreground">No election admins yet. Adding admins isn&apos;t connected yet.</p>
-      <p className="mt-1 text-[0.8125rem] text-muted-foreground">Admins only see and manage this election. Super Admins see everything.</p>
-    </SectionCard>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/*                               Step 5: Review                               */
+/*                               Step 3: Review                               */
 /* -------------------------------------------------------------------------- */
 
 interface ReviewStepProps {
@@ -468,12 +447,9 @@ export function ReviewStep({ form, terms, careers, eligible, onEdit }: ReviewSte
         </ReviewRow>
       </ReviewCard>
 
-      <ReviewCard title="Admins" onEdit={() => onEdit(2)}>
-        <ReviewRow label="Election admins">None yet</ReviewRow>
-      </ReviewCard>
-
       <p className={cn(cardClassName, "border-[#f3d26b] bg-[#fff8db] px-3.5 py-3 text-[0.8125rem] leading-5 text-brand-navy dark:border-brand-gold/30 dark:bg-brand-gold/10 dark:text-foreground")}>
-        After you create it, voters and passcodes are generated. OTP emails are sent from the Voters &amp; passcodes tab.
+        After you create it, voters and passcodes are generated. Add election admins and send OTP emails from the election&apos;s Admins and Voters &amp;
+        passcodes tabs.
       </p>
     </>
   );

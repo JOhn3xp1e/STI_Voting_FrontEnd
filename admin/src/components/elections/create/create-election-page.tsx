@@ -34,11 +34,12 @@ import type { Election, ElectionInput, VoterEnrollment } from "@/types/election.
 import type { Career, Program } from "@/types/program.types";
 import type { Term } from "@/types/term.types";
 
+import { useElectionsNav } from "../elections-nav";
 import { Stepper } from "./create-election-ui";
-import { AdminsStep, DetailsStep, ReviewStep, VotersStep } from "./create-election-steps";
+import { DetailsStep, ReviewStep, VotersStep } from "./create-election-steps";
 import { SummaryPanel } from "./summary-panel";
 
-const STEPS = ["Details", "Who can vote", "Admins", "Review"] as const;
+const STEPS = ["Details", "Who can vote", "Review"] as const;
 const LAST_STEP = STEPS.length - 1;
 const ELECTIONS_HREF = "/elections";
 
@@ -246,6 +247,7 @@ interface ElectionWizardProps {
 
 function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
   const router = useRouter();
+  const { refresh: refreshElectionsNav } = useElectionsNav();
   const editing = election !== null;
   const [today] = useState(todayIso);
   const [form, setForm] = useState<ElectionForm>(() => (election ? electionToForm(election, catalog.careers) : newElectionForm(catalog, today)));
@@ -311,6 +313,7 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
       const photo = banner?.file ?? null;
       const saved = election ? await updateElection(election.id, input, photo) : await createElection(input, photo);
       onSaved(saved);
+      refreshElectionsNav();
       router.push(ELECTIONS_HREF);
     } catch (cause) {
       const message = getApiErrorMessage(cause);
@@ -358,8 +361,6 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
               />
             ) : step === 1 ? (
               <VotersStep form={form} update={update} errors={votersErrors} careers={catalog.careers} programs={catalog.programs} eligible={eligible} />
-            ) : step === 2 ? (
-              <AdminsStep />
             ) : (
               <ReviewStep form={form} terms={catalog.terms} careers={catalog.careers} eligible={eligible} onEdit={goTo} />
             )}

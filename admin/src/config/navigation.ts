@@ -1,5 +1,7 @@
 import { Briefcase, Calendar, ChartColumn, Flag, LayoutDashboard, Settings, SquareCheck, Sun, Users, type LucideIcon } from "lucide-react";
 
+import type { Election } from "@/types/election.types";
+
 /**
  * Dashboard sidebar navigation.
  *
@@ -38,33 +40,39 @@ export interface NavSection {
   attached?: boolean;
 }
 
-/** The pages every election has in the sidebar. */
-function electionLinks(slug: string): NavLink[] {
-  return [
-    { type: "link", id: `${slug}-metrics`, label: "Metrics", href: `/elections/${slug}/metrics`, icon: ChartColumn },
-    { type: "link", id: `${slug}-party-lists`, label: "Party lists", href: `/elections/${slug}/party-lists`, icon: Flag },
-    { type: "link", id: `${slug}-ballot`, label: "Ballot", href: `/elections/${slug}/ballot`, icon: Users },
-    { type: "link", id: `${slug}-settings`, label: "Settings", href: `/elections/${slug}/settings`, icon: Sun },
-  ];
+/** The pages every election has, in sidebar order. */
+const ELECTION_PAGES = [
+  { page: "manage", label: "Manage", title: "Manage", icon: ChartColumn },
+  { page: "party-lists", label: "Party lists", title: "Party lists", icon: Flag },
+  { page: "ballot", label: "Ballot", title: "Ballot", icon: Users },
+  { page: "settings", label: "Settings", title: "Election settings", icon: Sun },
+] as const;
+
+export type ElectionPage = (typeof ELECTION_PAGES)[number]["page"];
+
+/** e.g. `/elections/ELC-00007/ballot` */
+export const electionPageHref = (electionId: string, page: ElectionPage) => `/elections/${encodeURIComponent(electionId)}/${page}`;
+
+function electionLinks(electionId: string): NavLink[] {
+  return ELECTION_PAGES.map(({ page, label, icon }) => ({
+    type: "link",
+    id: `${electionId}-${page}`,
+    label,
+    href: electionPageHref(electionId, page),
+    icon,
+  }));
 }
 
 export const DASHBOARD_HOME = "/dashboard";
 
-export const NAV_SECTIONS: NavSection[] = [
+/** The fixed sections. The elections' groups are added by `buildNavSections`. */
+const BASE_SECTIONS: NavSection[] = [
   {
     id: "main",
     label: "Main",
     items: [
       { type: "link", id: "dashboard", label: "Dashboard", href: DASHBOARD_HOME, icon: LayoutDashboard },
       { type: "link", id: "elections", label: "Elections", href: "/elections", icon: SquareCheck },
-    ],
-  },
-  {
-    id: "my-elections",
-    label: "My elections",
-    attached: true,
-    items: [
-      { type: "group", id: "csc-elections", label: "CSC Elections", status: "live", children: electionLinks("csc") },
     ],
   },
   {
@@ -86,6 +94,33 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [{ type: "link", id: "settings", label: "Settings", href: "/settings", icon: Settings }],
   },
 ];
+
+/** Ongoing elections first, then upcoming ones; each by when voting opens. */
+function electionGroups(elections: readonly Election[]): NavGroup[] {
+  const byStart = (a: Election, b: Election) => a.startsAt.localeCompare(b.startsAt) || a.id.localeCompare(b.id);
+  const toGroup = (status: NavGroupStatus) => (e: Election): NavGroup => ({
+    type: "group",
+    id: `election-${e.id}`,
+    label: e.title,
+    status,
+    children: electionLinks(e.id),
+  });
+  return [
+    ...elections.filter((e) => e.status === "Ongoing").sort(byStart).map(toGroup("live")),
+    ...elections.filter((e) => e.status === "Upcoming").sort(byStart).map(toGroup("upcoming")),
+  ];
+}
+
+/**
+ * The sidebar's sections: the fixed ones, plus a group per ongoing or upcoming
+ * election under MAIN. Drafts and finished elections are reached from the Elections page.
+ */
+export function buildNavSections(elections: readonly Election[]): NavSection[] {
+  const groups = electionGroups(elections);
+  if (groups.length === 0) return BASE_SECTIONS;
+  const [main, ...rest] = BASE_SECTIONS;
+  return [main, { id: "my-elections", label: "My elections", attached: true, items: groups }, ...rest];
+}
 
 /** Portal-wide settings (super admins): one route per tab. */
 export const SETTINGS_LINKS = {
@@ -135,10 +170,6 @@ const PAGE_META: Record<string, PageMetaConfig> = {
   "/terms": { title: "Terms", description: "School terms" },
   "/programs": { title: "Programs & careers" },
   "/students": { title: "Students" },
-  "/elections/csc/metrics": { title: "Election Metrics", description: "CSC Elections" },
-  "/elections/csc/party-lists": { title: "Party Lists", description: "CSC Elections" },
-  "/elections/csc/ballot": { title: "Ballot", description: "CSC Elections" },
-  "/elections/csc/settings": { title: "Election Settings", description: "CSC Elections" },
   "/settings": { title: "Settings", headerDivider: false },
   [SETTINGS_LINKS.email]: { title: "Settings", headerDivider: false },
   [SETTINGS_LINKS.security]: { title: "Settings", headerDivider: false },
@@ -152,6 +183,9 @@ const PAGE_META_PATTERNS: { pattern: RegExp; config: PageMetaConfig }[] = [
   { pattern: /^\/elections\/[^/]+\/edit$/, config: { title: "Elections/Edit Election", headerDivider: false } },
 ];
 
+/** An election's own pages, e.g. `/elections/ELC-00007/ballot` (and anything nested under them). */
+const ELECTION_PAGE_PATTERN = new RegExp(`^/elections/([^/]+)/(${ELECTION_PAGES.map((p) => p.page).join("|")})(?:/|$)`);
+
 /** Title used when no configured route matches. */
 const FALLBACK_TITLE = "Admin Portal";
 
@@ -159,8 +193,18 @@ const FALLBACK_TITLE = "Admin Portal";
  * Header content for `pathname`. An exact match uses its own config; a nested
  * route (e.g. `/students/123`) borrows the title of its closest configured
  * ancestor but always gets the `plain` header unless configured itself.
+ * An election's pages are titled with the election's name (the page's own name
+ * until `elections` has loaded).
  */
-export function getPageMeta(pathname: string, firstName: string): PageMeta {
+export function getPageMeta(pathname: string, firstName: string, elections: readonly Election[] = []): PageMeta {
+  const electionPage = ELECTION_PAGE_PATTERN.exec(pathname);
+  if (electionPage) {
+    const electionId = decodeURIComponent(electionPage[1]);
+    const election = elections.find((e) => e.id === electionId);
+    const pageTitle = ELECTION_PAGES.find((p) => p.page === electionPage[2])!.title;
+    return { title: election?.title ?? pageTitle, headerTheme: "plain", headerDivider: false };
+  }
+
   const exact = PAGE_META[pathname] ?? PAGE_META_PATTERNS.find((p) => p.pattern.test(pathname))?.config;
   const config =
     exact ??
@@ -178,19 +222,19 @@ export function getPageMeta(pathname: string, firstName: string): PageMeta {
 }
 
 /** All links, flattened (group children included). */
-function allLinks(): NavLink[] {
-  return NAV_SECTIONS.flatMap((section) =>
+function allLinks(sections: NavSection[]): NavLink[] {
+  return sections.flatMap((section) =>
     section.items.flatMap((item) => (item.type === "group" ? item.children : [item])),
   );
 }
 
 /**
  * `href` of the nav link matching `pathname`. The longest matching prefix wins,
- * so `/elections/csc/metrics` activates "Metrics", not "Elections".
+ * so `/elections/ELC-00007/ballot` activates that election's "Ballot", not "Elections".
  */
-export function getActiveHref(pathname: string): string | null {
+export function getActiveHref(pathname: string, sections: NavSection[]): string | null {
   let best: string | null = null;
-  for (const { href } of allLinks()) {
+  for (const { href } of allLinks(sections)) {
     const matches = pathname === href || pathname.startsWith(`${href}/`);
     if (matches && (best === null || href.length > best.length)) best = href;
   }
@@ -198,16 +242,16 @@ export function getActiveHref(pathname: string): string | null {
 }
 
 /** Groups shown expanded on first load: the live elections. */
-export function defaultOpenGroupIds(): string[] {
-  return NAV_SECTIONS.flatMap((section) => section.items).flatMap((item) =>
+export function defaultOpenGroupIds(sections: NavSection[]): string[] {
+  return sections.flatMap((section) => section.items).flatMap((item) =>
     item.type === "group" && item.status === "live" ? [item.id] : [],
   );
 }
 
 /** `id` of the group containing the link `href`, if any. */
-export function findGroupIdOf(href: string | null): string | null {
+export function findGroupIdOf(href: string | null, sections: NavSection[]): string | null {
   if (!href) return null;
-  for (const section of NAV_SECTIONS) {
+  for (const section of sections) {
     for (const item of section.items) {
       if (item.type === "group" && item.children.some((child) => child.href === href)) return item.id;
     }

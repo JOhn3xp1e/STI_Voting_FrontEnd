@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Menu as MenuIcon } from "lucide-react";
 
 import { getPageMeta } from "@/config/navigation";
+import { useElectionsNav } from "@/components/elections/elections-nav";
 import { cn } from "@/lib/utils";
 import type { AdminProfile } from "@/types/auth.types";
 
@@ -32,7 +33,8 @@ interface DashboardHeaderProps {
  */
 export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, className }: DashboardHeaderProps) {
   const pathname = usePathname();
-  const meta = getPageMeta(pathname, admin.firstName);
+  const { elections } = useElectionsNav();
+  const meta = getPageMeta(pathname, admin.firstName, elections);
   const { title, headerTheme, headerDivider } = meta;
   const description = usePageDescriptionOverride(pathname) ?? meta.description;
   const hero = headerTheme === "hero";

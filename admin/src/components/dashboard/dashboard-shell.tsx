@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { Dialog } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 
-import { defaultOpenGroupIds, findGroupIdOf, getActiveHref } from "@/config/navigation";
+import { buildNavSections, defaultOpenGroupIds, findGroupIdOf, getActiveHref } from "@/config/navigation";
 import { endDashboardEntrance } from "@/lib/dashboard-entrance";
 import { cn } from "@/lib/utils";
 import type { AdminProfile } from "@/types/auth.types";
 import { ProfileDialogProvider } from "@/components/account/profile-dialog";
+import { ElectionsNavProvider, useElectionsNav } from "@/components/elections/elections-nav";
 
 import entrance from "./dashboard-entrance.module.css";
 import { DashboardHeader } from "./dashboard-header";
@@ -33,18 +34,27 @@ interface DashboardShellProps {
  * Admin dashboard frame: fixed sidebar (a drawer on small screens), gradient
  * header, and the page workspace below it.
  */
-export function DashboardShell({ admin, children }: DashboardShellProps) {
+export function DashboardShell(props: DashboardShellProps) {
+  return (
+    <ElectionsNavProvider>
+      <Shell {...props} />
+    </ElectionsNavProvider>
+  );
+}
+
+function Shell({ admin, children }: DashboardShellProps) {
   const pathname = usePathname();
-  const activeHref = getActiveHref(pathname);
+  const { elections } = useElectionsNav();
+  const navSections = useMemo(() => buildNavSections(elections), [elections]);
+  const activeHref = getActiveHref(pathname, navSections);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // Live elections start expanded, plus the one containing the current page; the rest start collapsed.
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
-    const open: Record<string, boolean> = Object.fromEntries(defaultOpenGroupIds().map((id) => [id, true]));
-    const groupId = findGroupIdOf(activeHref);
-    if (groupId) open[groupId] = true;
-    return open;
-  });
+  /** Groups the admin (or the route) opened or closed. The rest follow their default: live elections start expanded. */
+  const [groupChoices, setGroupChoices] = useState<Record<string, boolean>>({});
+  const openGroups = useMemo(
+    () => ({ ...Object.fromEntries(defaultOpenGroupIds(navSections).map((id) => [id, true])), ...groupChoices }),
+    [navSections, groupChoices],
+  );
 
   const desktopSearchRef = useRef<HTMLInputElement>(null);
   const drawerSearchRef = useRef<HTMLInputElement>(null);
@@ -53,18 +63,18 @@ export function DashboardShell({ admin, children }: DashboardShellProps) {
   const focusSearchOnOpen = useRef(false);
 
   // Navigating into an election's page expands that election (route-driven, so
-  // it also holds after a refresh or browser back/forward).
-  const [expandedFor, setExpandedFor] = useState(activeHref);
+  // it also holds after a refresh or browser back/forward, once the elections have loaded).
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
   if (activeHref !== expandedFor) {
     setExpandedFor(activeHref);
-    const groupId = findGroupIdOf(activeHref);
+    const groupId = findGroupIdOf(activeHref, navSections);
     if (groupId && openGroups[groupId] !== true) {
-      setOpenGroups((groups) => ({ ...groups, [groupId]: true }));
+      setGroupChoices((groups) => ({ ...groups, [groupId]: true }));
     }
   }
 
   function setGroupOpen(groupId: string, open: boolean) {
-    setOpenGroups((groups) => ({ ...groups, [groupId]: open }));
+    setGroupChoices((groups) => ({ ...groups, [groupId]: open }));
   }
 
   // `/` focuses the sidebar search (opening the drawer first on small screens).
@@ -100,6 +110,7 @@ export function DashboardShell({ admin, children }: DashboardShellProps) {
 
   const sidebarProps = {
     admin,
+    navSections,
     activeHref,
     openGroups,
     onGroupOpenChange: setGroupOpen,

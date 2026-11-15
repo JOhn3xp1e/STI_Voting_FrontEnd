@@ -18,6 +18,7 @@ import type { Election, ElectionStatus } from "@/types/election.types";
 import type { Term } from "@/types/term.types";
 
 import { ElectionCard } from "./election-card";
+import { useElectionsNav } from "./elections-nav";
 
 type ElectionTab = "all" | Lowercase<ElectionStatus>;
 
@@ -76,6 +77,7 @@ export function ElectionsPage() {
   const [termId, setTermId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Election | null>(null);
   const { notice, say } = useNotice();
+  const { refresh: refreshElectionsNav } = useElectionsNav();
 
   async function confirmDelete(election: Election) {
     try {
@@ -87,6 +89,7 @@ export function ElectionsPage() {
     setState((current) =>
       current.status === "ready" ? { ...current, elections: current.elections.filter((e) => e.id !== election.id) } : current,
     );
+    refreshElectionsNav();
     say(`Deleted ${election.id} · ${election.title}.`);
   }
 

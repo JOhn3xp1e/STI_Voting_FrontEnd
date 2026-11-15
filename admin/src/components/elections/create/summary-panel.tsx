@@ -79,7 +79,7 @@ export function SummaryPanel({
             )}
           </Row>
           <Row label="Eligible voters">{form.termId ? eligible.toLocaleString() : "—"}</Row>
-          <Row label="Admins">0</Row>
+          <Row label="Admins">Add after creating</Row>
         </dl>
 
         <div className="mt-1.5 grid grid-cols-2 gap-2.5">

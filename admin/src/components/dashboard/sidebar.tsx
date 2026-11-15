@@ -3,7 +3,7 @@
 import { useId, useState, type ReactNode, type Ref } from "react";
 import { useRouter } from "next/navigation";
 
-import { NAV_SECTIONS, filterNavSections, firstLink } from "@/config/navigation";
+import { filterNavSections, firstLink, type NavSection } from "@/config/navigation";
 import { cn } from "@/lib/utils";
 import type { AdminProfile } from "@/types/auth.types";
 
@@ -13,6 +13,8 @@ import { SidebarSearch } from "./sidebar-search";
 
 export interface SidebarProps {
   admin: AdminProfile;
+  /** Every section, before the search filter (see `buildNavSections`). */
+  navSections: NavSection[];
   activeHref: string | null;
   /** Expanded state of the election groups, owned by the shell so desktop and drawer agree. */
   openGroups: Readonly<Record<string, boolean>>;
@@ -28,6 +30,7 @@ export interface SidebarProps {
 /** Sidebar contents: brand, search and navigation. (The account menu lives on the header avatar.) */
 export function Sidebar({
   admin,
+  navSections,
   activeHref,
   openGroups,
   onGroupOpenChange,
@@ -41,7 +44,7 @@ export function Sidebar({
   const [query, setQuery] = useState("");
 
   const searching = query.trim().length > 0;
-  const sections = filterNavSections(NAV_SECTIONS, query);
+  const sections = filterNavSections(navSections, query);
 
   function openFirstMatch() {
     const link = firstLink(sections);
