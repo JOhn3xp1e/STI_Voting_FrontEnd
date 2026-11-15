@@ -73,3 +73,37 @@ export async function fetchCandidates(electionId: string, { signal }: RequestOpt
   const dtos = await apiClient.get<CandidateDto[]>(`${ROUTES.candidates}/election/${encodeURIComponent(electionId)}`, { signal });
   return dtos.map(toCandidate);
 }
+
+/** CreatePositionRequest (no voter restrictions: everyone the election allows can vote for it). */
+interface CreatePositionBody {
+  title: string;
+  description: string;
+  maxVote: number;
+  electionId: string;
+}
+
+export interface PositionInput {
+  title: string;
+  /** Seats: how many candidates a voter may pick. */
+  maxVotes: number;
+  electionId: string;
+}
+
+/**
+ * The database assigns the id (POS-00007). The API requires a description the
+ * form doesn't ask for, so the title is sent as the description.
+ */
+export async function createPosition(input: PositionInput): Promise<Position> {
+  const title = input.title.trim();
+  const body: CreatePositionBody = { title, description: title, maxVote: input.maxVotes, electionId: input.electionId };
+  return toPosition(await apiClient.post<PositionDto, CreatePositionBody>(ROUTES.positions, body));
+}
+
+/** Deletes its candidates too. */
+export async function deletePosition(id: string): Promise<void> {
+  await apiClient.delete(`${ROUTES.positions}/${encodeURIComponent(id)}`);
+}
+
+export async function deleteCandidate(id: string): Promise<void> {
+  await apiClient.delete(`${ROUTES.candidates}/${encodeURIComponent(id)}`);
+}

@@ -6,7 +6,7 @@ import { PageLoading } from "@/components/shared/page-feedback";
 
 export const metadata: Metadata = {
   title: "Edit party list",
-};
+};  
 
 /** With Cache Components the ids are request-time data, so they're read inside Suspense. */
 export default function EditPartyListRoute({ params }: PageProps<"/elections/[id]/party-lists/[partyId]">) {
