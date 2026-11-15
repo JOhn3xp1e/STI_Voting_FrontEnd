@@ -15,6 +15,7 @@ import {
   isAlreadyAccepted,
   resendAdminInvite,
 } from "@/services/admins/admin-accounts.service";
+import { getCurrentSignInMethod, type SignInMethod } from "@/services/auth/admin-auth.service";
 import type { AdminAccount } from "@/types/auth.types";
 
 import { InviteAdminDialog } from "./invite-admin-dialog";
@@ -106,6 +107,18 @@ function AdminsWorkspace({ admins, setAdmins, onStale, say }: WorkspaceProps) {
   const { me } = useAdminSession();
   const myId = me.admin?.id ?? null;
   const [resending, setResending] = useState<string | null>(null);
+  // Only known for your own login (from the session); the backend doesn't say how others sign in.
+  const [myMethod, setMyMethod] = useState<SignInMethod | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void getCurrentSignInMethod().then((method) => {
+      if (live) setMyMethod(method);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const members = admins
     .filter((a) => getAdminStatus(a) !== "pending")
@@ -149,6 +162,7 @@ function AdminsWorkspace({ admins, setAdmins, onStale, say }: WorkspaceProps) {
                   key={admin.id}
                   admin={admin}
                   isYou={admin.id === myId}
+                  method={admin.id === myId ? myMethod : null}
                   onEdit={() => notYet("Editing admins")}
                 />
               ))}
@@ -207,7 +221,41 @@ const pillClassName = "inline-flex w-26 shrink-0 items-center justify-center rou
 const textButtonClassName =
   "cursor-pointer rounded-sm text-[0.8125rem] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-brand-blue/30 disabled:cursor-not-allowed disabled:opacity-50";
 
-function AdminRow({ admin, isYou, onEdit }: { admin: AdminAccount; isYou: boolean; onEdit: () => void }) {
+const SIGN_IN_METHODS: Record<SignInMethod, { label: string; src?: string; size: number }> = {
+  password: { label: "Signs in with email & password", size: 12 },
+  google: { label: "Signs in with Google", src: "/images/signin-google.svg", size: 14 },
+  microsoft: { label: "Signs in with Microsoft", src: "/images/signin-microsoft.svg", size: 12 },
+};
+
+/** How the admin signed in, in a 14px slot after the verified badge (lock, Google or Microsoft). */
+function SignInMethodIcon({ method }: { method: SignInMethod }) {
+  const { label, src, size } = SIGN_IN_METHODS[method];
+  return (
+    <span title={label} className="inline-flex size-3.5 shrink-0 items-center justify-center">
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt={label} width={size} height={size} />
+      ) : (
+        <svg role="img" aria-label={label} width={size} height={size} viewBox="0 0 12 12" fill="none" className="text-[#64748b] dark:text-muted-foreground">
+          <path d="M9 5H3a1.5 1.5 0 0 0-1.5 1.5V10A1.5 1.5 0 0 0 3 11.5h6a1.5 1.5 0 0 0 1.5-1.5V6.5A1.5 1.5 0 0 0 9 5Z" fill="currentColor" />
+          <path d="M3.5 5V3.5a2.5 2.5 0 0 1 5 0V5" stroke="currentColor" strokeWidth={1.4} />
+        </svg>
+      )}
+    </span>
+  );
+}
+
+function AdminRow({
+  admin,
+  isYou,
+  method,
+  onEdit,
+}: {
+  admin: AdminAccount;
+  isYou: boolean;
+  method: SignInMethod | null;
+  onEdit: () => void;
+}) {
   const name = displayName(admin);
   const deactivated = !admin.isActive;
   return (
@@ -220,6 +268,7 @@ function AdminRow({ admin, isYou, onEdit }: { admin: AdminAccount; isYou: boolea
             // eslint-disable-next-line @next/next/no-img-element
             <img src="/images/verified-badge.svg" alt="Verified" title="Verified" width={14} height={14} className="shrink-0" />
           ) : null}
+          {method ? <SignInMethodIcon method={method} /> : null}
         </p>
         <p className="truncate text-xs text-muted-foreground">{admin.email}</p>
       </div>

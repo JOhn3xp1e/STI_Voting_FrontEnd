@@ -141,6 +141,43 @@ export async function hasGoogleIdentity(): Promise<boolean> {
   return data.user?.identities?.some((identity) => identity.provider === "google") ?? false;
 }
 
+export type SignInMethod = "password" | "google" | "microsoft";
+
+const OAUTH_PROVIDERS: Record<string, SignInMethod> = { google: "google", azure: "microsoft" };
+
+/**
+ * How the current session was started: the newest entry in the token's `amr`
+ * claim. For OAuth it doesn't name the provider, so that comes from the
+ * identity used most recently. Email links (invite, reset) count as password.
+ * `null` when there's no session or it can't be read.
+ */
+export async function getCurrentSignInMethod(): Promise<SignInMethod | null> {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (error || !data) return null;
+    const entries = data.currentAuthenticationMethods.map((entry) =>
+      typeof entry === "string" ? { method: entry, timestamp: 0 } : entry,
+    );
+    const latest = entries.reduce<(typeof entries)[number] | null>(
+      (best, entry) => (!best || entry.timestamp > best.timestamp ? entry : best),
+      null,
+    );
+    if (!latest) return null;
+    if (latest.method !== "oauth") return "password";
+
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData.user;
+    const oauthIdentity = (user?.identities ?? [])
+      .filter((identity) => identity.provider in OAUTH_PROVIDERS)
+      .sort((a, b) => (b.last_sign_in_at ?? "").localeCompare(a.last_sign_in_at ?? ""))[0];
+    const provider = oauthIdentity?.provider ?? String(user?.app_metadata.provider ?? "");
+    return OAUTH_PROVIDERS[provider] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Ends the session on this device. Never throws. */
 export async function signOut(): Promise<void> {
   cachedMe = null;
