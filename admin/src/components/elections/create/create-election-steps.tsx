@@ -150,7 +150,7 @@ export function DetailsStep({ form, update, errors, terms, today, bannerUrl, onB
     <>
       <BannerDropzone previewUrl={bannerUrl} onPick={onBannerPick} onError={onBannerError} />
 
-      <SectionCard title="Details" aside="step 1 of 5">
+      <SectionCard title="Details" aside="step 1 of 4">
         <div className="grid grid-cols-1 gap-x-3 gap-y-3.5 sm:grid-cols-2">
           <div>
             <label htmlFor="election-title" className={labelClassName}>
@@ -387,53 +387,8 @@ export function VotersStep({ form, update, errors, careers, programs, eligible }
 }
 
 /* -------------------------------------------------------------------------- */
-/*                     Steps 3 and 4: not connected yet                       */
+/*                         Step 3: not connected yet                          */
 /* -------------------------------------------------------------------------- */
-
-export function PositionsStep() {
-  return (
-    <SectionCard
-      title="Positions"
-      aside={
-        <button type="button" disabled title="Not available yet" className={outlineButtonClassName}>
-          + Add position
-        </button>
-      }
-      bodyClassName="px-5 pt-4.5 pb-5"
-    >
-      <div className="flex h-9.5 items-center justify-between rounded-[0.25rem] border border-[#e2e8f0] px-3 text-[0.8125rem] dark:border-border">
-        <span className="text-muted-foreground">Start from a template</span>
-        <span className="text-muted-foreground/70">Not available yet</span>
-      </div>
-
-      <table className="mt-4 w-full text-left">
-        <thead>
-          <tr className="h-9 border-b border-[#e2e8f0] font-mono text-[0.65625rem] tracking-[0.08em] text-muted-foreground uppercase dark:border-border">
-            <th scope="col" className="w-12 font-normal">
-              #
-            </th>
-            <th scope="col" className="font-normal">
-              Position
-            </th>
-            <th scope="col" className="w-40 font-normal">
-              Votes per voter
-            </th>
-            <th scope="col" className="w-28">
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td colSpan={4} className="py-8 text-center text-[0.8125rem] text-muted-foreground">
-              No positions yet. Adding positions isn&apos;t connected yet.
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </SectionCard>
-  );
-}
 
 export function AdminsStep() {
   return (
@@ -513,12 +468,7 @@ export function ReviewStep({ form, terms, careers, eligible, onEdit }: ReviewSte
         </ReviewRow>
       </ReviewCard>
 
-      <ReviewCard title="Positions" onEdit={() => onEdit(2)}>
-        <ReviewRow label="Positions">None yet</ReviewRow>
-        <ReviewRow label="Votes per voter">—</ReviewRow>
-      </ReviewCard>
-
-      <ReviewCard title="Admins" onEdit={() => onEdit(3)}>
+      <ReviewCard title="Admins" onEdit={() => onEdit(2)}>
         <ReviewRow label="Election admins">None yet</ReviewRow>
       </ReviewCard>
 

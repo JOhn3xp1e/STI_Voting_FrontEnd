@@ -35,10 +35,10 @@ import type { Career, Program } from "@/types/program.types";
 import type { Term } from "@/types/term.types";
 
 import { Stepper } from "./create-election-ui";
-import { AdminsStep, DetailsStep, PositionsStep, ReviewStep, VotersStep } from "./create-election-steps";
+import { AdminsStep, DetailsStep, ReviewStep, VotersStep } from "./create-election-steps";
 import { SummaryPanel } from "./summary-panel";
 
-const STEPS = ["Details", "Who can vote", "Positions", "Admins", "Review"] as const;
+const STEPS = ["Details", "Who can vote", "Admins", "Review"] as const;
 const LAST_STEP = STEPS.length - 1;
 const ELECTIONS_HREF = "/elections";
 
@@ -359,8 +359,6 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
             ) : step === 1 ? (
               <VotersStep form={form} update={update} errors={votersErrors} careers={catalog.careers} programs={catalog.programs} eligible={eligible} />
             ) : step === 2 ? (
-              <PositionsStep />
-            ) : step === 3 ? (
               <AdminsStep />
             ) : (
               <ReviewStep form={form} terms={catalog.terms} careers={catalog.careers} eligible={eligible} onEdit={goTo} />

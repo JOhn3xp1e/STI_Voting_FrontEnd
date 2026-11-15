@@ -79,7 +79,6 @@ export function SummaryPanel({
             )}
           </Row>
           <Row label="Eligible voters">{form.termId ? eligible.toLocaleString() : "—"}</Row>
-          <Row label="Positions">0 — add in step 3</Row>
           <Row label="Admins">0</Row>
         </dl>
 
