@@ -9,8 +9,8 @@ interface AdminAvatarProps {
   name: string;
   /** Public photo URL (`avatarUrl`); initials are shown when it's missing or fails to load. */
   src?: string | null;
-  /** `navy` (gold initials) in the sidebar, `blue` (white initials) in the header. */
-  tone?: "navy" | "blue";
+  /** `navy` (gold initials) in the sidebar, `blue` (white initials) in the header, `gold` in admin lists. */
+  tone?: "navy" | "blue" | "gold";
   className?: string;
 }
 
@@ -24,9 +24,9 @@ export function AdminAvatar({ name, src, tone = "navy", className }: AdminAvatar
       aria-hidden
       className={cn(
         "inline-flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full font-mono text-[0.6875rem] font-semibold tracking-wide select-none",
-        tone === "navy"
-          ? "bg-brand-navy text-brand-gold dark:bg-brand-gold dark:text-brand-navy"
-          : "bg-brand-blue text-brand-white",
+        tone === "navy" && "bg-brand-navy text-brand-gold dark:bg-brand-gold dark:text-brand-navy",
+        tone === "blue" && "bg-brand-blue text-brand-white",
+        tone === "gold" && "bg-brand-gold font-sans font-medium text-brand-navy/70",
         className,
       )}
     >

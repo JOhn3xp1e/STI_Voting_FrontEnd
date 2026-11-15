@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CircleAlert, CircleCheck, Search, X } from "lucide-react";
+import { CircleAlert, CircleCheck, Info, Search, X } from "lucide-react";
 
 import { toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
 import { cn } from "@/lib/utils";
@@ -36,7 +36,8 @@ export function PageError({ title, message, onRetry }: { title: string; message:
 export interface Notice {
   id: number;
   text: string;
-  tone: "success" | "error";
+  /** `info`: neutral notes, e.g. "isn't available yet". */
+  tone: "success" | "error" | "info";
 }
 
 /** A self-dismissing notice (errors stay a little longer). */
@@ -65,6 +66,8 @@ export function Toast({ notice }: { notice: Notice | null }) {
         >
           {notice.tone === "error" ? (
             <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+          ) : notice.tone === "info" ? (
+            <Info aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           ) : (
             <CircleCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-brand-blue dark:text-[#7aa7e6]" />
           )}

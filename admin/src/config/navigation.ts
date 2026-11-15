@@ -1,4 +1,4 @@
-import { Briefcase, Calendar, ChartColumn, Flag, LayoutDashboard, SquareCheck, Users, type LucideIcon } from "lucide-react";
+import { Briefcase, Calendar, ChartColumn, Flag, LayoutDashboard, Settings, SquareCheck, Users, type LucideIcon } from "lucide-react";
 
 /**
  * Dashboard sidebar navigation.
@@ -79,7 +79,19 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "People",
     items: [{ type: "link", id: "students", label: "Students", href: "/students", icon: Users }],
   },
+  {
+    id: "system",
+    label: "System",
+    items: [{ type: "link", id: "settings", label: "Settings", href: "/settings", icon: Settings }],
+  },
 ];
+
+/** Portal-wide settings (super admins): one route per tab. */
+export const SETTINGS_LINKS = {
+  email: "/settings/email",
+  security: "/settings/security",
+  admins: "/settings/admins",
+} as const;
 
 /** Account pages reached from the profile menus. */
 export const ACCOUNT_LINKS = {
@@ -124,7 +136,12 @@ const PAGE_META: Record<string, PageMetaConfig> = {
   "/students": { title: "Students" },
   "/elections/csc/metrics": { title: "Election Metrics", description: "CSC Elections" },
   "/elections/csc/party-lists": { title: "Party Lists", description: "CSC Elections" },
-  "/elections/csc/candidates": { title: "Candidates", description: "CSC Elections" },  [ACCOUNT_LINKS.profile]: { title: "Profile", description: "Your admin account" },
+  "/elections/csc/candidates": { title: "Candidates", description: "CSC Elections" },
+  "/settings": { title: "Settings", headerDivider: false },
+  [SETTINGS_LINKS.email]: { title: "Settings", headerDivider: false },
+  [SETTINGS_LINKS.security]: { title: "Settings", headerDivider: false },
+  [SETTINGS_LINKS.admins]: { title: "Settings", headerDivider: false },
+  [ACCOUNT_LINKS.profile]: { title: "Profile", description: "Your admin account" },
   [ACCOUNT_LINKS.settings]: { title: "Account settings", description: "Your admin account" },
 };
 
