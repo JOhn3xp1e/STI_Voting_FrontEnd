@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from "react";
-import { CircleCheck, LoaderCircle, Pencil, Upload, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { CircleCheck, LoaderCircle, Pencil, Search, Upload, X } from "lucide-react";
 
 import { DialogCancel, DialogFrame, DialogHeading, dialogDangerLinkClassName, dialogPrimaryClassName } from "@/components/shared/dialog-frame";
 import { errorClassName, fieldClassName, labelClassName } from "@/components/shared/form-styles";
 import { IMAGE_TYPES, checkImage } from "@/components/shared/image-dropzone";
 import { Caret, OptionMenu } from "@/components/students/option-menu";
-import { PORTRAIT_MAX_BYTES, validateCandidate, type CandidateErrors, type CandidateForm } from "@/lib/ballot";
+import { PORTRAIT_MAX_BYTES, STUDENT_ID_LENGTH, studentIdProblem, validateCandidate, type CandidateErrors, type CandidateForm } from "@/lib/ballot";
 import { mottoText, partyColorFallbackClassName, partyColorStyle, partyInitial } from "@/lib/partylists";
-import { formatStudentName, formatYear, getStudentInitials } from "@/lib/students";
+import { formatStudentName, getStudentInitials } from "@/lib/students";
 import { cn } from "@/lib/utils";
 import { getApiErrorMessage } from "@/services/api/error-message";
 import { createCandidate, deleteCandidate, updateCandidate } from "@/services/ballot/ballot.service";
@@ -35,9 +35,14 @@ interface CandidateDialogProps {
 }
 
 const PARTY_INDEPENDENT = "__independent__";
-const SEARCH_RESULTS = 8;
 
 const inputClassName = cn(fieldClassName, "rounded-[0.25rem] border-[#e2e8f0] dark:border-border");
+
+/** Brand-blue filled action (Choose photo, Save changes). */
+const bluePrimaryClassName = cn(
+  dialogPrimaryClassName,
+  "bg-brand-blue text-white hover:bg-[color-mix(in_oklab,var(--color-brand-blue)_85%,black)] dark:hover:bg-[color-mix(in_oklab,var(--color-brand-blue)_85%,white)]",
+);
 
 function initialForm(target: CandidateDialogTarget): CandidateForm {
   if (target?.mode === "edit") {
@@ -79,17 +84,21 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
 
   const takenBy = useMemo(() => new Map(candidates.map((c) => [c.studentId, c])), [candidates]);
   const studentById = useMemo(() => new Map((students ?? []).map((s) => [s.studentNo, s])), [students]);
+  const known = useMemo(() => (students ? new Set(studentById.keys()) : null), [students, studentById]);
   const student = studentById.get(form.studentId) ?? null;
+  // Checked as soon as all 11 digits are typed, not only on save.
+  const liveStudentProblem = studentIdProblem(form.studentId, known, takenBy, editing?.id ?? null);
+  const studentMatched = student !== null && liveStudentProblem === null;
 
   function update(patch: Partial<CandidateForm>) {
     const next = { ...form, ...patch };
     setForm(next);
-    if (Object.keys(errors).length) setErrors(validateCandidate(next, takenBy, editing?.id ?? null));
+    if (Object.keys(errors).length) setErrors(validateCandidate(next, known, takenBy, editing?.id ?? null));
     setError(null);
   }
 
   async function save() {
-    const found = validateCandidate(form, takenBy, editing?.id ?? null);
+    const found = validateCandidate(form, known, takenBy, editing?.id ?? null);
     setErrors(found);
     if (Object.keys(found).length) return;
     setBusy("save");
@@ -150,31 +159,40 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
             </div>
 
             <div className="min-w-0 space-y-4">
-              <div>
-                <p className={labelClassName} id="candidate-student-label">
-                  Student
-                </p>
-                {editing || (student && form.studentId) ? (
-                  <StudentCard
-                    student={student}
-                    studentId={form.studentId}
-                    onClear={editing ? undefined : () => update({ studentId: "" })}
-                  />
-                ) : students ? (
-                  <StudentSearch students={students} takenBy={takenBy} invalid={!!errors.studentId} onPick={(s) => update({ studentId: s.studentNo })} />
-                ) : (
-                  <input
-                    aria-labelledby="candidate-student-label"
-                    value={form.studentId}
-                    onChange={(e) => update({ studentId: e.target.value.replace(/\D/g, "").slice(0, 11) })}
-                    placeholder="11-digit student number"
-                    inputMode="numeric"
-                    aria-invalid={!!errors.studentId || undefined}
-                    className={cn(inputClassName, "font-mono")}
-                  />
-                )}
-                {errors.studentId ? <p className={errorClassName}>{errors.studentId}</p> : null}
-              </div>
+              {editing || studentMatched ? (
+                <div>
+                  <p className={labelClassName}>Student</p>
+                  <StudentCard student={student} studentId={form.studentId} onClear={editing ? undefined : () => update({ studentId: "" })} />
+                </div>
+              ) : (
+                <div>
+                  <label htmlFor="candidate-student-id" className={labelClassName}>
+                    Student ID
+                  </label>
+                  <div className="relative">
+                    <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3.25 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      id="candidate-student-id"
+                      autoFocus
+                      value={form.studentId}
+                      onChange={(e) => update({ studentId: e.target.value.replace(/\D/g, "").slice(0, STUDENT_ID_LENGTH) })}
+                      placeholder="Enter student ID"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      aria-invalid={!!(errors.studentId || liveStudentProblem) || undefined}
+                      aria-describedby="candidate-student-id-hint"
+                      className={cn(inputClassName, "pl-9 tabular-nums")}
+                    />
+                  </div>
+                  <p id="candidate-student-id-hint" className={cn(errors.studentId || liveStudentProblem ? errorClassName : "mt-1.5 text-[0.6875rem] leading-4 text-muted-foreground")}>
+                    {liveStudentProblem ??
+                      errors.studentId ??
+                      (students
+                        ? "11 digits · e.g. 02000334567. The student's name appears once it matches."
+                        : "11 digits · e.g. 02000334567. The student list couldn't be loaded, so names won't show.")}
+                  </p>
+                </div>
+              )}
 
               <div>
                 <p className={labelClassName}>Position</p>
@@ -240,7 +258,7 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
             )}
             <div className="flex items-center gap-2.5">
               <DialogCancel disabled={busy !== null} />
-              <button type="button" onClick={() => void save()} disabled={busy !== null} className={cn(dialogPrimaryClassName, "inline-flex items-center gap-2")}>
+              <button type="button" onClick={() => void save()} disabled={busy !== null} className={cn(bluePrimaryClassName, "inline-flex items-center gap-2")}>
                 {busy === "save" ? <LoaderCircle aria-hidden className="size-3.5 animate-spin" /> : null}
                 {editing ? "Save changes" : "Add candidate"}
               </button>
@@ -308,7 +326,7 @@ function PortraitPicker({ url, picked, onPick, onError }: { url: string | null; 
             <br />
             4:5 · up to 2 MB
           </p>
-          <button type="button" onClick={() => inputRef.current?.click()} className={cn(dialogPrimaryClassName, "mt-3 h-8 px-3.5 text-[0.8125rem]")}>
+          <button type="button" onClick={() => inputRef.current?.click()} className={cn(bluePrimaryClassName, "mt-3 h-8.5 px-4 text-[0.8125rem]")}>
             Choose photo
           </button>
         </div>
@@ -342,104 +360,11 @@ function StudentCard({ student, studentId, onClear }: { student: Student | null;
           {student?.email ? ` · ${student.email}` : ""}
         </p>
       </div>
+      <CircleCheck aria-hidden className="size-5 shrink-0 fill-[#22c55e] text-white" />
       {onClear ? (
-        <button type="button" onClick={onClear} aria-label="Pick another student" className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-blue/30">
+        <button type="button" onClick={onClear} aria-label="Enter another student ID" title="Change student" className="-mr-1 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-blue/30">
           <X aria-hidden className="size-4" />
         </button>
-      ) : (
-        <CircleCheck aria-hidden className="size-5 shrink-0 fill-[#22c55e] text-white" />
-      )}
-    </div>
-  );
-}
-
-/** Type a name or student number; up to 8 matches show below. Students already running are listed but can't be picked. */
-function StudentSearch({ students, takenBy, invalid, onPick }: { students: readonly Student[]; takenBy: ReadonlyMap<string, Candidate>; invalid: boolean; onPick: (student: Student) => void }) {
-  const listId = useId();
-  const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
-
-  const results = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return [];
-    return students
-      .filter((s) => s.studentNo.includes(needle) || `${s.firstName} ${s.lastName}`.toLowerCase().includes(needle) || formatStudentName(s).toLowerCase().includes(needle))
-      .slice(0, SEARCH_RESULTS);
-  }, [students, query]);
-
-  function pick(student: Student | undefined) {
-    if (!student || takenBy.has(student.studentNo)) return;
-    onPick(student);
-  }
-
-  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setActive((i) => Math.min(i + 1, results.length - 1));
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setActive((i) => Math.max(i - 1, 0));
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      pick(results[active]);
-    }
-  }
-
-  return (
-    <div>
-      <input
-        role="combobox"
-        aria-labelledby="candidate-student-label"
-        aria-expanded={results.length > 0}
-        aria-controls={listId}
-        aria-activedescendant={results[active] ? `${listId}-${results[active].studentNo}` : undefined}
-        aria-invalid={invalid || undefined}
-        autoFocus
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setActive(0);
-        }}
-        onKeyDown={onKeyDown}
-        placeholder="Search by name or student no."
-        className={inputClassName}
-      />
-      {query.trim() ? (
-        <ul id={listId} role="listbox" className="mt-1.5 max-h-60 overflow-y-auto rounded-md border border-[#e2e8f0] p-1 dark:border-border">
-          {results.length === 0 ? (
-            <li className="px-2.5 py-2 text-[0.8125rem] text-muted-foreground">No students match “{query.trim()}”.</li>
-          ) : (
-            results.map((s, index) => {
-              const taken = takenBy.has(s.studentNo);
-              return (
-                <li
-                  key={s.studentNo}
-                  id={`${listId}-${s.studentNo}`}
-                  role="option"
-                  aria-selected={index === active}
-                  aria-disabled={taken || undefined}
-                  onMouseEnter={() => setActive(index)}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => pick(s)}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-[0.25rem] px-2.5 py-1.5",
-                    taken ? "cursor-not-allowed opacity-50" : "cursor-pointer",
-                    index === active && !taken && "bg-muted",
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[0.8125rem] font-medium text-foreground">{formatStudentName(s)}</p>
-                    <p className="truncate font-mono text-[0.65625rem] text-muted-foreground">
-                      {s.studentNo}
-                      {s.program ? ` · ${s.program} ${formatYear(s.year)}` : ""}
-                    </p>
-                  </div>
-                  {taken ? <span className="shrink-0 font-mono text-[0.625rem] text-muted-foreground uppercase">Running</span> : null}
-                </li>
-              );
-            })
-          )}
-        </ul>
       ) : null}
     </div>
   );
