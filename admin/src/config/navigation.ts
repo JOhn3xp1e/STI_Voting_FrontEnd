@@ -202,6 +202,9 @@ export function getPageMeta(pathname: string, firstName: string, elections: read
     const electionId = decodeURIComponent(electionPage[1]);
     const election = elections.find((e) => e.id === electionId);
     const pageTitle = ELECTION_PAGES.find((p) => p.page === electionPage[2])!.title;
+    // The party list editor has its own title: `/elections/ELC-00007/party-lists/new` or `.../PL-00001`.
+    const partyList = /\/party-lists\/([^/]+)$/.exec(pathname);
+    if (partyList) return { title: partyList[1] === "new" ? "New party list" : "Edit party list", headerTheme: "plain", headerDivider: false };
     return { title: election?.title ?? pageTitle, headerTheme: "plain", headerDivider: false };
   }
 
