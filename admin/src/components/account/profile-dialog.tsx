@@ -34,8 +34,11 @@ import { fetchTerms } from "@/services/terms/terms.service";
 /*                                  Provider                                  */
 /* -------------------------------------------------------------------------- */
 
+/** Part of the pop-up to open on: the top, or the Password form already open. */
+export type ProfileSection = "profile" | "password";
+
 interface ProfileDialogContextValue {
-  openProfile: () => void;
+  openProfile: (section?: ProfileSection) => void;
 }
 
 const ProfileDialogContext = createContext<ProfileDialogContextValue | null>(null);
@@ -50,14 +53,24 @@ export function useProfileDialog(): ProfileDialogContextValue {
 /** Must sit inside `AdminSessionGate` (it reads and refreshes the signed-in admin). */
 export function ProfileDialogProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
+  const [section, setSection] = useState<ProfileSection>("profile");
   const { notice, say } = useNotice();
-  const value = useMemo(() => ({ openProfile: () => setOpen(true) }), []);
+  const value = useMemo(
+    () => ({
+      openProfile: (next: ProfileSection = "profile") => {
+        setSection(next);
+        setOpen(true);
+      },
+    }),
+    [],
+  );
 
   return (
     <ProfileDialogContext.Provider value={value}>
       {children}
       <ProfileDialog
         open={open}
+        section={section}
         onOpenChange={setOpen}
         onSaved={() => {
           setOpen(false);
@@ -170,6 +183,8 @@ function Note({ note, className }: { note: ActionNote; className?: string }) {
 
 interface ProfileDialogProps {
   open: boolean;
+  /** "password" opens with the Password form showing and focused. */
+  section: ProfileSection;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 }
@@ -181,7 +196,7 @@ interface ProfileDialogProps {
  * - this device's sign-in, signing out other devices, and changing the password (Supabase).
  * Closing with an unsaved name or a half-typed password asks first.
  */
-function ProfileDialog({ open, onOpenChange, onSaved }: ProfileDialogProps) {
+function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogProps) {
   const { admin, me, refresh } = useAdminSession();
   const formId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -214,7 +229,18 @@ function ProfileDialog({ open, onOpenChange, onSaved }: ProfileDialogProps) {
   // The pop-up only renders in the browser, so reading the user agent here is safe.
   const [device] = useState(() => (typeof navigator === "undefined" ? "This browser" : describeThisDevice()));
 
-  // Each time it opens: start from the saved profile, everything collapsed.
+  // Opened from "Change password": bring the form into view and focus it once the pop-up has rendered.
+  useEffect(() => {
+    if (!open || section !== "password") return;
+    const timer = setTimeout(() => {
+      const input = document.getElementById("profile-new-password");
+      input?.scrollIntoView({ behavior: "smooth", block: "center" });
+      input?.focus({ preventScroll: true });
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [open, section]);
+
+  // Each time it opens: start from the saved profile, everything collapsed (or the Password form, when asked for).
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
@@ -228,7 +254,7 @@ function ProfileDialog({ open, onOpenChange, onSaved }: ProfileDialogProps) {
       setGoogleLinked({ status: "loading" });
       setGoogleNote(null);
       setOthersNote(null);
-      setPasswordOpen(false);
+      setPasswordOpen(section === "password");
       setPassword("");
       setConfirm("");
       setPasswordErrors({});
