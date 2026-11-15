@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Candidates · CSC Elections",
+  title: "Ballot · CSC Elections",
 };
 
-/** Placeholder route for CSC candidates (not built yet); renders an empty workspace. */
-export default function CscCandidatesPage() {
+/** Placeholder route for the CSC ballot (not built yet); renders an empty workspace. */
+export default function CscBallotPage() {
   return null;
 }

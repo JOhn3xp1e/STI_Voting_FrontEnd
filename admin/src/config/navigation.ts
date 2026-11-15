@@ -1,4 +1,4 @@
-import { Briefcase, Calendar, ChartColumn, Flag, LayoutDashboard, Settings, SquareCheck, Users, type LucideIcon } from "lucide-react";
+import { Briefcase, Calendar, ChartColumn, Flag, LayoutDashboard, Settings, SquareCheck, Sun, Users, type LucideIcon } from "lucide-react";
 
 /**
  * Dashboard sidebar navigation.
@@ -38,12 +38,13 @@ export interface NavSection {
   attached?: boolean;
 }
 
-/** The three pages every election has in the sidebar. */
+/** The pages every election has in the sidebar. */
 function electionLinks(slug: string): NavLink[] {
   return [
     { type: "link", id: `${slug}-metrics`, label: "Metrics", href: `/elections/${slug}/metrics`, icon: ChartColumn },
     { type: "link", id: `${slug}-party-lists`, label: "Party lists", href: `/elections/${slug}/party-lists`, icon: Flag },
-    { type: "link", id: `${slug}-candidates`, label: "Candidates", href: `/elections/${slug}/candidates`, icon: Users },
+    { type: "link", id: `${slug}-ballot`, label: "Ballot", href: `/elections/${slug}/ballot`, icon: Users },
+    { type: "link", id: `${slug}-settings`, label: "Settings", href: `/elections/${slug}/settings`, icon: Sun },
   ];
 }
 
@@ -136,7 +137,8 @@ const PAGE_META: Record<string, PageMetaConfig> = {
   "/students": { title: "Students" },
   "/elections/csc/metrics": { title: "Election Metrics", description: "CSC Elections" },
   "/elections/csc/party-lists": { title: "Party Lists", description: "CSC Elections" },
-  "/elections/csc/candidates": { title: "Candidates", description: "CSC Elections" },
+  "/elections/csc/ballot": { title: "Ballot", description: "CSC Elections" },
+  "/elections/csc/settings": { title: "Election Settings", description: "CSC Elections" },
   "/settings": { title: "Settings", headerDivider: false },
   [SETTINGS_LINKS.email]: { title: "Settings", headerDivider: false },
   [SETTINGS_LINKS.security]: { title: "Settings", headerDivider: false },
