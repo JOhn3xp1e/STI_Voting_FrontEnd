@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Poppins } from "next/font/google";
+import { Geist, Inter, Poppins } from "next/font/google";
 
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,8 @@ const fontSans = Geist({
   subsets: ["latin"],
 });
 
-const fontMono = Geist_Mono({
+/** Labels, codes and pills (`font-mono`): Inter, in place of the design's JetBrains Mono. */
+const fontMono = Inter({
   variable: "--font-mono",
   subsets: ["latin"],
 });

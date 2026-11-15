@@ -54,7 +54,8 @@ export function BuildingBackdrop({ className }: { className?: string }) {
       <AsciiBuilding
         fit
         elevation={18}
-        distanceScale={0.82}
+        // On-screen size goes with 1 / distance: 0.82 / 1.25 = 25% larger than before.
+        distanceScale={0.656}
         autoRotate={!reducedMotion}
         paused={paused}
         className={cn("size-full", styles.artFadeIn)}
