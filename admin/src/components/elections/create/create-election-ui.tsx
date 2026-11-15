@@ -82,31 +82,7 @@ export function Stepper({ steps, current, reached, onSelect }: StepperProps) {
 /*                                Section card                                */
 /* -------------------------------------------------------------------------- */
 
-interface SectionCardProps {
-  title: string;
-  /** Right side of the header: a mono hint (string) or an action. */
-  aside?: ReactNode;
-  children: ReactNode;
-  bodyClassName?: string;
-}
-
-export const cardClassName = "rounded-[0.375rem] border border-[#e2e8f0] bg-card dark:border-border";
-
-export function SectionCard({ title, aside, children, bodyClassName }: SectionCardProps) {
-  return (
-    <section className={cardClassName}>
-      <header className="flex min-h-12 items-center justify-between gap-3 border-b border-[#e2e8f0] px-5 py-2 dark:border-border">
-        <h2 className="font-mono text-[0.6875rem] font-semibold tracking-[0.16em] text-foreground uppercase">{title}</h2>
-        {typeof aside === "string" ? (
-          <span className="truncate font-mono text-[0.65625rem] text-muted-foreground">{aside}</span>
-        ) : (
-          aside
-        )}
-      </header>
-      <div className={cn("p-5", bodyClassName)}>{children}</div>
-    </section>
-  );
-}
+export { SectionCard, cardClassName } from "@/components/shared/section-card";
 
 /** Outlined header action, e.g. "+ Add position". */
 export const outlineButtonClassName = cn(

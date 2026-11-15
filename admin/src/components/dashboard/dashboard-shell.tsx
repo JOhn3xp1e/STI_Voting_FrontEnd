@@ -9,6 +9,7 @@ import { defaultOpenGroupIds, findGroupIdOf, getActiveHref } from "@/config/navi
 import { endDashboardEntrance } from "@/lib/dashboard-entrance";
 import { cn } from "@/lib/utils";
 import type { AdminProfile } from "@/types/auth.types";
+import { ProfileDialogProvider } from "@/components/account/profile-dialog";
 
 import entrance from "./dashboard-entrance.module.css";
 import { DashboardHeader } from "./dashboard-header";
@@ -105,6 +106,7 @@ export function DashboardShell({ admin, children }: DashboardShellProps) {
   };
 
   return (
+    <ProfileDialogProvider>
     <PageDescriptionProvider>
     <div data-themed className="flex min-h-dvh flex-1 bg-background text-foreground transition-colors duration-500">
       <a
@@ -193,5 +195,6 @@ export function DashboardShell({ admin, children }: DashboardShellProps) {
       <div aria-hidden className={entrance.curtain} onAnimationEnd={endDashboardEntrance} />
     </div>
     </PageDescriptionProvider>
+    </ProfileDialogProvider>
   );
 }

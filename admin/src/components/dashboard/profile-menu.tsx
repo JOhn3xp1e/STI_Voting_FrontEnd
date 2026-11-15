@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Menu } from "@base-ui/react/menu";
 import { LogOut, Settings, UserRound } from "lucide-react";
 
+import { useProfileDialog } from "@/components/account/profile-dialog";
 import { useAdminSession } from "@/components/auth/admin-session";
 import { ACCOUNT_LINKS } from "@/config/navigation";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ export function ProfileMenu({
   showIdentity = false,
 }: ProfileMenuProps) {
   const { signOut } = useAdminSession();
+  const { openProfile } = useProfileDialog();
 
   return (
     <Menu.Root modal={false}>
@@ -54,10 +56,10 @@ export function ProfileMenu({
                 <Menu.Separator className="mx-1 my-1 h-px bg-border" />
               </>
             ) : null}
-            <Menu.LinkItem closeOnClick className={menuItemClassName} render={<Link href={ACCOUNT_LINKS.profile} />}>
+            <Menu.Item onClick={openProfile} className={menuItemClassName}>
               <UserRound aria-hidden />
               Profile
-            </Menu.LinkItem>
+            </Menu.Item>
             <Menu.LinkItem closeOnClick className={menuItemClassName} render={<Link href={ACCOUNT_LINKS.settings} />}>
               <Settings aria-hidden />
               Account settings

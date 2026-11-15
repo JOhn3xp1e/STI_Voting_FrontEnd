@@ -71,3 +71,37 @@ export function getInviteErrorMessage(error: unknown): string {
   }
   return getApiErrorMessage(error);
 }
+
+/* -------------------------------------------------------------------------- */
+/*                          Own profile (name, photo)                         */
+/* -------------------------------------------------------------------------- */
+
+const accountPath = (id: string) => `${ROUTE}/${encodeURIComponent(id)}`;
+
+/** Fields left out are unchanged (`PUT /api/admin/accounts/{id}`). */
+export async function updateAdminAccount(id: string, changes: { fullName?: string; isActive?: boolean }): Promise<AdminAccount> {
+  return apiClient.put<AdminAccount, typeof changes>(accountPath(id), changes);
+}
+
+/** Photo types and size the backend accepts. */
+export const AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
+export const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+
+/** `null` when the file can be uploaded, else why not (checked before uploading, like the backend). */
+export function checkAvatarFile(file: File): string | null {
+  if (!(AVATAR_TYPES as readonly string[]).includes(file.type)) return "Use a JPG, PNG or WEBP image.";
+  if (file.size > AVATAR_MAX_BYTES) return "The photo is over 5 MB.";
+  return null;
+}
+
+/** Uploads a new photo (form field `avatar`). Resolves with the admin and their new `avatarUrl`. */
+export async function uploadAdminAvatar(id: string, file: File): Promise<AdminAccount> {
+  const body = new FormData();
+  body.append("avatar", file);
+  return apiClient.put<AdminAccount, FormData>(`${accountPath(id)}/avatar`, body);
+}
+
+/** Removes the photo; the admin is shown with initials again. */
+export async function removeAdminAvatar(id: string): Promise<AdminAccount> {
+  return apiClient.delete<AdminAccount>(`${accountPath(id)}/avatar`);
+}
