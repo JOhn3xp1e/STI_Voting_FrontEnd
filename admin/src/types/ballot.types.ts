@@ -21,5 +21,19 @@ export interface Candidate {
   partylistId: string | null;
   portraitUrl: string | null;
   motto: string | null;
+  /** Social and campaign links shown with the candidate. */
+  socialLinks: SocialLink[];
   createdAt: string;
+}
+
+/** Same values as `SocialLink.Platforms` in SLVP-BE; the icon is picked from the platform. */
+export const SOCIAL_PLATFORMS = ["facebook", "instagram", "tiktok", "x", "youtube", "website"] as const;
+export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
+
+/** One of a candidate's links, e.g. `{ platform: "facebook", url: "https://facebook.com/juan" }`. */
+export interface SocialLink {
+  platform: SocialPlatform;
+  url: string;
+  /** Optional display label (e.g. "Campaign site"). */
+  label: string | null;
 }

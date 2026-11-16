@@ -13,6 +13,7 @@ import { primaryButtonClassName, toolbarButtonClassName } from "@/components/stu
 import { Checkbox } from "@/components/ui/checkbox";
 import { positionSummary, sortPositions, toCandidateRow, type CandidateRow } from "@/lib/ballot";
 import { normalizeHex, sortPartylists } from "@/lib/partylists";
+import { formatYear } from "@/lib/students";
 import { cn } from "@/lib/utils";
 import { getApiErrorMessage } from "@/services/api/error-message";
 import { deleteCandidate, deletePosition, fetchCandidates, fetchPositions } from "@/services/ballot/ballot.service";
@@ -39,6 +40,10 @@ type LoadState =
 
 /** Party filter value for candidates without a party. */
 const INDEPENDENT = "__independent__";
+
+/** Columns of the list view: checkbox, name, [career, program, level,] party list, photo, edit. */
+const listGridClassName =
+  "grid-cols-[2.375rem_minmax(0,1fr)_3rem] sm:grid-cols-[2.375rem_minmax(0,1fr)_9rem_5.5rem_3rem] xl:grid-cols-[2.375rem_minmax(0,1fr)_8.5rem_10rem_4.75rem_8rem_5.5rem_3.5rem]";
 
 const iconButtonClassName =
   "flex size-7.5 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-blue/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground";
@@ -226,11 +231,14 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
 
       {/* Positions */}
       <div className="border-t border-border">
-        <div className="grid h-10.5 grid-cols-[2.375rem_minmax(0,1fr)_3rem] items-center border-b border-border font-mono sm:grid-cols-[2.375rem_minmax(0,1fr)_9rem_5.5rem_3rem] text-[0.65625rem] tracking-[0.08em] text-muted-foreground uppercase">
+        <div className={cn("grid h-10.5 items-center border-b border-border font-mono text-[0.65625rem] tracking-[0.08em] text-muted-foreground uppercase", listGridClassName)}>
           <span />
           <span>{showPhotos ? "Position / candidates" : "Position / candidate"}</span>
           {showPhotos ? null : (
             <>
+              <span className="hidden xl:block">Career</span>
+              <span className="hidden xl:block">Program</span>
+              <span className="hidden xl:block">Level</span>
               <span className="hidden sm:block">Party list</span>
               <span className="hidden sm:block">Photo</span>
             </>
@@ -345,6 +353,10 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
           setCollapsed((current) => (current.has(saved.positionId) ? new Set([...current].filter((id) => id !== saved.positionId)) : current));
           say(created ? "Added the candidate." : "Saved the candidate.");
         }}
+        onPortraitSaved={(saved) => {
+          setCandidates((current) => current.map((c) => (c.id === saved.id ? saved : c)));
+          say("Saved the new photo.");
+        }}
         onRemoved={(removed) => {
           setCandidates((current) => current.filter((c) => c.id !== removed.id));
           setSelected((current) => new Set([...current].filter((id) => id !== removed.id)));
@@ -448,7 +460,10 @@ function CandidateListRow({ row, party, checked, onCheck, onEdit }: CandidateIte
   return (
     <li
       data-selected={checked || undefined}
-      className="grid h-14 grid-cols-[2.375rem_minmax(0,1fr)_3rem] items-center border-b border-border transition-colors duration-200 hover:bg-muted/40 data-selected:bg-brand-blue/2.5 sm:grid-cols-[2.375rem_minmax(0,1fr)_9rem_5.5rem_3rem] dark:hover:bg-white/3"
+      className={cn(
+        "grid h-14 items-center border-b border-border transition-colors duration-200 hover:bg-muted/40 data-selected:bg-brand-blue/2.5 dark:hover:bg-white/3",
+        listGridClassName,
+      )}
     >
       <span className="flex justify-center">
         <Checkbox aria-label={`Select ${row.name}`} checked={checked} onCheckedChange={onCheck} className={checkboxClassName} />
@@ -468,6 +483,9 @@ function CandidateListRow({ row, party, checked, onCheck, onEdit }: CandidateIte
           <p className="truncate font-mono text-[0.65625rem] leading-4 text-muted-foreground">{row.candidate.studentId}</p>
         </div>
       </div>
+      <StudentCell value={row.student?.careerCode} />
+      <StudentCell value={row.student?.program} />
+      <StudentCell value={row.student ? formatYear(row.student.year) : null} />
       <span className="hidden min-w-0 pr-3 sm:block">
         <PartyTag party={party} />
       </span>
@@ -486,6 +504,16 @@ function CandidateListRow({ row, party, checked, onCheck, onEdit }: CandidateIte
         </button>
       </span>
     </li>
+  );
+}
+
+/** Career, program or level of the candidate's enrollment; "—" when the student has none. */
+function StudentCell({ value }: { value: string | null | undefined }) {
+  const text = value && value !== "—" ? value : null;
+  return (
+    <span className={cn("hidden truncate pr-3 text-[0.8125rem] xl:block", text ? "text-foreground/85" : "text-muted-foreground")}>
+      {text ?? <span aria-label="None">—</span>}
+    </span>
   );
 }
 

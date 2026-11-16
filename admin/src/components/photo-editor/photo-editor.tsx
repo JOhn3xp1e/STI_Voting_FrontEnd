@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -15,7 +16,7 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, X } from "lucide-react";
 
 import { loginHref } from "@/lib/auth-routing";
 import {
@@ -208,7 +209,38 @@ function failedJob(cause: unknown): Job {
  * Test page for AI photo editing: crop, remove the background (Cloudflare
  * Images), then put the subject on a new background colour and save a PNG.
  */
-export function PhotoEditor() {
+export interface PhotoEditorProps {
+  /**
+   * `page`: the full-page test editor (`/photo-editor-test`), which downloads the result.
+   * `dialog`: inside a floating modal (candidate portraits); Save hands the PNG to `onSave`.
+   */
+  mode?: "page" | "dialog";
+  /** Photo to open with: a file, or the URL of the saved image. */
+  initialPhoto?: File | string | null;
+  /** Receives the finished PNG (dialog mode). A rejection is shown in the editor. */
+  onSave?: (file: File) => Promise<void>;
+  /** Closes the editor (dialog mode: the × and Cancel buttons). */
+  onClose?: () => void;
+  /** Header title, e.g. "Edit portrait". */
+  title?: string;
+  /** Name and detail line in the "Preview on ballot" row. */
+  preview?: { name: string; detail: string };
+  /** Label of the save button. */
+  saveLabel?: string;
+}
+
+const DEFAULT_PREVIEW = { name: "Candidate name", detail: "President · Independent" };
+
+export function PhotoEditor({
+  mode = "page",
+  initialPhoto = null,
+  onSave,
+  onClose,
+  title = "Photo editor",
+  preview = DEFAULT_PREVIEW,
+  saveLabel = "Save photo",
+}: PhotoEditorProps = {}) {
+  const inDialog = mode === "dialog";
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   /** Which version is being edited. */
@@ -310,6 +342,26 @@ export function PhotoEditor() {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+
+  // Open the starting photo once (a saved portrait is downloaded first).
+  const openInitialPhoto = useEffectEvent(async (source: File | string) => {
+    try {
+      if (typeof source !== "string") return await pick(source);
+      const response = await fetch(source, { mode: "cors", cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const name = source.split("?")[0].split("/").pop() || "portrait";
+      await pick(new File([blob], name, { type: blob.type || "image/png" }));
+    } catch {
+      setNotice("Couldn't open the current photo. Choose a file instead.");
+    }
+  });
+  const openedInitialRef = useRef(false);
+  useEffect(() => {
+    if (!initialPhoto || openedInitialRef.current) return;
+    openedInitialRef.current = true;
+    void openInitialPhoto(initialPhoto);
+  }, [initialPhoto]);
 
   // Scroll to zoom (needs a non-passive listener to keep the page from scrolling).
   useEffect(() => {
@@ -458,6 +510,7 @@ export function PhotoEditor() {
   }
 
   function cancel() {
+    if (inDialog) return onClose?.();
     resetEdits();
     setPhoto(null);
     setNotice(null);
@@ -466,8 +519,17 @@ export function PhotoEditor() {
   async function save() {
     if (!photo || !version) return;
     setSaving(true);
+    setNotice(null);
     try {
       const blob = await exportPng({ source: version.bitmap, subject, background, view }, ratio);
+      if (onSave) {
+        try {
+          await onSave(new File([blob], `${baseName(photo.name)}-portrait.png`, { type: "image/png" }));
+        } catch (cause) {
+          setNotice(cause instanceof Error && cause.message ? cause.message : "Couldn't save the photo.");
+        }
+        return;
+      }
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -579,22 +641,24 @@ export function PhotoEditor() {
   /* ------------------------------- Render ------------------------------- */
 
   return (
-    <div className="flex min-h-dvh flex-col bg-white font-mono text-brand-navy lg:h-dvh">
+    <div className={cn("flex flex-col bg-white font-mono text-brand-navy", inDialog ? "min-h-full lg:h-full" : "min-h-dvh lg:h-dvh")}>
       <input ref={fileInputRef} type="file" accept={ACCEPTED_TYPES.join(",")} className="sr-only" tabIndex={-1} onChange={onFileInput} />
 
       {/* ------------------------------ Top bar ------------------------------ */}
-      <header className={cn("flex h-16 shrink-0 items-center gap-3 border-b px-4 sm:px-5", LINE)}>
-        <Link
-          href="/dashboard"
-          aria-label="Back to the dashboard"
-          className={cn("flex items-center rounded-lg border px-2 py-1.5 transition-colors hover:bg-[#f4f6fa]", LINE, focusRing)}
-        >
-          <ChevronLeftIcon />
-        </Link>
+      <header className={cn("flex shrink-0 items-center gap-3 border-b px-4 sm:px-5", inDialog ? "h-14" : "h-16", LINE)}>
+        {inDialog ? null : (
+          <Link
+            href="/dashboard"
+            aria-label="Back to the dashboard"
+            className={cn("flex items-center rounded-lg border px-2 py-1.5 transition-colors hover:bg-[#f4f6fa]", LINE, focusRing)}
+          >
+            <ChevronLeftIcon />
+          </Link>
+        )}
         <div className="flex min-w-0 flex-col gap-px">
-          <h1 className="text-[15px] font-semibold">Photo editor</h1>
+          <h1 className="text-[15px] font-semibold">{title}</h1>
           <p className="truncate text-[11.5px] text-brand-muted">
-            {photo ? `${photo.name} · ${photo.width} × ${photo.height}` : "AI test · Cloudflare Images"}
+            {photo ? `${photo.name} · ${photo.width} × ${photo.height}` : inDialog ? "Choose or drop a photo" : "AI test · Cloudflare Images"}
           </p>
         </div>
 
@@ -622,12 +686,26 @@ export function PhotoEditor() {
         </nav>
         <div className="flex-1" />
 
-        <button type="button" onClick={cancel} disabled={!photo} className={secondaryButtonClassName}>
+        <button type="button" onClick={cancel} disabled={(!photo && !inDialog) || saving} className={secondaryButtonClassName}>
           Cancel
         </button>
         <button type="button" onClick={() => void save()} disabled={!photo || saving} className={primaryButtonClassName}>
-          {saving ? "Saving…" : "Save photo"}
+          {saving ? "Saving…" : saveLabel}
         </button>
+        {inDialog ? (
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            aria-label="Close the photo editor"
+            className={cn(
+              "-mr-1.5 flex size-8 shrink-0 items-center justify-center rounded-md text-brand-muted transition-colors hover:bg-[#f4f6fa] hover:text-brand-navy disabled:opacity-50",
+              focusRing,
+            )}
+          >
+            <X aria-hidden className="size-4" />
+          </button>
+        ) : null}
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -642,7 +720,10 @@ export function PhotoEditor() {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropping(false);
           }}
           onDrop={onDrop}
-          className="relative flex min-h-[560px] min-w-0 flex-1 flex-col items-center justify-center gap-4 overflow-hidden bg-[#f4f6fa] p-6"
+          className={cn(
+            "relative flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden bg-[#f4f6fa]",
+            inDialog ? "min-h-[440px] gap-3 p-4" : "min-h-[560px] gap-4 p-6",
+          )}
         >
           {photo ? (
             <>
@@ -771,8 +852,11 @@ export function PhotoEditor() {
         </main>
 
         {/* ------------------------------- Panel ------------------------------- */}
-        <aside aria-label="Edit steps" className={cn("flex w-full shrink-0 flex-col bg-white max-lg:border-t lg:w-[392px] lg:border-l", LINE)}>
-          <div className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto p-5">
+        <aside
+          aria-label="Edit steps"
+          className={cn("flex w-full shrink-0 flex-col bg-white max-lg:border-t lg:border-l", inDialog ? "lg:w-[360px]" : "lg:w-[392px]", LINE)}
+        >
+          <div className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", inDialog ? "gap-4 p-4" : "gap-[18px] p-5")}>
             <Section
               ref={cropSectionRef}
               title="Crop"
@@ -931,8 +1015,8 @@ export function PhotoEditor() {
                 {photo ? <canvas ref={avatarRef} aria-hidden className="size-full object-cover object-top" /> : null}
               </div>
               <div className="flex min-w-0 flex-1 flex-col gap-px">
-                <p className="truncate text-[12.5px] font-semibold">Candidate name</p>
-                <p className="truncate text-[11.5px] text-brand-muted">President · Independent</p>
+                <p className="truncate text-[12.5px] font-semibold">{preview.name}</p>
+                <p className="truncate text-[11.5px] text-brand-muted">{preview.detail}</p>
               </div>
               <span aria-hidden className={cn("size-[18px] shrink-0 rounded-full border-[1.5px]", LINE)} />
             </div>

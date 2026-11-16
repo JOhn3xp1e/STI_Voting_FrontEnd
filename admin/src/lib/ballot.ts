@@ -1,5 +1,5 @@
 import { formatStudentName, getStudentInitials } from "@/lib/students";
-import type { Candidate, Position } from "@/types/ballot.types";
+import type { Candidate, Position, SocialLink, SocialPlatform } from "@/types/ballot.types";
 import type { Student } from "@/types/student.types";
 
 /* Ballot helpers: ordering, labels and the Create position form. */
@@ -34,15 +34,69 @@ export function toCandidateRow(candidate: Candidate, student: Student | undefine
 
 export const PORTRAIT_MAX_BYTES = 2 * 1024 * 1024;
 
+/** Names for the Platform menu, in the order SLVP-BE lists them. */
+export const PLATFORM_LABELS: Record<SocialPlatform, string> = {
+  facebook: "Facebook",
+  instagram: "Instagram",
+  tiktok: "TikTok",
+  x: "X",
+  youtube: "YouTube",
+  website: "Website",
+};
+
+/** SLVP-BE accepts up to 10 links per candidate. */
+export const MAX_LINKS = 10;
+
+/** A link row in the candidate dialog; `key` only tells the rows apart. */
+export interface LinkDraft extends SocialLink {
+  key: string;
+}
+
+let linkKeys = 0;
+export function newLinkDraft(link: Partial<SocialLink> = {}): LinkDraft {
+  linkKeys += 1;
+  return { key: `link-${linkKeys}`, platform: link.platform ?? "website", url: link.url ?? "", label: link.label ?? null };
+}
+
+/** The platform for a new row: the first one the candidate doesn't link to yet. */
+export function nextPlatform(links: readonly LinkDraft[]): SocialPlatform {
+  const used = new Set(links.map((l) => l.platform));
+  const order: SocialPlatform[] = ["facebook", "instagram", "tiktok", "x", "youtube", "website"];
+  return order.find((p) => !used.has(p)) ?? "website";
+}
+
 export interface CandidateForm {
   studentId: string;
   positionId: string | null;
   /** `null` = independent. */
   partylistId: string | null;
   motto: string;
+  links: LinkDraft[];
 }
 
-export type CandidateErrors = Partial<Record<"studentId" | "positionId", string>>;
+export type CandidateErrors = Partial<Record<"studentId" | "positionId", string>> & {
+  /** Problems with link rows, by `LinkDraft.key`. */
+  links?: Record<string, string>;
+};
+
+/** Rows with a URL, ready to send (empty rows are dropped). */
+export function linksToSave(links: readonly LinkDraft[]): SocialLink[] {
+  return links.filter((l) => l.url.trim()).map(({ platform, url, label }) => ({ platform, url: url.trim(), label: label?.trim() || null }));
+}
+
+/** Same rule as SLVP-BE: a full http(s) address. */
+function linkProblem(url: string): string | null {
+  const value = url.trim();
+  if (!value) return null;
+  if (value.length > 500) return "Use at most 500 characters.";
+  try {
+    const parsed = new URL(value);
+    if ((parsed.protocol === "https:" || parsed.protocol === "http:") && parsed.hostname) return null;
+  } catch {
+    // Not a URL; reported below.
+  }
+  return "Use a full address starting with https://";
+}
 
 export const STUDENT_ID_LENGTH = 11;
 
@@ -79,6 +133,12 @@ export function validateCandidate(
     if (problem) errors.studentId = problem;
   }
   if (!form.positionId) errors.positionId = "Pick a position.";
+  const links: Record<string, string> = {};
+  for (const link of form.links) {
+    const problem = linkProblem(link.url);
+    if (problem) links[link.key] = problem;
+  }
+  if (Object.keys(links).length) errors.links = links;
   return errors;
 }
 

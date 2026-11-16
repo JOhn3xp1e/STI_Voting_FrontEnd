@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, LoaderCircle, SearchX } from "lucide-react";
 
 import { useElectionsNav } from "@/components/elections/elections-nav";
 import { errorClassName, fieldClassName, labelClassName } from "@/components/shared/form-styles";
-import { ImageDropzone } from "@/components/shared/image-dropzone";
+import { IMAGE_TYPES, checkImage } from "@/components/shared/image-dropzone";
 import { PageError, PageLoading, Toast, useNotice } from "@/components/shared/page-feedback";
-import { SectionCard, cardClassName } from "@/components/shared/section-card";
+import { SectionCard } from "@/components/shared/section-card";
 import { primaryButtonClassName, toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
+import { sortPositions } from "@/lib/ballot";
 import {
   PARTY_SWATCHES,
   PLATFORM_MAX_LENGTH,
@@ -25,13 +26,17 @@ import {
   type PartylistErrors,
   type PartylistForm,
 } from "@/lib/partylists";
+import { getStudentInitials } from "@/lib/students";
 import { cn } from "@/lib/utils";
 import { isApiError } from "@/services/api/client";
 import { getApiErrorMessage } from "@/services/api/error-message";
+import { fetchCandidates, fetchPositions } from "@/services/ballot/ballot.service";
 import { createPartylist, fetchPartylist, updatePartylist } from "@/services/partylists/partylists.service";
+import { fetchStudents } from "@/services/students/students.service";
 import type { Partylist } from "@/types/partylist.types";
 
-const inputClassName = cn(fieldClassName, "rounded-[0.25rem] border-[#e2e8f0] dark:border-border");
+const inputClassName = cn(fieldClassName, "rounded-md border-[#e4e8f0] text-[0.8125rem] dark:border-border");
+const fieldLabelClassName = cn(labelClassName, "text-[0.6875rem]");
 
 const LOGO_MAX_BYTES = 1024 * 1024;
 const BANNER_MAX_BYTES = 2 * 1024 * 1024;
@@ -121,6 +126,45 @@ function usePickedImage(): [PickedImage, (file: File | null) => void] {
   return [image, (file) => setImage(file ? { file, url: URL.createObjectURL(file) } : null)];
 }
 
+/** A candidate of this party list, for the preview. */
+interface PreviewCandidate {
+  name: string;
+  initials: string;
+  position: string;
+}
+
+/**
+ * The party's first candidate (by position order), so the preview shows a real
+ * ballot row. `null` for a new party list, one without candidates, or when
+ * the ballot can't be loaded (the preview then shows a placeholder).
+ */
+function usePreviewCandidate(electionId: string, partylistId: string | null): PreviewCandidate | null {
+  const [candidate, setCandidate] = useState<PreviewCandidate | null>(null);
+  useEffect(() => {
+    if (!partylistId) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    Promise.all([fetchCandidates(electionId, { signal }), fetchPositions(electionId, { signal }), fetchStudents({ signal }).catch(() => null)])
+      .then(([candidates, positions, students]) => {
+        const mine = candidates.filter((c) => c.partylistId === partylistId);
+        const position = sortPositions(positions).find((p) => mine.some((c) => c.positionId === p.id));
+        const first = position ? mine.find((c) => c.positionId === position.id) : undefined;
+        if (!first || !position) return;
+        const student = students?.find((s) => s.studentNo === first.studentId);
+        setCandidate({
+          name: student ? `${student.firstName} ${student.lastName}`.trim() : first.studentId,
+          initials: student ? getStudentInitials(student) : "?",
+          position: position.title,
+        });
+      })
+      .catch(() => {
+        // Only the preview uses this; it falls back to a placeholder row.
+      });
+    return () => controller.abort();
+  }, [electionId, partylistId]);
+  return candidate;
+}
+
 function Editor({ electionId, party }: { electionId: string; party: Partylist | null }) {
   const router = useRouter();
   const { elections } = useElectionsNav();
@@ -134,6 +178,7 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { notice, say } = useNotice();
+  const previewCandidate = usePreviewCandidate(electionId, party?.id ?? null);
 
   const color = normalizeHex(form.color);
   const colorStyle = partyColorStyle(color);
@@ -171,6 +216,8 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
     }
   }
 
+  const sayError = (message: string) => say(message, "error");
+
   return (
     <div className="px-4 pb-16 sm:px-6 lg:px-8">
       {/* Breadcrumb + actions */}
@@ -178,20 +225,22 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
         <div className="flex min-w-0 items-center gap-2.5">
           <Link
             href={listHref}
-            className="inline-flex shrink-0 items-center gap-1 rounded-sm text-[0.875rem] text-brand-blue outline-none hover:underline hover:underline-offset-2 focus-visible:ring-2 focus-visible:ring-brand-blue/30 dark:text-[#7aa7e6]"
+            className="inline-flex shrink-0 items-center gap-1 rounded-sm text-[0.8125rem] text-brand-blue outline-none hover:underline hover:underline-offset-2 focus-visible:ring-2 focus-visible:ring-brand-blue/30 dark:text-[#7aa7e6]"
           >
             <ArrowLeft aria-hidden className="size-3.5" />
             Party lists
           </Link>
-          <span aria-hidden className="text-muted-foreground">/</span>
-          <span className="truncate text-[0.9375rem] font-semibold text-foreground">{name || (party ? party.name : "New party list")}</span>
-          {party ? <span className="shrink-0 font-mono text-[0.6875rem] text-muted-foreground">{party.id}</span> : null}
+          <span aria-hidden className="text-[0.6875rem] text-muted-foreground">
+            /
+          </span>
+          <span className="truncate text-[0.875rem] font-semibold text-foreground">{name || (party ? party.name : "New party list")}</span>
+          {party ? <span className="shrink-0 text-[0.65625rem] text-muted-foreground">{party.id}</span> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
-          <Link href={listHref} className={cn(toolbarButtonClassName, "px-4 font-medium", saving && "pointer-events-none opacity-60")}>
+          <Link href={listHref} className={cn(toolbarButtonClassName, "h-9 px-4 text-[0.8125rem] font-semibold text-foreground", saving && "pointer-events-none opacity-60")}>
             Discard
           </Link>
-          <button type="button" onClick={() => void save()} disabled={saving} className={cn(primaryButtonClassName, "gap-2 disabled:pointer-events-none disabled:opacity-60")}>
+          <button type="button" onClick={() => void save()} disabled={saving} className={cn(primaryButtonClassName, "h-9 gap-2 text-[0.8125rem] disabled:pointer-events-none disabled:opacity-60")}>
             {saving ? <LoaderCircle aria-hidden className="size-3.5 animate-spin" /> : null}
             Save party list
           </button>
@@ -199,17 +248,17 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
       </div>
 
       {error ? (
-        <p role="alert" className="mb-5 rounded-[0.25rem] border border-destructive/30 bg-destructive/5 px-3 py-2 text-[0.8125rem] leading-5 text-destructive">
+        <p role="alert" className="mb-5 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[0.8125rem] leading-5 text-destructive">
           {error}
         </p>
       ) : null}
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
         <div className="min-w-0 space-y-5">
-          <SectionCard title="Identity" aside={party ? `partyID ${party.id} · auto` : "partyID is assigned on save"}>
+          <SectionCard title="Identity" aside={party ? `partyID ${party.id} · auto` : "partyID is assigned on save"} className={cardRadius} bodyClassName={cardBody}>
             <div className="grid grid-cols-1 gap-x-3 gap-y-3.5 sm:grid-cols-2">
               <div>
-                <label htmlFor="party-name" className={labelClassName}>
+                <label htmlFor="party-name" className={fieldLabelClassName}>
                   Name
                 </label>
                 <input
@@ -230,7 +279,7 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
               </div>
 
               <div>
-                <label htmlFor="party-motto" className={labelClassName}>
+                <label htmlFor="party-motto" className={fieldLabelClassName}>
                   Motto
                 </label>
                 <input
@@ -250,16 +299,30 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
                 ) : null}
               </div>
 
-              <div className="sm:col-span-2">
-                <label htmlFor="party-election" className={labelClassName}>
+              <div>
+                <label htmlFor="party-election" className={fieldLabelClassName}>
                   Election
                 </label>
-                <input id="party-election" value={election ? `${election.title} · ${election.id}` : electionId} disabled readOnly className={inputClassName} />
+                <input id="party-election" value={election ? election.title : electionId} title={electionId} disabled readOnly className={inputClassName} />
+              </div>
+
+              {/* Party lists have no status of their own: they go live with their election. */}
+              <div>
+                <label htmlFor="party-status" className={fieldLabelClassName}>
+                  Status
+                </label>
+                <input
+                  id="party-status"
+                  value={election ? `${election.status} · follows the election` : "Follows the election"}
+                  disabled
+                  readOnly
+                  className={inputClassName}
+                />
               </div>
             </div>
           </SectionCard>
 
-          <SectionCard title="Party color" aside="used for tags, banner and ballot">
+          <SectionCard title="Party color" aside="used for tags, banner and ballot" className={cardRadius} bodyClassName={cardBody}>
             <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
               <div role="group" aria-label="Party color" className="flex flex-wrap items-center gap-2.5 pb-1">
                 {PARTY_SWATCHES.map((swatch) => {
@@ -275,14 +338,14 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
                       style={{ backgroundColor: swatch }}
                       className={cn(
                         "size-7.5 cursor-pointer rounded-full outline-none transition-[box-shadow,scale] duration-150 hover:scale-108 focus-visible:ring-3 focus-visible:ring-brand-blue/30 motion-reduce:hover:scale-100",
-                        active ? "shadow-[0_0_0_2px_var(--color-background),0_0_0_4px_var(--color-foreground)]" : "shadow-[inset_0_0_0_1px_rgb(15_23_42/0.08)]",
+                        active && "ring-2 ring-foreground ring-inset",
                       )}
                     />
                   );
                 })}
               </div>
-              <div className="w-36">
-                <label htmlFor="party-color" className={labelClassName}>
+              <div className="w-35">
+                <label htmlFor="party-color" className={fieldLabelClassName}>
                   Custom
                 </label>
                 <input
@@ -290,12 +353,12 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
                   value={form.color}
                   onChange={(e) => update({ color: e.target.value })}
                   onBlur={() => color && form.color !== color && update({ color })}
-                  placeholder="#1E40AF"
+                  placeholder="#FFC200"
                   maxLength={7}
                   spellCheck={false}
                   aria-invalid={!!errors.color || undefined}
                   aria-describedby={errors.color ? "party-color-error" : undefined}
-                  className={cn(inputClassName, "font-mono text-[0.8125rem]")}
+                  className={inputClassName}
                 />
               </div>
             </div>
@@ -306,41 +369,49 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
             ) : null}
           </SectionCard>
 
-          <SectionCard title="Logo & banner" aside="uploaded when you save">
-            <div className="flex items-center gap-4">
-              <span
-                aria-hidden
-                className={cn(
-                  "flex size-16 shrink-0 items-center justify-center rounded-full bg-cover bg-center text-[1.375rem] font-semibold",
-                  !colorStyle && partyColorFallbackClassName,
-                )}
-                style={{ ...colorStyle, ...(logoUrl ? { backgroundImage: `url("${logoUrl}")` } : null) }}
-              >
-                {logoUrl ? null : partyInitial(form.name)}
-              </span>
-              <ImageDropzone
-                title={logoUrl ? "Replace logo" : "Add a logo"}
-                hint="square · max 1 MB"
-                maxBytes={LOGO_MAX_BYTES}
-                picked={logo !== null}
-                onPick={pickLogo}
-                onError={(message) => say(message, "error")}
-                className="min-w-0 flex-1"
-              />
-            </div>
-            <ImageDropzone
-              title={bannerUrl ? "Replace the banner image" : "Drop a banner image"}
-              hint="3:1 · max 2 MB · shown at the top of the party card"
+          <SectionCard title="Logo & banner" aside="drag an image onto a row to replace it" className={cardRadius} bodyClassName={cn(cardBody, "space-y-4")}>
+            <ImageRow
+              label="Logo"
+              hint="Square PNG, JPG or WebP · max 1 MB · shown on the ballot"
+              maxBytes={LOGO_MAX_BYTES}
+              hasImage={logoUrl !== null}
+              picked={logo !== null}
+              savedImage={party?.logoUrl != null}
+              onPick={pickLogo}
+              onError={sayError}
+              media={
+                <span
+                  aria-hidden
+                  className={cn("flex size-14 shrink-0 items-center justify-center rounded-full bg-cover bg-center text-[1.625rem] font-semibold", !colorStyle && partyColorFallbackClassName)}
+                  style={{ ...colorStyle, ...(logoUrl ? { backgroundImage: `url("${logoUrl}")` } : null) }}
+                >
+                  {logoUrl ? null : partyInitial(form.name)}
+                </span>
+              }
+            />
+            <div aria-hidden className="h-px bg-[#e4e8f0] dark:bg-border" />
+            <ImageRow
+              label="Banner"
+              hint="3:1 PNG, JPG or WebP · max 2 MB · top of the party card"
               maxBytes={BANNER_MAX_BYTES}
-              previewUrl={bannerUrl}
+              hasImage={bannerUrl !== null}
               picked={banner !== null}
+              savedImage={party?.bannerUrl != null}
               onPick={pickBanner}
-              onError={(message) => say(message, "error")}
-              className="mt-3.5"
+              onError={sayError}
+              stacked
+              media={
+                <div
+                  className={cn("flex aspect-3/1 w-full items-center overflow-hidden rounded-lg bg-cover bg-center px-3.5", !colorStyle && partyColorFallbackClassName)}
+                  style={{ ...colorStyle, ...(bannerUrl ? { backgroundImage: `url("${bannerUrl}")` } : null) }}
+                >
+                  {bannerUrl ? <span className="sr-only">Banner image</span> : <span className="truncate text-[0.8125rem] font-semibold">{name || "Party name"}</span>}
+                </div>
+              }
             />
           </SectionCard>
 
-          <SectionCard title="Platform" aside="shown on the ballot">
+          <SectionCard title="Platform" aside="shown on the ballot" className={cardRadius} bodyClassName={cardBody}>
             <label htmlFor="party-platform" className="sr-only">
               Platform
             </label>
@@ -348,12 +419,12 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
               id="party-platform"
               value={form.platform}
               onChange={(e) => update({ platform: e.target.value })}
-              placeholder="What the party will do if elected, one point per line."
+              placeholder={"•  Free printing stations in every building.\n•  Monthly open forums with the council."}
               rows={4}
               maxLength={PLATFORM_MAX_LENGTH}
-              className={cn(inputClassName, "h-auto min-h-24 resize-y py-2.5 leading-5.5")}
+              className={cn(inputClassName, "h-auto min-h-24 resize-y rounded-lg py-2.5 leading-6")}
             />
-            <p className="mt-2 font-mono text-[0.65625rem] text-muted-foreground tabular-nums">
+            <p className="mt-3.5 text-[0.65625rem] text-muted-foreground tabular-nums">
               {form.platform.length} / {PLATFORM_MAX_LENGTH} characters
             </p>
           </SectionCard>
@@ -361,50 +432,164 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
 
         {/* Live preview */}
         <aside className="xl:sticky xl:top-6">
-          <SectionCard title="Preview" aside="voter ballot" bodyClassName="px-5 pt-4.5 pb-5">
+          <SectionCard title="Preview" aside="voter ballot" className={cardRadius} bodyClassName={cn(cardBody, "space-y-3.5")}>
             <div
-              className={cn("relative flex min-h-17 items-center gap-3.5 overflow-hidden rounded-[0.25rem] bg-cover bg-center px-3.5 py-3", !colorStyle && partyColorFallbackClassName)}
+              className={cn("relative flex items-center gap-2.5 overflow-hidden rounded-lg bg-cover bg-center p-3.5", !colorStyle && partyColorFallbackClassName)}
               style={{ ...colorStyle, ...(bannerUrl ? { backgroundImage: `url("${bannerUrl}")`, color: "#ffffff" } : null) }}
             >
               {bannerUrl ? <span aria-hidden className="absolute inset-0 bg-brand-navy/55" /> : null}
               <span
                 aria-hidden
-                className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-white bg-cover bg-center text-[0.9375rem] font-semibold text-brand-navy"
+                className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-white bg-cover bg-center text-[1.125rem] font-semibold text-[#334155]"
                 style={logoUrl ? { backgroundImage: `url("${logoUrl}")` } : undefined}
               >
                 {logoUrl ? null : partyInitial(form.name)}
               </span>
-              <div className="relative min-w-0">
-                <p className="truncate text-[1.0625rem] leading-6 font-semibold">{name || "Party name"}</p>
-                {motto ? <p className="truncate text-[0.75rem] leading-4 opacity-85">“{motto}”</p> : null}
+              <div className="relative min-w-0 space-y-0.5">
+                <p className="truncate text-[1.125rem] leading-5.5 font-semibold">{name || "Party name"}</p>
+                {motto ? <p className="truncate text-[0.75rem] leading-4">“{motto}”</p> : null}
               </div>
             </div>
 
             {/* How a candidate of this party is tagged on the ballot. */}
-            <div className={cn(cardClassName, "mt-3.5 flex items-center gap-3 px-3 py-2.5")}>
-              <span aria-hidden className="size-8 shrink-0 rounded-full bg-muted" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[0.875rem] leading-4.5 text-foreground">Candidate name</p>
-                <p className="truncate text-[0.75rem] leading-4 text-muted-foreground">Position</p>
+            <div className="flex items-center gap-2.5 rounded-lg border border-[#e4e8f0] px-3 py-2.5 dark:border-border">
+              <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#e4e8f0] text-[0.65625rem] text-foreground dark:bg-white/10">
+                {previewCandidate?.initials ?? null}
+              </span>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className="truncate text-[0.8125rem] font-medium text-foreground">{previewCandidate?.name ?? "Candidate name"}</p>
+                <p className="truncate text-[0.65625rem] text-muted-foreground">{previewCandidate?.position ?? "Position"}</p>
               </div>
               <span
-                className={cn("max-w-28 shrink-0 truncate rounded-[0.1875rem] px-1.5 py-0.5 font-mono text-[0.625rem] tracking-[0.04em] uppercase", !colorStyle && partyColorFallbackClassName)}
+                className={cn("max-w-28 shrink-0 truncate rounded px-1.75 py-0.75 text-[0.65625rem] uppercase", !colorStyle && partyColorFallbackClassName)}
                 style={colorStyle}
               >
                 {name || "Party"}
               </span>
             </div>
 
-            <p className="mt-4 font-mono text-[0.65625rem] tracking-[0.08em] text-muted-foreground uppercase">Platform</p>
-            <p className="mt-1.5 text-[0.8125rem] leading-5 whitespace-pre-line text-foreground">
-              {form.platform.trim() || <span className="text-muted-foreground">No platform yet.</span>}
-            </p>
-            <p className="mt-4 text-[0.75rem] leading-4 text-muted-foreground">Voters see this on the ballot and candidate pages.</p>
+            <div className="space-y-1 text-muted-foreground">
+              <p className="text-[0.65625rem] uppercase">Platform</p>
+              <p className="text-[0.75rem] leading-4.5 whitespace-pre-line">{form.platform.trim() || "No platform yet."}</p>
+            </div>
+            <p className="text-[0.75rem] leading-4.5 text-muted-foreground">Voters see this on the ballot and candidate pages.</p>
           </SectionCard>
         </aside>
       </div>
 
       <Toast notice={notice} />
+    </div>
+  );
+}
+
+const cardRadius = "rounded-[0.625rem] border-[#e4e8f0]";
+const cardBody = "px-5 py-4.5";
+
+/** Outlined Replace / Upload button. */
+const replaceButtonClassName = cn(toolbarButtonClassName, "h-9 px-4 text-[0.8125rem] font-semibold text-foreground");
+
+interface ImageRowProps {
+  label: string;
+  hint: string;
+  maxBytes: number;
+  /** The logo / banner preview. */
+  media: ReactNode;
+  /** An image is shown (saved or newly picked). */
+  hasImage: boolean;
+  /** The shown image was picked here and isn't saved yet. */
+  picked: boolean;
+  /** The party list already has a saved image. */
+  savedImage: boolean;
+  onPick: (file: File | null) => void;
+  onError: (message: string) => void;
+  /** Media on top with the details below (banner), instead of in one row (logo). */
+  stacked?: boolean;
+}
+
+/**
+ * One image of the party list: preview, name and hint, Replace and Remove.
+ * Dropping an image anywhere on the row replaces it. The API keeps a saved
+ * image until another one is uploaded, so Remove only undoes a pick.
+ */
+function ImageRow({ label, hint, maxBytes, media, hasImage, picked, savedImage, onPick, onError, stacked = false }: ImageRowProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  function accept(file: File | undefined) {
+    if (!file) return;
+    const problem = checkImage(file, maxBytes);
+    if (problem) return onError(problem);
+    onPick(file);
+  }
+
+  const actions = (
+    <div className="flex shrink-0 items-center gap-1">
+      <button type="button" onClick={() => inputRef.current?.click()} aria-label={`${hasImage ? "Replace" : "Upload"} the ${label.toLowerCase()}`} className={replaceButtonClassName}>
+        {hasImage ? "Replace" : "Upload"}
+      </button>
+      {picked || hasImage ? (
+        <button
+          type="button"
+          onClick={() => onPick(null)}
+          disabled={!picked}
+          aria-label={picked ? `Remove the new ${label.toLowerCase()}` : `Remove the ${label.toLowerCase()}`}
+          title={picked ? (savedImage ? "Go back to the saved image" : undefined) : "A saved image can only be replaced, not removed."}
+          className="h-8.5 cursor-pointer rounded-lg px-2.5 text-[0.8125rem] font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-blue/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+        >
+          Remove
+        </button>
+      ) : null}
+    </div>
+  );
+
+  const details = (
+    <div className="min-w-0 flex-1 space-y-0.5">
+      <p className="text-[0.8125rem] font-medium text-foreground">{label}</p>
+      <p className="text-[0.75rem] text-muted-foreground">{hint}</p>
+    </div>
+  );
+
+  return (
+    <div
+      onDragOver={(e: DragEvent) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e: DragEvent) => {
+        e.preventDefault();
+        setDragging(false);
+        accept(e.dataTransfer.files[0]);
+      }}
+      className={cn("-m-1.5 rounded-lg p-1.5 transition-colors duration-200", dragging && "bg-brand-blue/6 outline-2 outline-brand-blue/40 outline-dashed")}
+    >
+      {stacked ? (
+        <div className="space-y-3">
+          {media}
+          <div className="flex flex-wrap items-center gap-4">
+            {details}
+            {actions}
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-4">
+          {media}
+          {details}
+          {actions}
+        </div>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={IMAGE_TYPES.join(",")}
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden
+        onChange={(e: ChangeEvent<HTMLInputElement>) => {
+          accept(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
     </div>
   );
 }

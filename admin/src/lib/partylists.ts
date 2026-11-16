@@ -14,7 +14,7 @@ export const partyListEditHref = (electionId: string, partylistId: string) => `$
 /* -------------------------------------------------------------------------- */
 
 /** Quick picks in the editor. Any other hex colour can be typed in. */
-export const PARTY_SWATCHES = ["#F2C9B5", "#BCD0F2", "#BFE0C8", "#D6C8F0", "#F0BFD0", "#B8DDE0", "#F2DFA8", "#CFD5E0"] as const;
+export const PARTY_SWATCHES = ["#E11D48", "#F97316", "#FFC200", "#10B981", "#0891B2", "#2563EB", "#7C3AED", "#DB2777"] as const;
 
 /** "#1e40af" or "1E40AF" → "#1E40AF"; `null` when it isn't a 6-digit hex colour. */
 export function normalizeHex(input: string): string | null {

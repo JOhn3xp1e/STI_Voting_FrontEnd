@@ -1,5 +1,5 @@
 import { apiClient } from "@/services/api/client";
-import type { Candidate, Position } from "@/types/ballot.types";
+import { SOCIAL_PLATFORMS, type Candidate, type Position, type SocialLink, type SocialPlatform } from "@/types/ballot.types";
 
 /*
  * Positions and candidates <-> ASP.NET Core Web API (SLVP-BE).
@@ -31,7 +31,24 @@ interface CandidateDto {
   /** Public URL built by the API from the storage path. */
   portraitImageUrl?: string | null;
   motto?: string | null;
+  /** `[{ platform, url, label? }]` */
+  socialLinks?: SocialLinkDto[] | null;
   createdAt: string;
+}
+
+/** SocialLink in SLVP-BE (`candidates.social_links`). */
+interface SocialLinkDto {
+  platform?: string | null;
+  url?: string | null;
+  label?: string | null;
+}
+
+const isPlatform = (value: unknown): value is SocialPlatform => SOCIAL_PLATFORMS.includes(value as SocialPlatform);
+
+function toSocialLinks(dtos: SocialLinkDto[] | null | undefined): SocialLink[] {
+  return (dtos ?? [])
+    .filter((dto) => typeof dto?.url === "string" && dto.url.trim() !== "")
+    .map((dto) => ({ platform: isPlatform(dto.platform) ? dto.platform : "website", url: dto.url!.trim(), label: dto.label?.trim() || null }));
 }
 
 function toPosition(dto: PositionDto): Position {
@@ -54,6 +71,7 @@ function toCandidate(dto: CandidateDto): Candidate {
     partylistId: dto.partylistId ?? null,
     portraitUrl: dto.portraitImageUrl ?? null,
     motto: dto.motto ?? null,
+    socialLinks: toSocialLinks(dto.socialLinks),
     createdAt: dto.createdAt,
   };
 }
@@ -111,12 +129,15 @@ export interface CandidateInput {
   /** `null` = independent. */
   partylistId: string | null;
   motto: string | null;
+  /** Sent in full on every save, so removing a link here removes it on the server. */
+  socialLinks: SocialLink[];
 }
 
 /**
  * Create / Update body. The endpoints bind `[FromForm]` fields plus an optional `portraitImage`
  * file, so this is sent as multipart/form-data. Leaving out `partylistId` makes the candidate
  * independent, leaving out `motto` clears it, and leaving out the image keeps the current one.
+ * `socialLinks` is one field holding a JSON array (`[]` clears the links).
  */
 function candidateFormData(input: CandidateInput, portrait?: File | null): FormData {
   const data = new FormData();
@@ -126,6 +147,8 @@ function candidateFormData(input: CandidateInput, portrait?: File | null): FormD
   if (input.partylistId) data.append("partylistId", input.partylistId);
   const motto = input.motto?.trim();
   if (motto) data.append("motto", motto);
+  const links = input.socialLinks.map(({ platform, url, label }) => (label ? { platform, url, label } : { platform, url }));
+  data.append("socialLinks", JSON.stringify(links));
   if (portrait) data.append("portraitImage", portrait, portrait.name);
   return data;
 }
