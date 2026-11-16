@@ -178,7 +178,8 @@ function ProgramsWorkspace({ initialCareers, initialPrograms, enrollments, terms
     if (!enrollments || !countTerm) return null;
     const counts = new Map<string, number>();
     for (const e of enrollments) {
-      if (e.termId === countTerm.id && e.status.toLowerCase() === "active") {
+      // Students without a program (careers with no programs, e.g. JHS) don't count toward any program.
+      if (e.termId === countTerm.id && e.status.toLowerCase() === "active" && e.programCode) {
         const key = e.programCode.toUpperCase();
         counts.set(key, (counts.get(key) ?? 0) + 1);
       }
@@ -193,7 +194,7 @@ function ProgramsWorkspace({ initialCareers, initialPrograms, enrollments, terms
     (kind: "career" | "program", code: string): Usage => {
       const key = code.toUpperCase();
       return {
-        enrollments: enrollments ? enrollments.filter((e) => (kind === "career" ? e.careerCode : e.programCode).toUpperCase() === key).length : null,
+        enrollments: enrollments ? enrollments.filter((e) => (kind === "career" ? e.careerCode : e.programCode)?.toUpperCase() === key).length : null,
         elections: elections
           ? elections.filter((e) => (kind === "career" ? e.careerScope : e.programScope).some((c) => c.toUpperCase() === key)).map((e) => e.title)
           : null,

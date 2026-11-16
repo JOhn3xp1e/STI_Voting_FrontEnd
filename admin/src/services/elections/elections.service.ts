@@ -48,7 +48,7 @@ interface EnrollmentDto {
   studentId: string;
   termId: string;
   careerCode: string;
-  programCode: string;
+  programCode: string | null;
   level: number;
   status: string | number;
 }

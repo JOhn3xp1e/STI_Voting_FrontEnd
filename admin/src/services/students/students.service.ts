@@ -54,7 +54,8 @@ interface CreateStudentRequest {
   middleName: string | null;
   email: string;
   careerCode: string;
-  programCode: string;
+  /** null when the career has no programs (e.g. JHS). */
+  programCode: string | null;
   level: number;
   termId: string;
 }
@@ -62,7 +63,8 @@ interface CreateStudentRequest {
 /** EnrollmentDtos.UpdateEnrollmentRequest */
 interface UpdateEnrollmentRequest {
   careerCode: string;
-  programCode: string;
+  /** null when the career has no programs (e.g. JHS). */
+  programCode: string | null;
   level: number;
   termId: string;
   status: EnrollmentStatus;
@@ -189,8 +191,9 @@ export async function fetchStudentCatalog({ signal }: RequestOptions = {}): Prom
 
 /** Creates the student and their enrollment (backend RPC `create_student_with_enrollment`). */
 export async function createStudent(student: Student): Promise<Student> {
-  if (!student.careerCode || !student.program || student.year === null || !student.term) {
-    throw new Error("Career, program, year and term are required to add a student.");
+  // The backend checks the program against the career (required for TER/SHS, none for JHS).
+  if (!student.careerCode || student.year === null || !student.term) {
+    throw new Error("Career, year and term are required to add a student.");
   }
   const body: CreateStudentRequest = {
     id: student.studentNo,
@@ -199,7 +202,7 @@ export async function createStudent(student: Student): Promise<Student> {
     middleName: student.middleName ?? null,
     email: student.email,
     careerCode: student.careerCode,
-    programCode: student.program,
+    programCode: student.program ?? null,
     level: student.year,
     termId: student.term,
   };
@@ -209,12 +212,12 @@ export async function createStudent(student: Student): Promise<Student> {
 
 /** Replaces one student's enrollment (career, program, year, term, status). */
 export async function updateEnrollment(student: Student): Promise<void> {
-  if (!student.careerCode || !student.program || student.year === null || !student.term) {
+  if (!student.careerCode || student.year === null || !student.term) {
     throw new Error("This student has no complete enrollment to update.");
   }
   const body: UpdateEnrollmentRequest = {
     careerCode: student.careerCode,
-    programCode: student.program,
+    programCode: student.program ?? null,
     level: student.year,
     termId: student.term,
     status: student.enrollmentStatus ?? "Active",

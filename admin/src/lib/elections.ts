@@ -156,7 +156,7 @@ export function countEligibleVoters(enrollments: readonly VoterEnrollment[], fil
       e.termId === filter.termId &&
       e.status === "Active" &&
       (careers.size === 0 || careers.has(e.careerCode)) &&
-      (programs.size === 0 || programs.has(e.programCode)) &&
+      (programs.size === 0 || (e.programCode !== null && programs.has(e.programCode))) &&
       (levels.size === 0 || levels.has(e.level)),
   ).length;
 }
@@ -271,7 +271,7 @@ export function voterPool(
   const pools = careers
     .filter((c) => scope.careerScope.includes(c.code))
     .map((career): CareerPool => {
-      const rows = inTerm.filter((e) => e.careerCode === career.code && (programSet.size === 0 || programSet.has(e.programCode)));
+      const rows = inTerm.filter((e) => e.careerCode === career.code && (programSet.size === 0 || (e.programCode !== null && programSet.has(e.programCode))));
       const byLevel = new Map<number, number>();
       for (const e of rows) byLevel.set(e.level, (byLevel.get(e.level) ?? 0) + 1);
       const levels = careerLevels(career).map((level) => {

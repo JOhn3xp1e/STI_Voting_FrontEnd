@@ -73,7 +73,8 @@ export interface VoterEnrollment {
   studentId: string;
   termId: string;
   careerCode: string;
-  programCode: string;
+  /** null when the career has no programs (e.g. JHS). */
+  programCode: string | null;
   level: number;
   status: string;
 }

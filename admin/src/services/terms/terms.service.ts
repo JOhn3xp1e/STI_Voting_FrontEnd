@@ -27,7 +27,7 @@ interface EnrollmentDto {
   studentId: string;
   termId: string;
   careerCode: string;
-  programCode: string;
+  programCode: string | null;
   /** "Active", or a number when the backend sends enums as numbers. */
   status: string | number;
 }

@@ -114,7 +114,8 @@ function growthTrend(students: readonly Student[], now: number, points = 10): nu
   });
 }
 
-const hasEnrollment = (s: Student) => s.careerCode !== null && s.program !== null && s.year !== null && s.term !== null;
+// No program check: careers without programs (e.g. JHS) enroll students with program = null.
+const hasEnrollment = (s: Student) => s.careerCode !== null && s.year !== null && s.term !== null;
 
 /* -------------------------------------------------------------------------- */
 /*                                   Roster                                   */
