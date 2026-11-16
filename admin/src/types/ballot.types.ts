@@ -20,6 +20,6 @@ export interface Candidate {
   /** `null` = independent. */
   partylistId: string | null;
   portraitUrl: string | null;
-  platform: string | null;
+  motto: string | null;
   createdAt: string;
 }

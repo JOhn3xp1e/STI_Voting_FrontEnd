@@ -39,7 +39,7 @@ export interface CandidateForm {
   positionId: string | null;
   /** `null` = independent. */
   partylistId: string | null;
-  platform: string;
+  motto: string;
 }
 
 export type CandidateErrors = Partial<Record<"studentId" | "positionId", string>>;

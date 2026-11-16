@@ -30,7 +30,7 @@ interface CandidateDto {
   partylistId?: string | null;
   /** Public URL built by the API from the storage path. */
   portraitImageUrl?: string | null;
-  platform?: string | null;
+  motto?: string | null;
   createdAt: string;
 }
 
@@ -53,7 +53,7 @@ function toCandidate(dto: CandidateDto): Candidate {
     electionId: dto.electionId,
     partylistId: dto.partylistId ?? null,
     portraitUrl: dto.portraitImageUrl ?? null,
-    platform: dto.platform ?? null,
+    motto: dto.motto ?? null,
     createdAt: dto.createdAt,
   };
 }
@@ -110,13 +110,13 @@ export interface CandidateInput {
   electionId: string;
   /** `null` = independent. */
   partylistId: string | null;
-  platform: string | null;
+  motto: string | null;
 }
 
 /**
  * Create / Update body. The endpoints bind `[FromForm]` fields plus an optional `portraitImage`
  * file, so this is sent as multipart/form-data. Leaving out `partylistId` makes the candidate
- * independent, leaving out `platform` clears it, and leaving out the image keeps the current one.
+ * independent, leaving out `motto` clears it, and leaving out the image keeps the current one.
  */
 function candidateFormData(input: CandidateInput, portrait?: File | null): FormData {
   const data = new FormData();
@@ -124,8 +124,8 @@ function candidateFormData(input: CandidateInput, portrait?: File | null): FormD
   data.append("positionId", input.positionId);
   data.append("electionId", input.electionId);
   if (input.partylistId) data.append("partylistId", input.partylistId);
-  const platform = input.platform?.trim();
-  if (platform) data.append("platform", platform);
+  const motto = input.motto?.trim();
+  if (motto) data.append("motto", motto);
   if (portrait) data.append("portraitImage", portrait, portrait.name);
   return data;
 }

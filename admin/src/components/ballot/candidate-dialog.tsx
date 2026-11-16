@@ -48,12 +48,12 @@ const bluePrimaryClassName = cn(
 function initialForm(target: CandidateDialogTarget): CandidateForm {
   if (target?.mode === "edit") {
     const c = target.candidate;
-    return { studentId: c.studentId, positionId: c.positionId, partylistId: c.partylistId, platform: c.platform ?? "" };
+    return { studentId: c.studentId, positionId: c.positionId, partylistId: c.partylistId, motto: c.motto ?? "" };
   }
-  return { studentId: "", positionId: target?.positionId ?? null, partylistId: null, platform: "" };
+  return { studentId: "", positionId: target?.positionId ?? null, partylistId: null, motto: "" };
 }
 
-/** "Add candidate" and "Edit candidate": portrait on the left; student, position, party list and platform on the right. */
+/** "Add candidate" and "Edit candidate": portrait on the left; student, position, party list and motto on the right. */
 export function CandidateDialog({ target, electionId, positions, parties, students, candidates, onClose, onSaved, onRemoved }: CandidateDialogProps) {
   const [form, setForm] = useState<CandidateForm>(() => initialForm(target));
   const [errors, setErrors] = useState<CandidateErrors>({});
@@ -106,7 +106,7 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
     setBusy("save");
     setError(null);
     try {
-      const input = { studentId: form.studentId.trim(), positionId: form.positionId!, electionId, partylistId: form.partylistId, platform: form.platform.trim() || null };
+      const input = { studentId: form.studentId.trim(), positionId: form.positionId!, electionId, partylistId: form.partylistId, motto: form.motto.trim() || null };
       const saved = editing ? await updateCandidate(editing.id, input, portrait?.file) : await createCandidate(input, portrait?.file);
       onSaved(saved, !editing);
       onClose();
@@ -139,7 +139,7 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
           <DialogHeading
             eyebrow={editing ? `Candidate · ${editing.studentId}` : "Ballot"}
             title={editing ? "Edit candidate" : "Add candidate"}
-            srDescription="Pick the student, their position and party list, and add a portrait and platform."
+            srDescription="Pick the student, their position and party list, and add a portrait and motto."
             closeDisabled={busy !== null}
           />
 
@@ -220,17 +220,16 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
               </div>
 
               <div>
-                <label htmlFor="candidate-platform" className={labelClassName}>
-                  Platform
+                <label htmlFor="candidate-motto" className={labelClassName}>
+                  Motto
                 </label>
-                <textarea
-                  id="candidate-platform"
-                  value={form.platform}
-                  onChange={(e) => update({ platform: e.target.value })}
-                  placeholder="What will they do if elected?"
-                  rows={3}
-                  maxLength={1000}
-                  className={cn(inputClassName, "h-auto min-h-20 resize-y py-2.5 leading-5.5")}
+                <input
+                  id="candidate-motto"
+                  value={form.motto}
+                  onChange={(e) => update({ motto: e.target.value })}
+                  placeholder="e.g. Serbisyong tapat, para sa lahat."
+                  maxLength={200}
+                  className={inputClassName}
                 />
               </div>
 
