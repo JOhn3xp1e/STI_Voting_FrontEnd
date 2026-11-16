@@ -16,7 +16,7 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
-import { LoaderCircle, X } from "lucide-react";
+import { ImageUp, LoaderCircle, X } from "lucide-react";
 
 import { loginHref } from "@/lib/auth-routing";
 import {
@@ -722,7 +722,7 @@ export function PhotoEditor({
           onDrop={onDrop}
           className={cn(
             "relative flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden bg-[#f4f6fa]",
-            inDialog ? "min-h-[440px] gap-3 p-4" : "min-h-[560px] gap-4 p-6",
+            inDialog ? "min-h-[360px] gap-3 p-4" : "min-h-[560px] gap-4 p-6",
           )}
         >
           {photo ? (
@@ -805,6 +805,20 @@ export function PhotoEditor({
                   LINE,
                 )}
               >
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={saving}
+                  title="Choose another photo (your edits to this one are discarded)"
+                  className={cn(
+                    "flex h-8 items-center gap-1.5 rounded-lg bg-white px-2.5 text-xs font-medium transition-colors hover:bg-[#f4f6fa] disabled:cursor-not-allowed disabled:opacity-40",
+                    focusRing,
+                  )}
+                >
+                  <ImageUp aria-hidden className="size-4" strokeWidth={1.75} />
+                  Change photo
+                </button>
+                <ToolbarDivider />
                 <ToolButton label="Zoom out" onClick={() => zoomBy(0.8)} disabled={view.zoom <= MIN_ZOOM}>
                   <ZoomOutIcon />
                 </ToolButton>
@@ -831,7 +845,7 @@ export function PhotoEditor({
               </div>
 
               <p className="text-center text-[11.5px] text-brand-muted">
-                {comparing ? "Drag the handle to compare · " : ""}scroll to zoom · drag the photo to reposition
+                {comparing ? "Drag the handle to compare · " : ""}scroll to zoom · drag the photo to reposition · drop a new photo to change it
               </p>
             </>
           ) : (
