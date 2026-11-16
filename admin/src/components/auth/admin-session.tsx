@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { AUTH_ROUTES, decideFromMe, loginHref } from "@/lib/auth-routing";
+import { DEV_ME, DEV_SKIP_AUTH } from "@/lib/dev-auth";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { isApiError, setAuthFailureHandler } from "@/services/api/client";
 import {
@@ -58,7 +59,7 @@ function activeOrNull(me: MeResponse | null): MeResponse | null {
  */
 export function AdminSessionGate({ children, fallback }: { children: ReactNode; fallback: ReactNode }) {
   const router = useRouter();
-  const [me, setMe] = useState<MeResponse | null>(() => activeOrNull(peekCachedMe()));
+  const [me, setMe] = useState<MeResponse | null>(() => (DEV_SKIP_AUTH ? DEV_ME : activeOrNull(peekCachedMe())));
   /** Why the session couldn't be checked; only shown while the dashboard isn't open yet. */
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -83,6 +84,7 @@ export function AdminSessionGate({ children, fallback }: { children: ReactNode; 
   );
 
   const check = useCallback(async () => {
+    if (DEV_SKIP_AUTH) return; // local shortcut: stay on the dashboard as DEV_ME
     if (!(await getSession())) return leave(loginHref(undefined, currentPath()), false);
     try {
       await apply(await getMe());
@@ -101,6 +103,7 @@ export function AdminSessionGate({ children, fallback }: { children: ReactNode; 
 
   // 401 anywhere → session expired; 403 → re-check `/me` (deactivated meanwhile, …).
   useEffect(() => {
+    if (DEV_SKIP_AUTH) return;
     return setAuthFailureHandler((status) => {
       if (status === 401) void leave(loginHref("expired", currentPath()), true);
       else void getMe().then(apply, () => {});
@@ -109,7 +112,7 @@ export function AdminSessionGate({ children, fallback }: { children: ReactNode; 
 
   // Signed out elsewhere (another tab, or the refresh token was revoked).
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
+    if (DEV_SKIP_AUTH || !isSupabaseConfigured()) return;
     const { data } = getSupabase().auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") router.replace(AUTH_ROUTES.login);
     });
@@ -123,6 +126,7 @@ export function AdminSessionGate({ children, fallback }: { children: ReactNode; 
       admin: toAdminProfile(me.admin, me.email),
       signOut: () => leave(AUTH_ROUTES.login, true),
       refresh: async () => {
+        if (DEV_SKIP_AUTH) return;
         await apply(await getMe());
       },
     };
