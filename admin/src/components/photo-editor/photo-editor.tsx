@@ -20,12 +20,16 @@ import { LoaderCircle } from "lucide-react";
 import { loginHref } from "@/lib/auth-routing";
 import {
   UNIFORM_CUTS,
+  UNIFORM_INPUT_EDGE,
+  UNIFORM_MODELS,
+  UNIFORM_MODELS_SETUP,
   UNIFORM_PROGRAMS,
   uniformId,
   uniformName,
   uniformReference,
   type UniformCut,
   type UniformId,
+  type UniformModel,
   type UniformProgramId,
 } from "@/lib/uniforms";
 import { cn } from "@/lib/utils";
@@ -72,8 +76,6 @@ import {
 const PAGE_PATH = "/photo-editor-test";
 const REMOVE_BACKGROUND_ENDPOINT = "/api/photo-editor/remove-background";
 const UNIFORM_ENDPOINT = "/api/photo-editor/uniform";
-/** FLUX.2 on Workers AI takes input images of at most 512 px. */
-const UNIFORM_INPUT_EDGE = 512;
 
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"];
 /** The photo is scaled down before upload, so large camera files are fine. */
@@ -103,7 +105,22 @@ interface Version {
   upload: Blob;
 }
 
-type VersionKey = "original" | UniformId;
+/** A uniform as drawn by one model, e.g. `flux-2-klein-4b:it-pants`. */
+type UniformKey = `${UniformModel}:${UniformId}`;
+type VersionKey = "original" | UniformKey;
+
+function uniformKey(model: UniformModel, id: UniformId): UniformKey {
+  return `${model}:${id}`;
+}
+
+function parseUniformKey(key: UniformKey): { model: UniformModel; id: UniformId } {
+  const [model, id] = key.split(":") as [UniformModel, UniformId];
+  return { model, id };
+}
+
+function modelInfo(model: UniformModel) {
+  return UNIFORM_MODELS.find((m) => m.id === model) ?? UNIFORM_MODELS[0];
+}
 
 interface Photo {
   /** Bumped for every photo, so late answers for an earlier one are dropped. */
@@ -197,8 +214,11 @@ export function PhotoEditor() {
   /** Which version is being edited. */
   const [current, setCurrent] = useState<VersionKey>("original");
   const [cut, setCut] = useState<UniformCut>("pants");
-  const [uniformVersions, setUniformVersions] = useState<Partial<Record<UniformId, Version>>>({});
-  const [uniformJobs, setUniformJobs] = useState<Partial<Record<UniformId, Job>>>({});
+  const [model, setModel] = useState<UniformModel>(UNIFORM_MODELS[0].id);
+  /** Whether Workers AI is set up on the server; `null` until known. */
+  const [modelsReady, setModelsReady] = useState<boolean | null>(null);
+  const [uniformVersions, setUniformVersions] = useState<Partial<Record<UniformKey, Version>>>({});
+  const [uniformJobs, setUniformJobs] = useState<Partial<Record<UniformKey, Job>>>({});
   const [cutouts, setCutouts] = useState<Partial<Record<VersionKey, ImageBitmap>>>({});
   const [removals, setRemovals] = useState<Partial<Record<VersionKey, Job>>>({});
   const [aspect, setAspect] = useState<AspectId>("4:5");
@@ -231,10 +251,11 @@ export function PhotoEditor() {
   const canUseEyeDropper = useSyncExternalStore(noSubscription, () => Boolean(getEyeDropper()), () => false);
 
   /** The version on screen; while a uniform is still being drawn, the original. */
-  const currentUniform = current === "original" ? null : current;
-  const uniformJob = (currentUniform && uniformJobs[currentUniform]) || IDLE;
-  const version = photo ? ((currentUniform && uniformVersions[currentUniform]) || photo.original) : null;
-  const waitingForUniform = currentUniform !== null && !uniformVersions[currentUniform];
+  const currentKey = current === "original" ? null : current;
+  const currentUniform = currentKey ? parseUniformKey(currentKey).id : null;
+  const uniformJob = (currentKey && uniformJobs[currentKey]) || IDLE;
+  const version = photo ? ((currentKey && uniformVersions[currentKey]) || photo.original) : null;
+  const waitingForUniform = currentKey !== null && !uniformVersions[currentKey];
   const cutout = waitingForUniform ? null : (cutouts[current] ?? null);
   const removal = waitingForUniform ? IDLE : (removals[current] ?? IDLE);
 
@@ -267,6 +288,18 @@ export function PhotoEditor() {
   const activeStep: Step = !photo ? "crop" : waitingForUniform ? "uniform" : !cutout ? "remove" : "color";
 
   /* ------------------------------ Effects ------------------------------ */
+
+  // Whether Workers AI is set up on the server (all uniform models share it).
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(UNIFORM_ENDPOINT, { credentials: "same-origin", signal: controller.signal })
+      .then((response) => (response.ok ? (response.json() as Promise<{ ready?: boolean }>) : null))
+      .then((body) => {
+        if (typeof body?.ready === "boolean") setModelsReady(body.ready);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const element = workspaceRef.current;
@@ -340,15 +373,17 @@ export function PhotoEditor() {
     }
   }
 
-  /** Redraws the candidate in uniform `id` (FLUX.2 on Workers AI), then removes that version's background. */
-  async function generateUniform(id: UniformId) {
+  /** Redraws the candidate in a uniform with that key's model, then removes that version's background. */
+  async function generateUniform(key: UniformKey) {
     if (!photo) return;
+    const { model: keyModel, id } = parseUniformKey(key);
     const session = photo.session;
-    setUniformJobs((j) => ({ ...j, [id]: { status: "working" } }));
+    setUniformJobs((j) => ({ ...j, [key]: { status: "working" } }));
     const started = performance.now();
     try {
       const size = generationSize(photo.original.bitmap);
       const form = new FormData();
+      form.append("model", keyModel);
       form.append("image", await scaledJpeg(photo.original.bitmap, UNIFORM_INPUT_EDGE), "candidate.jpg");
       form.append("uniform", id);
       form.append("width", String(size.width));
@@ -356,33 +391,39 @@ export function PhotoEditor() {
       const image = await postForImage(UNIFORM_ENDPOINT, form);
       const bitmap = await createImageBitmap(image);
       if (session !== sessionRef.current) return;
-      setUniformVersions((v) => ({ ...v, [id]: { bitmap, upload: image } }));
-      setUniformJobs((j) => ({ ...j, [id]: { status: "done", seconds: (performance.now() - started) / 1000 } }));
-      void removeBackground(id, image, session);
+      setUniformVersions((v) => ({ ...v, [key]: { bitmap, upload: image } }));
+      setUniformJobs((j) => ({ ...j, [key]: { status: "done", seconds: (performance.now() - started) / 1000 } }));
+      void removeBackground(key, image, session);
     } catch (cause) {
       if (session !== sessionRef.current) return;
-      setUniformJobs((j) => ({ ...j, [id]: failedJob(cause) }));
+      setUniformJobs((j) => ({ ...j, [key]: failedJob(cause) }));
     }
   }
 
-  /** Shows uniform `id`, drawing it first if it hasn't been yet. `null` = the candidate's own clothes. */
-  function chooseUniform(id: UniformId | null) {
-    setCurrent(id ?? "original");
-    if (!id) return;
-    const status = uniformJobs[id]?.status;
-    if (!uniformVersions[id] && status !== "working") void generateUniform(id);
+  /** Shows uniform `id` as drawn by `withModel`, drawing it first if needed. `null` = the candidate's own clothes. */
+  function chooseUniform(id: UniformId | null, withModel: UniformModel = model) {
+    if (!id) return setCurrent("original");
+    const key = uniformKey(withModel, id);
+    setCurrent(key);
+    if (!uniformVersions[key] && uniformJobs[key]?.status !== "working") void generateUniform(key);
   }
 
-  function regenerateUniform(id: UniformId) {
-    setUniformVersions((v) => without(v, id));
-    setCutouts((c) => without(c, id));
-    setRemovals((r) => without(r, id));
-    void generateUniform(id);
+  function regenerateUniform(key: UniformKey) {
+    setUniformVersions((v) => without(v, key));
+    setCutouts((c) => without(c, key));
+    setRemovals((r) => without(r, key));
+    void generateUniform(key);
   }
 
   function chooseCut(next: UniformCut) {
     setCut(next);
     if (currentUniform) chooseUniform(uniformId(currentUniform.split("-")[0] as UniformProgramId, next));
+  }
+
+  /** Switches model; if a uniform is on, shows (or draws) the same uniform with the new model. */
+  function chooseModel(next: UniformModel) {
+    setModel(next);
+    if (currentUniform) chooseUniform(currentUniform, next);
   }
 
   function redoBackgroundRemoval() {
@@ -430,7 +471,7 @@ export function PhotoEditor() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${baseName(photo.name)}${currentUniform ? `-${currentUniform}` : ""}-ballot.png`;
+      link.download = `${baseName(photo.name)}${currentKey ? `-${currentKey.replace(":", "-")}` : ""}-ballot.png`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {
@@ -774,20 +815,27 @@ export function PhotoEditor() {
               ai
               badge={<StepBadge n={2} state={stepState.uniform} />}
               action={
-                currentUniform && uniformJob.status !== "working" ? (
-                  <TextButton onClick={() => regenerateUniform(currentUniform)}>Redo</TextButton>
+                currentKey && uniformJob.status !== "working" ? (
+                  <TextButton onClick={() => regenerateUniform(currentKey)}>Redo</TextButton>
                 ) : null
               }
             >
+              <ModelPicker model={model} ready={modelsReady} onChoose={chooseModel} />
               <UniformPicker
                 cut={cut}
                 current={currentUniform}
-                jobs={uniformJobs}
-                disabled={!photo}
+                jobOf={(id) => uniformJobs[uniformKey(model, id)]}
+                disabled={!photo || modelsReady === false}
                 onChooseCut={chooseCut}
-                onChoose={chooseUniform}
+                onChoose={(id) => chooseUniform(id)}
               />
-              <UniformStatus job={uniformJob} uniform={currentUniform} onRetry={() => currentUniform && void generateUniform(currentUniform)} />
+              <UniformStatus
+                job={uniformJob}
+                uniform={currentUniform}
+                model={currentKey ? parseUniformKey(currentKey).model : model}
+                notSetUp={modelsReady === false}
+                onRetry={() => currentKey && void generateUniform(currentKey)}
+              />
             </Section>
 
             <Divider />
@@ -1081,17 +1129,57 @@ function SoftnessSlider({ value, onChange, disabled }: { value: number; onChange
   );
 }
 
+/** The FLUX.2 model on Cloudflare Workers AI. Nothing can be picked until Workers AI is set up on the server. */
+function ModelPicker({
+  model,
+  ready,
+  onChoose,
+}: {
+  model: UniformModel;
+  ready: boolean | null;
+  onChoose: (model: UniformModel) => void;
+}) {
+  const unavailable = ready === false;
+  return (
+    <div role="radiogroup" aria-label="FLUX.2 model on Cloudflare Workers AI" className="flex gap-1.5 rounded-[10px] bg-[#f4f6fa] p-[3px]">
+      {UNIFORM_MODELS.map((m) => {
+        const selected = m.id === model;
+        return (
+          <button
+            key={m.id}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            disabled={unavailable}
+            title={unavailable ? `Not set up: ${UNIFORM_MODELS_SETUP}` : `FLUX.2 ${m.label} on Cloudflare Workers AI`}
+            onClick={() => onChoose(m.id)}
+            className={cn(
+              "flex flex-1 flex-col items-center rounded-[7px] py-1.5 leading-tight transition-colors disabled:cursor-not-allowed disabled:opacity-45",
+              selected ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)]" : "text-brand-muted hover:text-brand-navy",
+              focusRing,
+            )}
+          >
+            <span className={cn("text-xs", selected ? "font-semibold" : "font-medium")}>{m.label}</span>
+            <span className="text-[10px] text-brand-muted">{unavailable ? "Not set up" : m.detail}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function UniformPicker({
   cut,
   current,
-  jobs,
+  jobOf,
   disabled,
   onChooseCut,
   onChoose,
 }: {
   cut: UniformCut;
   current: UniformId | null;
-  jobs: Partial<Record<UniformId, Job>>;
+  /** The selected model's job for a uniform. */
+  jobOf: (id: UniformId) => Job | undefined;
   disabled: boolean;
   onChooseCut: (cut: UniformCut) => void;
   onChoose: (id: UniformId | null) => void;
@@ -1132,7 +1220,7 @@ function UniformPicker({
               label={program.label}
               title={uniformName(id)}
               selected={current === id}
-              working={jobs[id]?.status === "working"}
+              working={jobOf(id)?.status === "working"}
               disabled={disabled}
               onSelect={() => onChoose(id)}
             >
@@ -1191,13 +1279,33 @@ function UniformTile({
   );
 }
 
-function UniformStatus({ job, uniform, onRetry }: { job: Job; uniform: UniformId | null; onRetry: () => void }) {
+function UniformStatus({
+  job,
+  uniform,
+  model,
+  notSetUp,
+  onRetry,
+}: {
+  job: Job;
+  uniform: UniformId | null;
+  model: UniformModel;
+  notSetUp: boolean;
+  onRetry: () => void;
+}) {
+  const info = modelInfo(model);
+  if (notSetUp && job.status !== "done") {
+    return <p className="text-[11.5px] text-brand-muted">Workers AI isn&apos;t set up on the server. {UNIFORM_MODELS_SETUP}</p>;
+  }
   if (!uniform) {
     return <p className="text-[11.5px] text-brand-muted">Pick a program to dress the candidate in its daily uniform. Takes about 15 seconds.</p>;
   }
   switch (job.status) {
     case "working":
-      return <p className="text-[11.5px] text-brand-muted">Putting on the {uniformName(uniform)} uniform with FLUX.2 on Workers AI…</p>;
+      return (
+        <p className="text-[11.5px] text-brand-muted">
+          Putting on the {uniformName(uniform)} uniform with FLUX.2 {info.label} on Workers AI…
+        </p>
+      );
     case "error":
       return (
         <div role="alert" className="flex items-start gap-2 rounded-lg bg-destructive/5 px-3 py-2 text-[11.5px] text-destructive">
@@ -1214,7 +1322,7 @@ function UniformStatus({ job, uniform, onRetry }: { job: Job; uniform: UniformId
     case "done":
       return (
         <p className="rounded-lg bg-brand-gold/15 px-3 py-2 text-[11.5px] text-brand-navy">
-          AI-drawn outfit ({job.seconds.toFixed(0)} s). Check that the face still looks like the candidate before saving.
+          Outfit drawn by FLUX.2 {info.label} ({job.seconds.toFixed(0)} s). Check that the face still looks like the candidate before saving.
         </p>
       );
     default:

@@ -8,6 +8,29 @@ export type UniformProgramId = "it" | "hm" | "tourism" | "shs";
 export type UniformCut = "pants" | "skirt";
 export type UniformId = `${UniformProgramId}-${UniformCut}`;
 
+/**
+ * Cloudflare Workers AI image models that can put the uniform on (all FLUX.2,
+ * multi-reference editing). They share one setup: WORKERS_AI_ACCOUNT_ID and
+ * WORKERS_AI_API_TOKEN (see the uniform route).
+ */
+export type UniformModel = "flux-2-klein-4b" | "flux-2-klein-9b" | "flux-2-dev";
+
+export const UNIFORM_MODELS: { id: UniformModel; workersAiId: string; label: string; detail: string }[] = [
+  // In testing, klein 4B kept the face and background best, in about 4 s.
+  { id: "flux-2-klein-4b", workersAiId: "@cf/black-forest-labs/flux-2-klein-4b", label: "Klein 4B", detail: "Fast · ~4 s" },
+  { id: "flux-2-klein-9b", workersAiId: "@cf/black-forest-labs/flux-2-klein-9b", label: "Klein 9B", detail: "Fast · ~3 s" },
+  { id: "flux-2-dev", workersAiId: "@cf/black-forest-labs/flux-2-dev", label: "Dev", detail: "Detailed · ~13 s" },
+];
+
+export const UNIFORM_MODELS_SETUP = "Add the WORKERS_AI_ACCOUNT_ID and WORKERS_AI_API_TOKEN secrets.";
+
+/** FLUX.2 on Workers AI takes input images of at most 512 × 512. */
+export const UNIFORM_INPUT_EDGE = 512;
+
+export function isUniformModel(value: unknown): value is UniformModel {
+  return UNIFORM_MODELS.some((m) => m.id === value);
+}
+
 export interface UniformProgram {
   id: UniformProgramId;
   /** Short name for the tile. */
@@ -62,15 +85,17 @@ export function uniformName(id: UniformId): string {
 }
 
 /**
- * Prompt for FLUX.2: image 0 is the candidate, image 1 the uniform reference.
- * Built on the server only, so the endpoint can't be used as a general image generator.
+ * The edit instruction for FLUX.2: the candidate photo is `input_image_0`
+ * ("image 0") and the uniform reference `input_image_1` ("image 1"). Built on
+ * the server only, so the endpoint can't be used as a general image generator.
  */
 export function uniformPrompt(id: UniformId): string {
+  const [candidate, reference] = ["image 0", "image 1"];
   return [
-    "Edit image 0.",
-    `Replace only the clothing of the person in image 0 with the school uniform worn in image 1: ${DESCRIPTIONS[id]}.`,
-    "Keep the face, facial features, skin tone, hairstyle, expression, head position, pose, body proportions, framing and background of image 0 exactly the same.",
-    "Do not use the face, hair or body of the person in image 1.",
-    "Photorealistic, natural fabric folds, lighting matching image 0.",
+    `Edit ${candidate}.`,
+    `Replace only the clothing of the person in ${candidate} with the school uniform worn in ${reference}: ${DESCRIPTIONS[id]}.`,
+    `Keep the face, facial features, skin tone, hairstyle, expression, head position, pose, body proportions, framing and background of ${candidate} exactly the same.`,
+    `Do not use the face, hair or body of the person in ${reference}.`,
+    `Photorealistic, natural fabric folds, lighting matching ${candidate}.`,
   ].join(" ");
 }
