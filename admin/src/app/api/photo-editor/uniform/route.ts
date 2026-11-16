@@ -11,17 +11,20 @@ import { isUniformId, uniformPrompt, uniformReference } from "@/lib/uniforms";
  * - `uniform`: a preset id from lib/uniforms.ts, e.g. `it-pants`
  * - `width`, `height`: the size to generate (256–1920, multiples of 16)
  *
- * Redraws the candidate in that uniform with FLUX.2 [dev] on Workers AI (the
- * worker's `AI` binding), using the uniform's reference photo as image 1.
- * Responds with the new photo (JPEG or PNG).
+ * Redraws the candidate in that uniform with FLUX.2 [dev] on Workers AI, using
+ * the uniform's reference photo as image 1. Responds with the new photo (JPEG or PNG).
+ *
+ * Workers AI is called over its REST API rather than an `AI` binding: a binding
+ * makes the deploy step open a remote Cloudflare session, which the CI token
+ * can't. Needs two settings, as Worker secrets (`npx wrangler secret put …`) or
+ * in `.dev.vars` / `.env.local` for `next dev`:
+ * - WORKERS_AI_ACCOUNT_ID: the Cloudflare account ID
+ * - WORKERS_AI_API_TOKEN: an API token with Workers AI Read and Edit
  */
 
 const MODEL = "@cf/black-forest-labs/flux-2-dev";
 const MAX_INPUT_BYTES = 2 * 1024 * 1024;
 
-interface AiApi {
-  run(model: string, input: unknown): Promise<unknown>;
-}
 interface AssetsApi {
   fetch(input: Request | string | URL): Promise<Response>;
 }
@@ -62,8 +65,15 @@ export async function POST(request: NextRequest) {
   if (image.size > MAX_INPUT_BYTES) return cookies.fail(413, "Scale the photo down to 512 px on its long edge first.");
 
   const bindings = await cloudflareBindings();
-  const ai = bindings.AI as AiApi | undefined;
-  if (!ai) return cookies.fail(503, "Workers AI isn't available here. Run `npx wrangler login`, then restart `npm run dev`.");
+  const setting = (name: string) => {
+    const value = bindings[name] ?? process.env[name];
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  };
+  const accountId = setting("WORKERS_AI_ACCOUNT_ID");
+  const apiToken = setting("WORKERS_AI_API_TOKEN");
+  if (!accountId || !apiToken) {
+    return cookies.fail(503, "Workers AI isn't set up. Add the WORKERS_AI_ACCOUNT_ID and WORKERS_AI_API_TOKEN secrets.");
+  }
 
   const reference = await loadReference(uniformReference(uniform), request, bindings.ASSETS as AssetsApi | undefined);
   if (!reference) return cookies.fail(500, "Couldn't load the uniform's reference photo.");
@@ -74,19 +84,28 @@ export async function POST(request: NextRequest) {
   body.append("prompt", uniformPrompt(uniform));
   body.append("width", String(width));
   body.append("height", String(height));
-  // Encoding through a Response gives the multipart stream and its boundary.
-  const encoded = new Response(body);
 
   const started = Date.now();
   let base64: unknown;
   try {
-    const result = (await ai.run(MODEL, {
-      multipart: { body: encoded.body, contentType: encoded.headers.get("content-type") },
-    })) as { image?: unknown };
-    base64 = result?.image;
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${MODEL}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiToken}` },
+      body,
+    });
+    const json = (await response.json().catch(() => null)) as {
+      result?: { image?: unknown };
+      errors?: { message?: string }[];
+    } | null;
+    if (!response.ok) {
+      const detail = json?.errors?.map((e) => e.message).filter(Boolean).join("; ") || `HTTP ${response.status}`;
+      const hint = response.status === 401 || response.status === 403 ? " Check WORKERS_AI_API_TOKEN (needs Workers AI Read and Edit)." : "";
+      return cookies.fail(502, `Workers AI couldn't apply the uniform: ${detail}.${hint}`);
+    }
+    base64 = json?.result?.image;
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
-    return cookies.fail(502, `Workers AI couldn't apply the uniform: ${detail}`);
+    return cookies.fail(502, `Couldn't reach Workers AI: ${detail}`);
   }
   if (typeof base64 !== "string" || !base64) return cookies.fail(502, "Workers AI didn't return an image.");
 

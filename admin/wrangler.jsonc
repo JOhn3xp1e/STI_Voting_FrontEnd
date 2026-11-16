@@ -19,16 +19,26 @@
 	"images": {
 		// Optimizes next/image images (see https://opennext.js.org/cloudflare/howtos/image)
 		// and removes photo backgrounds in the photo editor (`segment: "foreground"`).
-		"binding": "IMAGES",
-		// `next dev` uses the real service: the local stand-in can't remove backgrounds.
-		"remote": true
+		"binding": "IMAGES"
 	},
-	"ai": {
-		// Workers AI: uniform presets in the photo editor (FLUX.2). Always runs on Cloudflare.
-		"binding": "AI",
-		"remote": true
-	}
+	// Keep this top level free of remote bindings (`"remote": true`, `"ai"`): the deploy
+	// step starts a local proxy from it, and the CI token can't open a remote session.
+	// The photo editor's uniforms call Workers AI over its REST API instead (secrets
+	// WORKERS_AI_ACCOUNT_ID and WORKERS_AI_API_TOKEN).
+
 	// To persist the Next.js cache, create an R2 bucket and add an "r2_buckets"
 	// entry here plus the R2 incremental cache in open-next.config.ts.
 	// See https://opennext.js.org/cloudflare/caching
+
+	"env": {
+		// Used only by `next dev` (see next.config.ts), never deployed: background
+		// removal needs the real Images service, the local stand-in returns the photo unchanged.
+		"dev": {
+			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "slvp-admin" }],
+			"images": {
+				"binding": "IMAGES",
+				"remote": true
+			}
+		}
+	}
 }
