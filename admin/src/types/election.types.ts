@@ -6,8 +6,27 @@ export type ElectionCategory = (typeof ELECTION_CATEGORIES)[number];
 export const ELECTION_STATUSES = ["Draft", "Upcoming", "Ongoing", "Completed", "Cancelled"] as const;
 export type ElectionStatus = (typeof ELECTION_STATUSES)[number];
 
+/**
+ * Who may be a candidate. Chosen when the election is created; the API refuses changes afterwards
+ * (SLVP-BE docs/frontend/07-election-candidacy-settings.md).
+ */
+export interface CandidacySettings {
+  /** Any student may run; off = only students inside the election's careers, programs and levels. */
+  openCandidacy: boolean;
+  /** A student may run for several positions (once per position); off = one position per student. */
+  crossPositionCandidacy: boolean;
+  /** Candidates need an Active enrollment in the election's term. */
+  requireActiveEnrollment: boolean;
+}
+
+export const DEFAULT_CANDIDACY: CandidacySettings = {
+  openCandidacy: false,
+  crossPositionCandidacy: false,
+  requireActiveEnrollment: true,
+};
+
 /** An election from `/api/admin/election`. */
-export interface Election {
+export interface Election extends CandidacySettings {
   /** e.g. `ELC-00001` */
   id: string;
   title: string;
@@ -45,6 +64,8 @@ export interface ElectionInput {
   termId: string;
   startsAt: string;
   endsAt: string;
+  /** Sent on create only; left out on update (the settings are fixed once the election exists). */
+  candidacy?: CandidacySettings;
 }
 
 /** One enrollment, as needed to count who can vote. */

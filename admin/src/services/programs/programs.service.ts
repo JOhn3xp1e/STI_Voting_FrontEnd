@@ -18,6 +18,8 @@ interface CareerDto {
   name: string;
   minLevel?: number | null;
   maxLevel?: number | null;
+  color?: string | null;
+  programScope?: string[] | null;
   createdAt: string;
 }
 
@@ -40,6 +42,8 @@ const toCareer = (dto: CareerDto): Career => ({
   name: dto.name,
   minLevel: dto.minLevel ?? null,
   maxLevel: dto.maxLevel ?? null,
+  color: dto.color || null,
+  programScope: dto.programScope ?? [],
   createdAt: dto.createdAt,
 });
 

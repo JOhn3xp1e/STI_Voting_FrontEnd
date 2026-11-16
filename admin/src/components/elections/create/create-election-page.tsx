@@ -10,19 +10,21 @@ import { toolbarButtonClassName } from "@/components/students/student-toolbar-st
 import { todayIso } from "@/lib/dates";
 import {
   canEditElection,
-  careerLevels,
-  countEligibleVoters,
   editBlockedReason,
   electionToForm,
   localToInstant,
+  programsByCareer,
   sortProgramsByCode,
   validateDetails,
   validateVoters,
+  voterPool,
+  voterScope,
   type DetailsErrors,
   type ElectionForm,
+  type ProgramsByCareer,
   type VotersErrors,
 } from "@/lib/elections";
-import { sortCareers } from "@/lib/programs";
+import { careerColor, sortCareers } from "@/lib/programs";
 import { getTermStatus, sortTerms } from "@/lib/terms";
 import { cn } from "@/lib/utils";
 import { isApiError } from "@/services/api/client";
@@ -30,16 +32,18 @@ import { getApiErrorMessage } from "@/services/api/error-message";
 import { createElection, fetchElection, fetchVoterEnrollments, updateElection } from "@/services/elections/elections.service";
 import { fetchCareers, fetchPrograms } from "@/services/programs/programs.service";
 import { fetchTerms } from "@/services/terms/terms.service";
-import type { Election, ElectionInput, VoterEnrollment } from "@/types/election.types";
+import { DEFAULT_CANDIDACY, type Election, type ElectionInput, type VoterEnrollment } from "@/types/election.types";
 import type { Career, Program } from "@/types/program.types";
 import type { Term } from "@/types/term.types";
 
 import { useElectionsNav } from "../elections-nav";
 import { Stepper } from "./create-election-ui";
-import { DetailsStep, ReviewStep, VotersStep } from "./create-election-steps";
+import { DetailsStep, ReviewStep, RulesStep } from "./create-election-steps";
 import { SummaryPanel } from "./summary-panel";
+import { VotersStep } from "./voters-step";
+import styles from "./wizard.module.css";
 
-const STEPS = ["Details", "Who can vote", "Review"] as const;
+const STEPS = ["Details", "Who can vote", "Rules", "Review"] as const;
 const LAST_STEP = STEPS.length - 1;
 const ELECTIONS_HREF = "/elections";
 
@@ -48,16 +52,25 @@ interface Catalog {
   careers: Career[];
   programs: Program[];
   enrollments: VoterEnrollment[];
+  /** Program codes under each career. */
+  careerPrograms: ProgramsByCareer;
+  /** Display color per career code. */
+  careerColors: ReadonlyMap<string, string>;
 }
 
 function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
   return Promise.all([fetchTerms({ signal }), fetchCareers({ signal }), fetchPrograms({ signal }), fetchVoterEnrollments({ signal })]).then(
-    ([terms, careers, programs, enrollments]) => ({
-      terms: sortTerms(terms),
-      careers: sortCareers(careers),
-      programs: sortProgramsByCode(programs),
-      enrollments,
-    }),
+    ([terms, rawCareers, programs, enrollments]) => {
+      const careers = sortCareers(rawCareers);
+      return {
+        terms: sortTerms(terms),
+        careers,
+        programs: sortProgramsByCode(programs),
+        enrollments,
+        careerPrograms: programsByCareer(careers, enrollments),
+        careerColors: new Map(careers.map((c) => [c.code, careerColor(c, careers)])),
+      };
+    },
   );
 }
 
@@ -205,7 +218,7 @@ export function EditElectionPage({ electionId }: { electionId: string }) {
 /*                                   Wizard                                   */
 /* -------------------------------------------------------------------------- */
 
-/** A new election: the current term (else the newest), every career and all their levels, all programs. */
+/** A new election: the current term (else the newest), every career with all its programs and levels, default candidacy rules. */
 function newElectionForm(catalog: Catalog, today: string): ElectionForm {
   const currentTerm = catalog.terms.find((t) => getTermStatus(t, today) === "current") ?? catalog.terms[0];
   return {
@@ -218,22 +231,28 @@ function newElectionForm(catalog: Catalog, today: string): ElectionForm {
     closesAt: null,
     careerScope: catalog.careers.map((c) => c.code),
     programScope: [],
-    levelScope: [...new Set(catalog.careers.flatMap(careerLevels))].sort((a, b) => a - b),
+    levelScope: [],
+    ...DEFAULT_CANDIDACY,
   };
 }
 
-function toInput(form: ElectionForm): ElectionInput {
+/** The API body. Candidacy settings go with a new election only; they're fixed once it exists. */
+function toInput(form: ElectionForm, catalog: Catalog, creating: boolean): ElectionInput {
+  const scope = voterScope(form, catalog.careers, catalog.careerPrograms);
   return {
     title: form.title,
     description: form.description,
     rules: form.rules,
     category: form.category,
-    careerScope: form.careerScope,
-    programScope: form.programScope,
-    levelScope: form.levelScope,
+    careerScope: [...scope.careerScope],
+    programScope: [...scope.programScope],
+    levelScope: [...scope.levelScope],
     termId: form.termId!,
     startsAt: localToInstant(form.opensAt!),
     endsAt: localToInstant(form.closesAt!),
+    candidacy: creating
+      ? { openCandidacy: form.openCandidacy, crossPositionCandidacy: form.crossPositionCandidacy, requireActiveEnrollment: form.requireActiveEnrollment }
+      : undefined,
   };
 }
 
@@ -250,8 +269,12 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
   const { refresh: refreshElectionsNav } = useElectionsNav();
   const editing = election !== null;
   const [today] = useState(todayIso);
-  const [form, setForm] = useState<ElectionForm>(() => (election ? electionToForm(election, catalog.careers) : newElectionForm(catalog, today)));
+  const [form, setForm] = useState<ElectionForm>(() =>
+    election ? electionToForm(election, catalog.careers, catalog.careerPrograms) : newElectionForm(catalog, today),
+  );
   const [step, setStep] = useState(0);
+  /** Which way the last step change went, so the next step slides in from that side. */
+  const [direction, setDirection] = useState<1 | -1>(1);
   // An existing election is already complete, so every step can be opened.
   const [reached, setReached] = useState(editing ? LAST_STEP : 0);
   const [detailsErrors, setDetailsErrors] = useState<DetailsErrors>({});
@@ -266,7 +289,7 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
   // Free the banner preview's object URL when it changes or the page closes.
   useEffect(() => (banner ? () => URL.revokeObjectURL(banner.url) : undefined), [banner]);
 
-  const eligible = useMemo(() => countEligibleVoters(catalog.enrollments, form), [catalog.enrollments, form]);
+  const pool = useMemo(() => voterPool(catalog.enrollments, form, catalog.careers, catalog.careerPrograms), [catalog, form]);
 
   function update(patch: Partial<ElectionForm>) {
     const next = { ...form, ...patch };
@@ -278,6 +301,8 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
   }
 
   function goTo(index: number) {
+    if (index === step) return;
+    setDirection(index > step ? 1 : -1);
     setStep(index);
     setReached((r) => Math.max(r, index));
     setError(null);
@@ -309,7 +334,7 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
     setBusy(kind);
     setError(null);
     try {
-      const input = toInput(form);
+      const input = toInput(form, catalog, !election);
       const photo = banner?.file ?? null;
       const saved = election ? await updateElection(election.id, input, photo) : await createElection(input, photo);
       onSaved(saved);
@@ -347,7 +372,7 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
         <div className="min-w-0">
           <Stepper steps={STEPS} current={step} reached={reached} onSelect={goTo} />
 
-          <div key={step} className="mt-5 space-y-5 animate-in duration-300 fade-in slide-in-from-bottom-1 motion-reduce:animate-none">
+          <div key={step} className={cn("mt-5 space-y-5", direction === 1 ? styles.stepForward : styles.stepBack)}>
             {step === 0 ? (
               <DetailsStep
                 form={form}
@@ -360,9 +385,19 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
                 onBannerError={(message) => say(message, "error")}
               />
             ) : step === 1 ? (
-              <VotersStep form={form} update={update} errors={votersErrors} careers={catalog.careers} programs={catalog.programs} eligible={eligible} />
+              <VotersStep
+                form={form}
+                update={update}
+                errors={votersErrors}
+                careers={catalog.careers}
+                programs={catalog.careerPrograms}
+                pool={pool}
+                colors={catalog.careerColors}
+              />
+            ) : step === 2 ? (
+              <RulesStep form={form} update={update} locked={editing} />
             ) : (
-              <ReviewStep form={form} terms={catalog.terms} careers={catalog.careers} eligible={eligible} onEdit={goTo} />
+              <ReviewStep form={form} terms={catalog.terms} pool={pool} programs={catalog.careerPrograms} editing={editing} onEdit={goTo} />
             )}
           </div>
         </div>
@@ -371,7 +406,11 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
           <SummaryPanel
             form={form}
             bannerUrl={banner?.url ?? election?.photoUrl ?? null}
-            eligible={eligible}
+            pool={pool}
+            programs={catalog.careerPrograms}
+            colors={catalog.careerColors}
+            step={step}
+            reached={reached}
             badge={election ? `${election.status} · ${election.id}` : "Draft"}
             secondaryLabel={secondaryLabel}
             onSecondary={onSecondary}

@@ -1,5 +1,5 @@
 import type { Career, Program } from "@/types/program.types";
-import type { Election, ElectionCategory, ElectionStatus, VoterEnrollment } from "@/types/election.types";
+import type { CandidacySettings, Election, ElectionCategory, ElectionStatus, VoterEnrollment } from "@/types/election.types";
 
 /*
  * Election helpers: date-times, voter filters and form validation.
@@ -164,6 +164,132 @@ export function countEligibleVoters(enrollments: readonly VoterEnrollment[], fil
 export const sortProgramsByCode = (programs: readonly Program[]) => [...programs].sort((a, b) => a.code.localeCompare(b.code));
 
 /* -------------------------------------------------------------------------- */
+/*                         Per-career voter filter                            */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The API stores one flat list each of careers, programs and levels. The form narrows
+ * each picked career on its own: a career with none of its programs (or levels) picked
+ * means "all of them". `voterScope` turns that into the flat lists the API expects,
+ * spelling out "all" for a career only when another career is narrowed.
+ */
+
+/** Program codes per career code. */
+export type ProgramsByCareer = ReadonlyMap<string, readonly string[]>;
+
+/**
+ * Programs under each career: the ones listed on the career, plus any its enrollments
+ * use (so nobody is left out when a career's list is incomplete), in program-code order.
+ */
+export function programsByCareer(careers: readonly Career[], enrollments: readonly VoterEnrollment[]): ProgramsByCareer {
+  const map = new Map<string, string[]>();
+  for (const career of careers) {
+    const codes = new Set(career.programScope);
+    for (const e of enrollments) if (e.careerCode === career.code && e.programCode) codes.add(e.programCode);
+    map.set(career.code, [...codes].sort((a, b) => a.localeCompare(b)));
+  }
+  return map;
+}
+
+/** "Programs" for college-style careers, "Strands" for senior high (grades 11–12). */
+export function programGroupLabel(career: Pick<Career, "minLevel" | "maxLevel">): string {
+  return !usesYears(career) && career.minLevel !== null && career.minLevel >= 11 ? "Strands" : "Programs";
+}
+
+/** "Year level" or "Grade level". */
+export function levelGroupLabel(career: Pick<Career, "minLevel" | "maxLevel">): string {
+  return usesYears(career) ? "Year level" : "Grade level";
+}
+
+/** Programs picked for this career (none = all of them). */
+export function programPicks(form: Pick<ElectionForm, "programScope">, career: Career, programs: ProgramsByCareer): string[] {
+  const own = programs.get(career.code) ?? [];
+  return own.filter((code) => form.programScope.includes(code));
+}
+
+/** Levels picked for this career (none = all of them). */
+export function levelPicks(form: Pick<ElectionForm, "levelScope">, career: Career): number[] {
+  const own = careerLevels(career);
+  return own.filter((level) => form.levelScope.includes(level));
+}
+
+/** The flat career / program / level lists the API expects for this form. */
+export function voterScope(form: ElectionForm, careers: readonly Career[], programs: ProgramsByCareer): VoterFilter {
+  const picked = careers.filter((c) => form.careerScope.includes(c.code));
+  const programRows = picked.map((c) => ({ picks: programPicks(form, c, programs), all: programs.get(c.code) ?? [] }));
+  const levelRows = picked.map((c) => ({ picks: levelPicks(form, c), all: careerLevels(c) }));
+  return {
+    termId: form.termId,
+    careerScope: picked.map((c) => c.code),
+    programScope: programRows.some((r) => r.picks.length) ? [...new Set(programRows.flatMap((r) => (r.picks.length ? r.picks : r.all)))] : [],
+    levelScope: levelRows.some((r) => r.picks.length)
+      ? [...new Set(levelRows.flatMap((r) => (r.picks.length ? r.picks : r.all)))].sort((a, b) => a - b)
+      : [],
+  };
+}
+
+export interface LevelCount {
+  level: number;
+  count: number;
+  /** False when the level is filtered out (its count is then 0). */
+  included: boolean;
+}
+
+export interface CareerPool {
+  career: Career;
+  /** Students of this career who can vote. */
+  total: number;
+  levels: LevelCount[];
+  /** Largest level count before the level filter, so bars keep their scale while levels are toggled. */
+  scale: number;
+}
+
+export interface VoterPool {
+  total: number;
+  /** One entry per picked career, in career order. */
+  careers: CareerPool[];
+  /** Active enrollments in the term per career code, before any filter (career cards). */
+  careerTotals: ReadonlyMap<string, number>;
+}
+
+/** Who can vote, broken down by career and level. Same rules as `countEligibleVoters` (Active enrollments in the term). */
+export function voterPool(
+  enrollments: readonly VoterEnrollment[],
+  form: ElectionForm,
+  careers: readonly Career[],
+  programs: ProgramsByCareer,
+): VoterPool {
+  const inTerm = form.termId ? enrollments.filter((e) => e.termId === form.termId && e.status === "Active") : [];
+  const careerTotals = new Map<string, number>();
+  for (const e of inTerm) careerTotals.set(e.careerCode, (careerTotals.get(e.careerCode) ?? 0) + 1);
+
+  const scope = voterScope(form, careers, programs);
+  const programSet = new Set(scope.programScope);
+  const levelSet = new Set(scope.levelScope);
+  const levelOk = (level: number) => levelSet.size === 0 || levelSet.has(level);
+
+  const pools = careers
+    .filter((c) => scope.careerScope.includes(c.code))
+    .map((career): CareerPool => {
+      const rows = inTerm.filter((e) => e.careerCode === career.code && (programSet.size === 0 || programSet.has(e.programCode)));
+      const byLevel = new Map<number, number>();
+      for (const e of rows) byLevel.set(e.level, (byLevel.get(e.level) ?? 0) + 1);
+      const levels = careerLevels(career).map((level) => {
+        const included = levelOk(level);
+        return { level, count: included ? (byLevel.get(level) ?? 0) : 0, included };
+      });
+      return {
+        career,
+        total: rows.filter((e) => levelOk(e.level)).length,
+        levels,
+        scale: Math.max(1, ...careerLevels(career).map((l) => byLevel.get(l) ?? 0)),
+      };
+    });
+
+  return { total: pools.reduce((sum, p) => sum + p.total, 0), careers: pools, careerTotals };
+}
+
+/* -------------------------------------------------------------------------- */
 /*                              Edit and delete                               */
 /* -------------------------------------------------------------------------- */
 
@@ -190,7 +316,7 @@ export function editBlockedReason(status: ElectionStatus): string {
 /*                                 Validation                                 */
 /* -------------------------------------------------------------------------- */
 
-export interface ElectionForm {
+export interface ElectionForm extends CandidacySettings {
   title: string;
   category: ElectionCategory;
   description: string;
@@ -198,21 +324,26 @@ export interface ElectionForm {
   rules: string;
   opensAt: LocalDateTime | null;
   closesAt: LocalDateTime | null;
+  /** Picked careers (an election needs at least one). */
   careerScope: string[];
+  /** Programs picked to narrow their career; a career with none picked takes all its programs. */
   programScope: string[];
+  /** Levels picked to narrow their career; a career with none picked takes all its levels. */
   levelScope: number[];
 }
 
 /**
- * The form for an existing election. An empty career / level filter means
- * "everyone" in the database; the form spells that out (every career, all
- * their levels) so the chips show what the election really covers.
+ * The form for an existing election. An empty career filter means "every career"
+ * in the database, so the form picks them all. A career whose programs (or levels)
+ * are all listed is shown as "All".
  */
-export function electionToForm(election: Election, careers: readonly Career[]): ElectionForm {
+export function electionToForm(election: Election, careers: readonly Career[], programs: ProgramsByCareer): ElectionForm {
   const careerScope = election.careerScope.length ? election.careerScope : careers.map((c) => c.code);
-  const levelScope = election.levelScope.length
-    ? election.levelScope
-    : [...new Set(careers.filter((c) => careerScope.includes(c.code)).flatMap(careerLevels))].sort((a, b) => a - b);
+  const picked = careers.filter((c) => careerScope.includes(c.code));
+  const narrowed = <T,>(all: readonly T[], saved: readonly T[]) => {
+    const picks = all.filter((x) => saved.includes(x));
+    return picks.length === all.length ? [] : picks;
+  };
   return {
     title: election.title,
     category: election.category,
@@ -221,14 +352,17 @@ export function electionToForm(election: Election, careers: readonly Career[]): 
     rules: election.rules ?? "",
     opensAt: instantToLocal(election.startsAt),
     closesAt: instantToLocal(election.endsAt),
-    careerScope: [...careerScope],
-    programScope: [...election.programScope],
-    levelScope: [...levelScope],
+    careerScope: picked.map((c) => c.code),
+    programScope: picked.flatMap((c) => narrowed(programs.get(c.code) ?? [], election.programScope)),
+    levelScope: picked.flatMap((c) => narrowed(careerLevels(c), election.levelScope)),
+    openCandidacy: election.openCandidacy,
+    crossPositionCandidacy: election.crossPositionCandidacy,
+    requireActiveEnrollment: election.requireActiveEnrollment,
   };
 }
 
 export type DetailsErrors = Partial<Record<"title" | "description" | "termId" | "opensAt" | "closesAt", string>>;
-export type VotersErrors = Partial<Record<"careerScope" | "levelScope", string>>;
+export type VotersErrors = Partial<Record<"careerScope", string>>;
 
 /** Same rules as the backend's create endpoint (title, description, term, closes after opens). */
 export function validateDetails(form: ElectionForm): DetailsErrors {
@@ -245,6 +379,5 @@ export function validateDetails(form: ElectionForm): DetailsErrors {
 export function validateVoters(form: ElectionForm): VotersErrors {
   const errors: VotersErrors = {};
   if (form.careerScope.length === 0) errors.careerScope = "Pick at least one career.";
-  if (form.levelScope.length === 0) errors.levelScope = "Pick at least one level.";
   return errors;
 }

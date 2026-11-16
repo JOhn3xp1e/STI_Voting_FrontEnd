@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { Check } from "lucide-react";
 
@@ -10,7 +10,10 @@ import { primaryButtonClassName } from "@/components/students/student-toolbar-st
 import { Calendar } from "@/components/terms/calendar";
 import { formatFieldDateTime, type LocalDateTime } from "@/lib/elections";
 import type { IsoDate } from "@/lib/dates";
+import { textOn } from "@/lib/programs";
 import { cn } from "@/lib/utils";
+
+import wizardStyles from "./wizard.module.css";
 
 /* -------------------------------------------------------------------------- */
 /*                                   Stepper                                  */
@@ -26,15 +29,26 @@ interface StepperProps {
 
 export function Stepper({ steps, current, reached, onSelect }: StepperProps) {
   return (
-    <nav aria-label="Create election steps">
+    <nav aria-label="Election steps">
       <ol className="flex flex-wrap items-center gap-y-2">
         {steps.map((label, index) => {
-          const done = index < current || (index <= reached && index !== current && index < reached);
           const active = index === current;
+          const done = !active && index < reached;
           const reachable = index <= reached && !active;
+          const state = active ? "active" : done ? "done" : "todo";
           return (
             <li key={label} className="flex items-center">
-              {index > 0 ? <span aria-hidden className="mx-2.5 h-px w-7 bg-[#e2e8f0] dark:bg-border" /> : null}
+              {index > 0 ? (
+                // The line fills in, left to right, once the step after it is reached.
+                <span aria-hidden className="relative mx-2.5 h-px w-7 overflow-hidden bg-[#e2e8f0] dark:bg-border">
+                  <span
+                    className={cn(
+                      "absolute inset-0 origin-left bg-brand-navy transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:bg-white/70",
+                      index <= current ? "scale-x-100" : "scale-x-0",
+                    )}
+                  />
+                </span>
+              ) : null}
               <button
                 type="button"
                 disabled={!reachable}
@@ -47,17 +61,19 @@ export function Stepper({ steps, current, reached, onSelect }: StepperProps) {
                 )}
               >
                 <span
+                  key={state}
                   aria-hidden
                   className={cn(
-                    "flex size-5 shrink-0 items-center justify-center rounded-full font-mono text-[0.625rem] transition-colors duration-300",
+                    "flex size-5 shrink-0 items-center justify-center rounded-full font-mono text-[0.625rem] transition-[background-color,color,box-shadow] duration-300",
+                    state !== "todo" && wizardStyles.stepPop,
                     active
-                      ? "bg-brand-blue text-white"
+                      ? "bg-brand-blue text-white shadow-[0_0_0_4px_color-mix(in_oklab,var(--color-brand-blue)_14%,transparent)]"
                       : done
-                        ? "bg-brand-navy text-white dark:bg-white dark:text-brand-navy"
+                        ? "bg-brand-navy text-white group-hover/step:bg-brand-blue dark:bg-white dark:text-brand-navy"
                         : "border border-[#d5dbe3] text-muted-foreground dark:border-border",
                   )}
                 >
-                  {done && !active ? <Check className="size-3" strokeWidth={2.6} /> : index + 1}
+                  {done ? <Check className="size-3" strokeWidth={2.6} /> : index + 1}
                 </span>
                 <span
                   className={cn(
@@ -67,7 +83,7 @@ export function Stepper({ steps, current, reached, onSelect }: StepperProps) {
                   )}
                 >
                   {label}
-                  {done && !active ? <span className="sr-only"> (done)</span> : null}
+                  {done ? <span className="sr-only"> (done)</span> : null}
                 </span>
               </button>
             </li>
@@ -96,24 +112,76 @@ export const outlineButtonClassName = cn(
 export const ctaButtonClassName = cn(primaryButtonClassName, "h-8.5 justify-start rounded-[0.25rem] px-4 text-[0.875rem] disabled:pointer-events-none disabled:opacity-60");
 
 /* -------------------------------------------------------------------------- */
-/*                                    Chip                                    */
+/*                                  Collapse                                  */
 /* -------------------------------------------------------------------------- */
 
-export function Chip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: ReactNode }) {
+/** Opens and closes its content smoothly (height + fade). Closed content can't be focused. */
+export function Collapse({ open, children, className }: { open: boolean; children: ReactNode; className?: string }) {
+  return (
+    <div
+      aria-hidden={!open}
+      inert={!open}
+      className={cn(
+        "grid transition-[grid-template-rows,opacity] duration-450 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+        open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+      )}
+    >
+      <div className={cn("min-h-0 overflow-hidden", className)}>{children}</div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               Career colours                               */
+/* -------------------------------------------------------------------------- */
+
+/** CSS variables for a career's color: `--career` (fill) and `--career-fg` (text on it). */
+export function careerStyle(color: string): CSSProperties {
+  return { "--career": color, "--career-fg": textOn(color) } as CSSProperties;
+}
+
+/** "TER" in the career's color. Sits inside an element styled with `careerStyle`. */
+export function CareerBadge({ code, muted = false, className }: { code: string; muted?: boolean; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5.5 shrink-0 items-center rounded-[0.25rem] px-2 font-mono text-[0.6875rem] font-semibold tracking-[0.04em] transition-[background-color,color,opacity] duration-300",
+        muted ? "bg-muted text-muted-foreground" : "bg-(--career) text-(--career-fg)",
+        className,
+      )}
+    >
+      {code}
+    </span>
+  );
+}
+
+/** Pill filter in the career's color, with a check that slides in when picked. */
+export function ScopeChip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
       type="button"
       aria-pressed={selected}
       onClick={onClick}
       className={cn(
-        "inline-flex h-6.5 cursor-pointer items-center gap-1 rounded-full border px-3 text-[0.8125rem] whitespace-nowrap outline-none",
-        "transition-[background-color,border-color,color,scale] duration-200 ease-out active:scale-95 focus-visible:ring-3 focus-visible:ring-brand-blue/20 motion-reduce:active:scale-100",
+        "inline-flex h-7.5 cursor-pointer items-center rounded-full px-3.5 text-[0.8125rem] font-medium whitespace-nowrap outline-none select-none",
+        "transition-[background-color,color,box-shadow,scale] duration-250 ease-out active:scale-95 motion-reduce:active:scale-100",
+        "focus-visible:ring-3 focus-visible:ring-brand-blue/25",
         selected
-          ? "border-brand-navy bg-brand-navy text-white dark:border-white dark:bg-white dark:text-brand-navy"
-          : "border-[#e2e8f0] bg-background text-foreground hover:border-[color-mix(in_oklab,var(--color-brand-muted)_45%,transparent)] dark:border-border",
+          ? "bg-(--career) text-(--career-fg) shadow-[0_1px_2px_rgb(15_23_42/0.14),inset_0_0_0_1px_rgb(0_0_0/0.04)]"
+          : "bg-[#f1f4f8] text-foreground hover:bg-[#e6ebf1] dark:bg-white/7 dark:hover:bg-white/12",
       )}
     >
-      {selected ? <Check aria-hidden className="size-3" strokeWidth={2.4} /> : null}
+      <span
+        aria-hidden
+        className={cn(
+          "grid transition-[grid-template-columns,opacity] duration-250 ease-out motion-reduce:transition-none",
+          selected ? "grid-cols-[1fr] opacity-100" : "grid-cols-[0fr] opacity-0",
+        )}
+      >
+        <span className="overflow-hidden">
+          <Check className="mr-1.5 size-3.5" strokeWidth={2.6} />
+        </span>
+      </span>
       {children}
     </button>
   );

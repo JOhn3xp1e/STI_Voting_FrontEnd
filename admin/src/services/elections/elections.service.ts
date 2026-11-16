@@ -1,5 +1,6 @@
 import { apiClient } from "@/services/api/client";
 import {
+  DEFAULT_CANDIDACY,
   ELECTION_CATEGORIES,
   ELECTION_STATUSES,
   type Election,
@@ -36,6 +37,9 @@ interface ElectionDto {
   termId: string;
   startDate: string;
   endDate: string;
+  openCandidacy?: boolean | null;
+  crossPositionCandidacy?: boolean | null;
+  requireActiveEnrollment?: boolean | null;
   createdAt: string;
 }
 
@@ -81,6 +85,10 @@ function toElection(dto: ElectionDto): Election {
     termId: dto.termId,
     startsAt: toInstant(dto.startDate),
     endsAt: toInstant(dto.endDate),
+    // Older API versions don't send these; use the backend's defaults.
+    openCandidacy: dto.openCandidacy ?? DEFAULT_CANDIDACY.openCandidacy,
+    crossPositionCandidacy: dto.crossPositionCandidacy ?? DEFAULT_CANDIDACY.crossPositionCandidacy,
+    requireActiveEnrollment: dto.requireActiveEnrollment ?? DEFAULT_CANDIDACY.requireActiveEnrollment,
     createdAt: dto.createdAt,
   };
 }
@@ -104,6 +112,11 @@ function toFormData(input: ElectionInput, photo?: File | null): FormData {
   data.append("termId", input.termId);
   data.append("startDate", input.startsAt);
   data.append("endDate", input.endsAt);
+  if (input.candidacy) {
+    data.append("openCandidacy", String(input.candidacy.openCandidacy));
+    data.append("crossPositionCandidacy", String(input.candidacy.crossPositionCandidacy));
+    data.append("requireActiveEnrollment", String(input.candidacy.requireActiveEnrollment));
+  }
   if (photo) data.append("photo", photo, photo.name);
   return data;
 }

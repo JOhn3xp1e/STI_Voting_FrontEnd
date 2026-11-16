@@ -29,6 +29,29 @@ export const sortCareers = (careers: readonly Career[]) =>
 export const sortPrograms = (programs: readonly Program[]) => [...programs].sort((a, b) => a.code.localeCompare(b.code));
 
 /* -------------------------------------------------------------------------- */
+/*                                Career colors                               */
+/* -------------------------------------------------------------------------- */
+
+/** Used in order for careers without a color of their own: STI gold, STI blue, then neutrals. */
+const CAREER_FALLBACK_COLORS = ["#ffc200", "#0f4c9e", "#0f766e", "#7c3aed", "#be123c", "#64748b"];
+
+/** The career's own color, else a stable fallback by its position in the (sorted) career list. */
+export function careerColor(career: Pick<Career, "code" | "color">, careers: readonly Pick<Career, "code">[]): string {
+  if (career.color && /^#[0-9a-f]{6}$/i.test(career.color)) return career.color;
+  const index = Math.max(0, careers.findIndex((c) => c.code === career.code));
+  return CAREER_FALLBACK_COLORS[index % CAREER_FALLBACK_COLORS.length];
+}
+
+/** Navy or white, whichever reads better on `hex` (navy on gold, white on blue). */
+export function textOn(hex: string): string {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.32 ? "#0f172a" : "#ffffff";
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                 Validation                                 */
 /* -------------------------------------------------------------------------- */
 

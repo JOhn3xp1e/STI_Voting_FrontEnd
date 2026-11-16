@@ -5,6 +5,10 @@ export interface Career {
   /** Inclusive grade-level range; `null` while the backend doesn't send levels yet. */
   minLevel: number | null;
   maxLevel: number | null;
+  /** "#1E40AF", or `null` when the career has no color. */
+  color: string | null;
+  /** Program codes listed under this career (e.g. TER → BSIT, BSTM); empty when none are listed. */
+  programScope: string[];
   createdAt: string;
 }
 
