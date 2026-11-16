@@ -18,7 +18,15 @@
 	],
 	"images": {
 		// Optimizes next/image images (see https://opennext.js.org/cloudflare/howtos/image)
-		"binding": "IMAGES"
+		// and removes photo backgrounds in the photo editor (`segment: "foreground"`).
+		"binding": "IMAGES",
+		// `next dev` uses the real service: the local stand-in can't remove backgrounds.
+		"remote": true
+	},
+	"ai": {
+		// Workers AI: uniform presets in the photo editor (FLUX.2). Always runs on Cloudflare.
+		"binding": "AI",
+		"remote": true
 	}
 	// To persist the Next.js cache, create an R2 bucket and add an "r2_buckets"
 	// entry here plus the R2 incremental cache in open-next.config.ts.

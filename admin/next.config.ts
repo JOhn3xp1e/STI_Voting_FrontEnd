@@ -9,5 +9,9 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
-// Makes Cloudflare bindings available during `next dev`.
-import("@opennextjs/cloudflare").then((m) => m.initOpenNextCloudflareForDev());
+// Makes Cloudflare bindings available during `next dev`. Bindings marked `remote` in
+// wrangler.jsonc (IMAGES, AI: the photo editor) use your Cloudflare account, so run
+// `npx wrangler login` once. CLOUDFLARE_REMOTE_BINDINGS=false keeps everything local.
+import("@opennextjs/cloudflare").then((m) =>
+  m.initOpenNextCloudflareForDev({ remoteBindings: process.env.CLOUDFLARE_REMOTE_BINDINGS !== "false" }),
+);

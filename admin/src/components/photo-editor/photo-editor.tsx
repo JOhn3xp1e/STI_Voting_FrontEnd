@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import {
   useEffect,
@@ -17,6 +18,16 @@ import {
 import { LoaderCircle } from "lucide-react";
 
 import { loginHref } from "@/lib/auth-routing";
+import {
+  UNIFORM_CUTS,
+  UNIFORM_PROGRAMS,
+  uniformId,
+  uniformName,
+  uniformReference,
+  type UniformCut,
+  type UniformId,
+  type UniformProgramId,
+} from "@/lib/uniforms";
 import { cn } from "@/lib/utils";
 
 import {
@@ -25,13 +36,16 @@ import {
   MAX_ZOOM,
   MIN_ZOOM,
   clampView,
+  cutSubject,
   exportPng,
   exportSize,
   frameRatio,
+  generationSize,
   loadPhoto,
   normalizeHex,
   paint,
-  softenSubject,
+  prepareMatte,
+  scaledJpeg,
   type AspectId,
   type Background,
   type Layer,
@@ -57,6 +71,9 @@ import {
 
 const PAGE_PATH = "/photo-editor-test";
 const REMOVE_BACKGROUND_ENDPOINT = "/api/photo-editor/remove-background";
+const UNIFORM_ENDPOINT = "/api/photo-editor/uniform";
+/** FLUX.2 on Workers AI takes input images of at most 512 px. */
+const UNIFORM_INPUT_EDGE = 512;
 
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"];
 /** The photo is scaled down before upload, so large camera files are fine. */
@@ -78,27 +95,46 @@ const focusRing = "outline-none focus-visible:ring-3 focus-visible:ring-brand-bl
 /*                                    Types                                   */
 /* -------------------------------------------------------------------------- */
 
+/** One version of the photo: as uploaded, or redrawn in a uniform. */
+interface Version {
+  /** What the editor draws. */
+  bitmap: ImageBitmap;
+  /** What is sent for background removal. */
+  upload: Blob;
+}
+
+type VersionKey = "original" | UniformId;
+
 interface Photo {
+  /** Bumped for every photo, so late answers for an earlier one are dropped. */
+  session: number;
   name: string;
   /** Size of the file as picked (shown in the top bar). */
   width: number;
   height: number;
-  /** Scaled-down copy the editor works on. */
-  bitmap: ImageBitmap;
-  /** JPEG of `bitmap`, sent to Cloudflare. */
-  upload: Blob;
+  original: Version;
 }
 
-type Removal =
+/** An AI request: background removal or a uniform. */
+type Job =
   | { status: "idle" }
   | { status: "working" }
   | { status: "done"; seconds: number }
   | { status: "error"; message: string; signedOut: boolean };
 
-type Step = "crop" | "remove" | "color";
+const IDLE: Job = { status: "idle" };
+
+type Step = "crop" | "uniform" | "remove" | "color";
 type StepState = "done" | "current" | "todo" | "working";
 
-class RemovalError extends Error {
+const STEPS: { step: Step; n: number; label: string }[] = [
+  { step: "crop", n: 1, label: "Crop" },
+  { step: "uniform", n: 2, label: "Uniform" },
+  { step: "remove", n: 3, label: "Remove background" },
+  { step: "color", n: 4, label: "Background color" },
+];
+
+class JobError extends Error {
   constructor(
     message: string,
     readonly signedOut: boolean,
@@ -123,6 +159,30 @@ function baseName(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, "") || "photo";
 }
 
+/** POSTs `form` and returns the image it answers with, or throws a JobError with the server's message. */
+async function postForImage(url: string, form: FormData): Promise<Blob> {
+  const response = await fetch(url, { method: "POST", body: form, credentials: "same-origin" });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new JobError(body?.message ?? `The server answered ${response.status}.`, response.status === 401);
+  }
+  return response.blob();
+}
+
+function without<K extends string, V>(record: Partial<Record<K, V>>, key: K): Partial<Record<K, V>> {
+  const copy = { ...record };
+  delete copy[key];
+  return copy;
+}
+
+function failedJob(cause: unknown): Job {
+  return {
+    status: "error",
+    message: cause instanceof Error ? cause.message : "Something went wrong.",
+    signedOut: cause instanceof JobError && cause.signedOut,
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                   Editor                                   */
 /* -------------------------------------------------------------------------- */
@@ -134,11 +194,17 @@ function baseName(fileName: string): string {
 export function PhotoEditor() {
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [cutout, setCutout] = useState<ImageBitmap | null>(null);
-  const [removal, setRemoval] = useState<Removal>({ status: "idle" });
+  /** Which version is being edited. */
+  const [current, setCurrent] = useState<VersionKey>("original");
+  const [cut, setCut] = useState<UniformCut>("pants");
+  const [uniformVersions, setUniformVersions] = useState<Partial<Record<UniformId, Version>>>({});
+  const [uniformJobs, setUniformJobs] = useState<Partial<Record<UniformId, Job>>>({});
+  const [cutouts, setCutouts] = useState<Partial<Record<VersionKey, ImageBitmap>>>({});
+  const [removals, setRemovals] = useState<Partial<Record<VersionKey, Job>>>({});
   const [aspect, setAspect] = useState<AspectId>("4:5");
   const [rawView, setView] = useState<View>(DEFAULT_VIEW);
   const [softness, setSoftness] = useState(30);
+  const [cleanEdges, setCleanEdges] = useState(true);
   const [showMask, setShowMask] = useState(false);
   const [compare, setCompare] = useState(true);
   const [split, setSplit] = useState(0.5);
@@ -156,20 +222,30 @@ export function PhotoEditor() {
   const beforeRef = useRef<HTMLCanvasElement>(null);
   const avatarRef = useRef<HTMLCanvasElement>(null);
   const cropSectionRef = useRef<HTMLElement>(null);
+  const uniformSectionRef = useRef<HTMLElement>(null);
   const removeSectionRef = useRef<HTMLElement>(null);
   const colorSectionRef = useRef<HTMLElement>(null);
-  /** Bumped for every new request, so answers for an older photo are ignored. */
-  const requestRef = useRef(0);
+  const sessionRef = useRef(0);
   const dragRef = useRef<{ kind: "pan" | "split"; x: number; y: number; view: View } | null>(null);
 
   const canUseEyeDropper = useSyncExternalStore(noSubscription, () => Boolean(getEyeDropper()), () => false);
 
-  const ratio = photo ? frameRatio(aspect, photo.bitmap, rawView.rotation) : 4 / 5;
-  const view = useMemo(() => (photo ? clampView(rawView, photo.bitmap, ratio) : rawView), [photo, rawView, ratio]);
-  const subject = useMemo(() => (photo && cutout ? softenSubject(photo.bitmap, cutout, softness) : null), [photo, cutout, softness]);
+  /** The version on screen; while a uniform is still being drawn, the original. */
+  const currentUniform = current === "original" ? null : current;
+  const uniformJob = (currentUniform && uniformJobs[currentUniform]) || IDLE;
+  const version = photo ? ((currentUniform && uniformVersions[currentUniform]) || photo.original) : null;
+  const waitingForUniform = currentUniform !== null && !uniformVersions[currentUniform];
+  const cutout = waitingForUniform ? null : (cutouts[current] ?? null);
+  const removal = waitingForUniform ? IDLE : (removals[current] ?? IDLE);
+
+  const ratio = version ? frameRatio(aspect, version.bitmap, rawView.rotation) : 4 / 5;
+  const view = useMemo(() => (version ? clampView(rawView, version.bitmap, ratio) : rawView), [version, rawView, ratio]);
+  // Clean-up is the slow part, so it only reruns when the cut-out or the toggle changes, not the slider.
+  const matte = useMemo(() => (version && cutout ? prepareMatte(version.bitmap, cutout, cleanEdges) : null), [version, cutout, cleanEdges]);
+  const subject = useMemo(() => (matte ? cutSubject(matte, softness) : null), [matte, softness]);
   const output = exportSize(ratio);
   const hasCutout = subject !== null;
-  const comparing = compare && hasCutout;
+  const comparing = compare && (hasCutout || currentUniform !== null);
   const viewChanged = view.zoom !== 1 || view.offsetX !== 0 || view.offsetY !== 0 || view.rotation !== 0 || view.flipped;
 
   /** The crop frame, as large as the workspace allows (480 × 600 for 4:5 in the design). */
@@ -183,10 +259,12 @@ export function PhotoEditor() {
 
   const stepState: Record<Step, StepState> = {
     crop: photo ? "done" : "current",
-    remove: removal.status === "working" ? "working" : cutout ? "done" : photo ? "current" : "todo",
+    // Optional: only "done" once a uniform has been applied.
+    uniform: uniformJob.status === "working" ? "working" : currentUniform && !waitingForUniform ? "done" : "todo",
+    remove: removal.status === "working" ? "working" : cutout ? "done" : photo && !waitingForUniform ? "current" : "todo",
     color: cutout ? "current" : "todo",
   };
-  const activeStep: Step = !photo ? "crop" : !cutout ? "remove" : "color";
+  const activeStep: Step = !photo ? "crop" : waitingForUniform ? "uniform" : !cutout ? "remove" : "color";
 
   /* ------------------------------ Effects ------------------------------ */
 
@@ -203,68 +281,112 @@ export function PhotoEditor() {
   // Scroll to zoom (needs a non-passive listener to keep the page from scrolling).
   useEffect(() => {
     const element = frameRef.current;
-    if (!element || !photo) return;
+    if (!element || !version) return;
     function onWheel(event: WheelEvent) {
       event.preventDefault();
       setView((v) => ({ ...v, zoom: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom * Math.exp(-event.deltaY * 0.0015))) }));
     }
     element.addEventListener("wheel", onWheel, { passive: false });
     return () => element.removeEventListener("wheel", onWheel);
-  }, [photo]);
+  }, [version]);
 
-  // Paint the canvases whenever anything they show changes.
+  // Paint the canvases whenever anything they show changes. "Before" is always the photo as uploaded.
   useEffect(() => {
-    if (!photo) return;
-    const scene = { source: photo.bitmap, subject, background, view };
+    if (!photo || !version) return;
+    const scene = { source: version.bitmap, subject, background, view };
+    const original = { ...scene, source: photo.original.bitmap };
     const dpr = window.devicePixelRatio || 1;
-    const targets: [HTMLCanvasElement | null, Layer, number, number][] = [
-      [afterRef.current, showMask ? "mask" : "after", frame.width, frame.height],
-      [beforeRef.current, "before", frame.width, frame.height],
-      [avatarRef.current, "after", 44, 44 / ratio],
+    const targets: [HTMLCanvasElement | null, typeof scene, Layer, number, number][] = [
+      [afterRef.current, scene, showMask ? "mask" : "after", frame.width, frame.height],
+      [beforeRef.current, original, "before", frame.width, frame.height],
+      [avatarRef.current, scene, "after", 44, 44 / ratio],
     ];
-    for (const [canvas, layer, width, height] of targets) {
+    for (const [canvas, target, layer, width, height] of targets) {
       if (!canvas) continue;
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
-      paint(canvas, scene, layer);
+      paint(canvas, target, layer);
     }
-  }, [photo, subject, background, view, showMask, frame, ratio, comparing]);
+  }, [photo, version, subject, background, view, showMask, frame, ratio, comparing]);
 
   /* ------------------------------ Actions ------------------------------ */
 
+  /** Forgets every edit (new photo, or Cancel). */
   function resetEdits() {
-    requestRef.current += 1;
-    setCutout(null);
-    setRemoval({ status: "idle" });
+    sessionRef.current += 1;
+    setCurrent("original");
+    setUniformVersions({});
+    setUniformJobs({});
+    setCutouts({});
+    setRemovals({});
     setView(DEFAULT_VIEW);
     setSplit(0.5);
     setShowMask(false);
   }
 
-  async function removeBackground(upload: Blob) {
-    const id = ++requestRef.current;
-    setRemoval({ status: "working" });
+  async function removeBackground(key: VersionKey, upload: Blob, session: number) {
+    setRemovals((r) => ({ ...r, [key]: { status: "working" } }));
     const started = performance.now();
     try {
       const form = new FormData();
-      form.append("image", upload, "photo.jpg");
-      const response = await fetch(REMOVE_BACKGROUND_ENDPOINT, { method: "POST", body: form, credentials: "same-origin" });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new RemovalError(body?.message ?? `The server answered ${response.status}.`, response.status === 401);
-      }
-      const bitmap = await createImageBitmap(await response.blob());
-      if (id !== requestRef.current) return;
-      setCutout(bitmap);
-      setRemoval({ status: "done", seconds: (performance.now() - started) / 1000 });
+      form.append("image", upload, "photo");
+      const bitmap = await createImageBitmap(await postForImage(REMOVE_BACKGROUND_ENDPOINT, form));
+      if (session !== sessionRef.current) return;
+      setCutouts((c) => ({ ...c, [key]: bitmap }));
+      setRemovals((r) => ({ ...r, [key]: { status: "done", seconds: (performance.now() - started) / 1000 } }));
     } catch (cause) {
-      if (id !== requestRef.current) return;
-      setRemoval({
-        status: "error",
-        message: cause instanceof Error ? cause.message : "Something went wrong.",
-        signedOut: cause instanceof RemovalError && cause.signedOut,
-      });
+      if (session !== sessionRef.current) return;
+      setRemovals((r) => ({ ...r, [key]: failedJob(cause) }));
     }
+  }
+
+  /** Redraws the candidate in uniform `id` (FLUX.2 on Workers AI), then removes that version's background. */
+  async function generateUniform(id: UniformId) {
+    if (!photo) return;
+    const session = photo.session;
+    setUniformJobs((j) => ({ ...j, [id]: { status: "working" } }));
+    const started = performance.now();
+    try {
+      const size = generationSize(photo.original.bitmap);
+      const form = new FormData();
+      form.append("image", await scaledJpeg(photo.original.bitmap, UNIFORM_INPUT_EDGE), "candidate.jpg");
+      form.append("uniform", id);
+      form.append("width", String(size.width));
+      form.append("height", String(size.height));
+      const image = await postForImage(UNIFORM_ENDPOINT, form);
+      const bitmap = await createImageBitmap(image);
+      if (session !== sessionRef.current) return;
+      setUniformVersions((v) => ({ ...v, [id]: { bitmap, upload: image } }));
+      setUniformJobs((j) => ({ ...j, [id]: { status: "done", seconds: (performance.now() - started) / 1000 } }));
+      void removeBackground(id, image, session);
+    } catch (cause) {
+      if (session !== sessionRef.current) return;
+      setUniformJobs((j) => ({ ...j, [id]: failedJob(cause) }));
+    }
+  }
+
+  /** Shows uniform `id`, drawing it first if it hasn't been yet. `null` = the candidate's own clothes. */
+  function chooseUniform(id: UniformId | null) {
+    setCurrent(id ?? "original");
+    if (!id) return;
+    const status = uniformJobs[id]?.status;
+    if (!uniformVersions[id] && status !== "working") void generateUniform(id);
+  }
+
+  function regenerateUniform(id: UniformId) {
+    setUniformVersions((v) => without(v, id));
+    setCutouts((c) => without(c, id));
+    setRemovals((r) => without(r, id));
+    void generateUniform(id);
+  }
+
+  function chooseCut(next: UniformCut) {
+    setCut(next);
+    if (currentUniform) chooseUniform(uniformId(currentUniform.split("-")[0] as UniformProgramId, next));
+  }
+
+  function redoBackgroundRemoval() {
+    if (photo && version && !waitingForUniform) void removeBackground(current, version.upload, photo.session);
   }
 
   async function pick(file: File | null | undefined) {
@@ -275,8 +397,9 @@ export function PhotoEditor() {
     try {
       const { bitmap, upload, original } = await loadPhoto(file);
       resetEdits();
-      setPhoto({ name: file.name, width: original.width, height: original.height, bitmap, upload });
-      void removeBackground(upload);
+      const session = sessionRef.current;
+      setPhoto({ session, name: file.name, width: original.width, height: original.height, original: { bitmap, upload } });
+      void removeBackground("original", upload, session);
     } catch {
       setNotice("Couldn't open that photo. Try another file.");
     }
@@ -300,14 +423,14 @@ export function PhotoEditor() {
   }
 
   async function save() {
-    if (!photo) return;
+    if (!photo || !version) return;
     setSaving(true);
     try {
-      const blob = await exportPng({ source: photo.bitmap, subject, background, view }, ratio);
+      const blob = await exportPng({ source: version.bitmap, subject, background, view }, ratio);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${baseName(photo.name)}-ballot.png`;
+      link.download = `${baseName(photo.name)}${currentUniform ? `-${currentUniform}` : ""}-ballot.png`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {
@@ -354,7 +477,7 @@ export function PhotoEditor() {
   }
 
   function scrollToStep(step: Step) {
-    const section = step === "crop" ? cropSectionRef : step === "remove" ? removeSectionRef : colorSectionRef;
+    const section = { crop: cropSectionRef, uniform: uniformSectionRef, remove: removeSectionRef, color: colorSectionRef }[step];
     section.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -436,13 +559,7 @@ export function PhotoEditor() {
 
         <div className="flex-1" />
         <nav aria-label="Steps" className="hidden gap-1 rounded-[10px] bg-[#f4f6fa] p-1 xl:flex">
-          {(
-            [
-              ["crop", 1, "Crop"],
-              ["remove", 2, "Remove background"],
-              ["color", 3, "Background color"],
-            ] as const
-          ).map(([step, n, label]) => {
+          {STEPS.map(({ step, n, label }) => {
             const active = step === activeStep;
             return (
               <button
@@ -548,11 +665,11 @@ export function PhotoEditor() {
                   </>
                 ) : null}
 
-                {removal.status === "working" ? (
+                {uniformJob.status === "working" || removal.status === "working" ? (
                   <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
                     <span className="flex items-center gap-2 rounded-full bg-[rgba(15,23,42,0.7)] px-3 py-1.5 text-[11.5px] font-medium text-white">
                       <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
-                      Removing background…
+                      {uniformJob.status === "working" ? "Putting on the uniform…" : "Removing background…"}
                     </span>
                   </div>
                 ) : null}
@@ -584,10 +701,10 @@ export function PhotoEditor() {
                 </ToolButton>
                 <ToolbarDivider />
                 <div className="flex items-center gap-2 pl-1.5">
-                  <span id="compare-label" className={cn("text-xs font-medium", !hasCutout && "text-brand-muted")}>
+                  <span id="compare-label" className={cn("text-xs font-medium", !hasCutout && !currentUniform && "text-brand-muted")}>
                     Compare
                   </span>
-                  <Toggle checked={comparing} disabled={!hasCutout} onChange={setCompare} labelledBy="compare-label" />
+                  <Toggle checked={comparing} disabled={!hasCutout && !currentUniform} onChange={setCompare} labelledBy="compare-label" />
                 </div>
               </div>
 
@@ -651,11 +768,39 @@ export function PhotoEditor() {
 
             <Divider />
 
-            <Section ref={removeSectionRef} title="Remove background" badge={<StepBadge n={2} state={stepState.remove} />}>
-              <AiStatus
-                removal={removal}
-                hasPhoto={Boolean(photo)}
-                onRun={() => photo && void removeBackground(photo.upload)}
+            <Section
+              ref={uniformSectionRef}
+              title="Uniform"
+              ai
+              badge={<StepBadge n={2} state={stepState.uniform} />}
+              action={
+                currentUniform && uniformJob.status !== "working" ? (
+                  <TextButton onClick={() => regenerateUniform(currentUniform)}>Redo</TextButton>
+                ) : null
+              }
+            >
+              <UniformPicker
+                cut={cut}
+                current={currentUniform}
+                jobs={uniformJobs}
+                disabled={!photo}
+                onChooseCut={chooseCut}
+                onChoose={chooseUniform}
+              />
+              <UniformStatus job={uniformJob} uniform={currentUniform} onRetry={() => currentUniform && void generateUniform(currentUniform)} />
+            </Section>
+
+            <Divider />
+
+            <Section ref={removeSectionRef} title="Remove background" ai badge={<StepBadge n={3} state={stepState.remove} />}>
+              <AiStatus removal={removal} hasPhoto={Boolean(photo)} waiting={waitingForUniform} onRun={redoBackgroundRemoval} />
+              <ToggleRow
+                id="clean-edges"
+                title="Clean up edges"
+                description="Removes leftover background haze and color fringes."
+                checked={cleanEdges}
+                disabled={!hasCutout}
+                onChange={setCleanEdges}
               />
               <SoftnessSlider value={softness} onChange={setSoftness} disabled={!hasCutout} />
               <ToggleRow
@@ -670,7 +815,7 @@ export function PhotoEditor() {
 
             <Divider />
 
-            <Section ref={colorSectionRef} title="Background color" badge={<StepBadge n={3} state={stepState.color} />}>
+            <Section ref={colorSectionRef} title="Background color" badge={<StepBadge n={4} state={stepState.color} />}>
               <div role="radiogroup" aria-label="Background color" className="flex flex-wrap gap-2.5">
                 {SWATCHES.map((swatch) => (
                   <Swatch key={swatch.value} {...swatch} selected={background === swatch.value} onSelect={() => chooseBackground(swatch.value)} />
@@ -790,15 +935,27 @@ function StepBadge({ n, state, small = false }: { n: number; state: StepState; s
   );
 }
 
+/** The "✦ AI" chip next to features that run on an AI model. */
+function AiChip() {
+  return (
+    <span className="flex items-center gap-[3px] rounded-full bg-[rgba(15,76,158,0.1)] py-0.5 pr-[7px] pl-1.5 text-[10px] font-semibold text-brand-blue">
+      <SparkleIcon />
+      AI
+    </span>
+  );
+}
+
 function Section({
   ref,
   title,
+  ai = false,
   badge,
   action,
   children,
 }: {
   ref: Ref<HTMLElement>;
   title: string;
+  ai?: boolean;
   badge: ReactNode;
   action?: ReactNode;
   children: ReactNode;
@@ -808,6 +965,7 @@ function Section({
       <div className="flex items-center gap-2">
         {badge}
         <h2 className="text-[13.5px] font-semibold">{title}</h2>
+        {ai ? <AiChip /> : null}
         <span className="flex-1" />
         {action}
       </div>
@@ -923,13 +1081,157 @@ function SoftnessSlider({ value, onChange, disabled }: { value: number; onChange
   );
 }
 
-function AiStatus({ removal, hasPhoto, onRun }: { removal: Removal; hasPhoto: boolean; onRun: () => void }) {
+function UniformPicker({
+  cut,
+  current,
+  jobs,
+  disabled,
+  onChooseCut,
+  onChoose,
+}: {
+  cut: UniformCut;
+  current: UniformId | null;
+  jobs: Partial<Record<UniformId, Job>>;
+  disabled: boolean;
+  onChooseCut: (cut: UniformCut) => void;
+  onChoose: (id: UniformId | null) => void;
+}) {
+  return (
+    <>
+      <div role="radiogroup" aria-label="Uniform style" className="flex gap-1.5 rounded-[10px] bg-[#f4f6fa] p-[3px]">
+        {UNIFORM_CUTS.map((c) => {
+          const selected = c.id === cut;
+          return (
+            <button
+              key={c.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChooseCut(c.id)}
+              className={cn(
+                "flex-1 rounded-[7px] py-1.5 text-xs transition-colors",
+                selected ? "bg-white font-semibold shadow-[0_1px_3px_rgba(0,0,0,0.08)]" : "font-medium text-brand-muted hover:text-brand-navy",
+                focusRing,
+              )}
+            >
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div role="radiogroup" aria-label="Uniform" className="grid grid-cols-5 gap-2">
+        <UniformTile label="Own clothes" selected={current === null} disabled={disabled} onSelect={() => onChoose(null)}>
+          <span className="flex size-full items-center justify-center text-[10px] font-medium text-brand-muted">As is</span>
+        </UniformTile>
+        {UNIFORM_PROGRAMS.map((program) => {
+          const id = uniformId(program.id, cut);
+          return (
+            <UniformTile
+              key={program.id}
+              label={program.label}
+              title={uniformName(id)}
+              selected={current === id}
+              working={jobs[id]?.status === "working"}
+              disabled={disabled}
+              onSelect={() => onChoose(id)}
+            >
+              <Image src={uniformReference(id)} alt="" width={64} height={80} className="size-full object-cover object-top" />
+            </UniformTile>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function UniformTile({
+  label,
+  title,
+  selected,
+  working = false,
+  disabled,
+  onSelect,
+  children,
+}: {
+  label: string;
+  title?: string;
+  selected: boolean;
+  working?: boolean;
+  disabled: boolean;
+  onSelect: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      aria-label={title ?? label}
+      title={title ?? label}
+      disabled={disabled}
+      onClick={onSelect}
+      className={cn("group flex min-w-0 flex-col items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50", "outline-none")}
+    >
+      <span
+        className={cn(
+          "relative block h-16 w-full overflow-hidden rounded-[10px] border-2 bg-[#f4f6fa] transition-colors group-focus-visible:ring-3 group-focus-visible:ring-brand-blue/30",
+          selected ? "border-brand-navy" : "border-transparent group-hover:border-[#e4e8f0]",
+        )}
+      >
+        {children}
+        {working ? (
+          <span className="absolute inset-0 flex items-center justify-center bg-white/70">
+            <LoaderCircle aria-hidden className="size-4 animate-spin text-brand-blue" />
+          </span>
+        ) : null}
+      </span>
+      <span className={cn("w-full truncate text-center text-[10.5px]", selected ? "font-semibold" : "font-medium text-brand-muted")}>{label}</span>
+    </button>
+  );
+}
+
+function UniformStatus({ job, uniform, onRetry }: { job: Job; uniform: UniformId | null; onRetry: () => void }) {
+  if (!uniform) {
+    return <p className="text-[11.5px] text-brand-muted">Pick a program to dress the candidate in its daily uniform. Takes about 15 seconds.</p>;
+  }
+  switch (job.status) {
+    case "working":
+      return <p className="text-[11.5px] text-brand-muted">Putting on the {uniformName(uniform)} uniform with FLUX.2 on Workers AI…</p>;
+    case "error":
+      return (
+        <div role="alert" className="flex items-start gap-2 rounded-lg bg-destructive/5 px-3 py-2 text-[11.5px] text-destructive">
+          <p className="flex-1">{job.message}</p>
+          {job.signedOut ? (
+            <Link href={loginHref(undefined, PAGE_PATH)} className={cn("shrink-0 rounded font-medium text-brand-blue hover:underline", focusRing)}>
+              Sign in
+            </Link>
+          ) : (
+            <TextButton onClick={onRetry}>Try again</TextButton>
+          )}
+        </div>
+      );
+    case "done":
+      return (
+        <p className="rounded-lg bg-brand-gold/15 px-3 py-2 text-[11.5px] text-brand-navy">
+          AI-drawn outfit ({job.seconds.toFixed(0)} s). Check that the face still looks like the candidate before saving.
+        </p>
+      );
+    default:
+      return null;
+  }
+}
+
+function AiStatus({ removal, hasPhoto, waiting, onRun }: { removal: Job; hasPhoto: boolean; waiting: boolean; onRun: () => void }) {
   const failed = removal.status === "error";
   let title: string;
   let detail: ReactNode;
   let action: ReactNode = null;
 
-  switch (removal.status) {
+  if (waiting) {
+    title = "Waiting for the uniform";
+    detail = "The background is removed once the new outfit is ready";
+  } else switch (removal.status) {
     case "working":
       title = "Removing background…";
       detail = "Cloudflare Images is finding the subject";

@@ -77,21 +77,89 @@ function drawFramed(ctx: CanvasRenderingContext2D, image: CanvasImageSource & Si
   ctx.restore();
 }
 
-/**
- * The subject with soft edges: the original photo, kept only where the AI
- * cut-out is opaque. `softness` (0–100) blurs the cut-out's edge first.
- */
-export function softenSubject(source: CanvasImageSource & Size, cutout: CanvasImageSource, softness: number): HTMLCanvasElement {
+function makeCanvas(width: number, height: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const canvas = document.createElement("canvas");
-  canvas.width = source.width;
-  canvas.height = source.height;
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(source, 0, 0);
+  canvas.width = width;
+  canvas.height = height;
+  return [canvas, canvas.getContext("2d", { willReadFrequently: true })!];
+}
+
+/** Matte below this opacity is leftover background haze; above the upper bound, the subject itself. */
+const HAZE = 0.12;
+const SOLID = 0.88;
+
+/** The cleaned-up cut-out: the subject's colours (opaque everywhere) and its matte (alpha only). */
+export interface Matte {
+  color: HTMLCanvasElement;
+  matte: HTMLCanvasElement;
+  width: number;
+  height: number;
+}
+
+/**
+ * Prepares the AI cut-out for compositing. With `clean` on:
+ * - the matte is tightened, so faint haze left from the old background
+ *   disappears and nearly-solid parts of the subject become solid;
+ * - edge pixels take the colour of the subject just inside the edge
+ *   instead of a mix with the old background, so no coloured fringe shows
+ *   on the new background.
+ */
+export function prepareMatte(source: CanvasImageSource & Size, cutout: CanvasImageSource, clean: boolean): Matte {
+  const { width, height } = source;
+  const [colorCanvas, colorCtx] = makeCanvas(width, height);
+  colorCtx.drawImage(source, 0, 0);
+  const [matteCanvas, matteCtx] = makeCanvas(width, height);
+  matteCtx.drawImage(cutout, 0, 0, width, height);
+  if (!clean) return { color: colorCanvas, matte: matteCanvas, width, height };
+
+  const photo = colorCtx.getImageData(0, 0, width, height);
+  const matte = matteCtx.getImageData(0, 0, width, height);
+  const px = photo.data;
+  const alpha = matte.data;
+
+  // The subject's solid core, spread outwards with a blur: for every edge pixel
+  // this gives the average colour of the subject next to it.
+  const [coreCanvas, coreCtx] = makeCanvas(width, height);
+  const core = coreCtx.createImageData(width, height);
+  for (let i = 0; i < px.length; i += 4) {
+    core.data[i] = px[i];
+    core.data[i + 1] = px[i + 1];
+    core.data[i + 2] = px[i + 2];
+    core.data[i + 3] = alpha[i + 3] >= 245 ? 255 : 0;
+  }
+  coreCtx.putImageData(core, 0, 0);
+  const [, spreadCtx] = makeCanvas(width, height);
+  spreadCtx.filter = `blur(${Math.max(2, Math.max(width, height) * 0.004).toFixed(1)}px)`;
+  spreadCtx.drawImage(coreCanvas, 0, 0);
+  const spread = spreadCtx.getImageData(0, 0, width, height).data;
+
+  for (let i = 0; i < px.length; i += 4) {
+    const a = alpha[i + 3] / 255;
+    const t = Math.min(1, Math.max(0, (a - HAZE) / (SOLID - HAZE)));
+    const refined = t * t * (3 - 2 * t);
+    alpha[i] = alpha[i + 1] = alpha[i + 2] = 0;
+    alpha[i + 3] = Math.round(refined * 255);
+    // Edge pixel next to the subject: pull its colour towards the subject's.
+    if (refined > 0 && refined < 1 && spread[i + 3] > 8) {
+      const mix = Math.min(1, (1 - refined) * 1.5);
+      px[i] += (spread[i] - px[i]) * mix;
+      px[i + 1] += (spread[i + 1] - px[i + 1]) * mix;
+      px[i + 2] += (spread[i + 2] - px[i + 2]) * mix;
+    }
+  }
+  colorCtx.putImageData(photo, 0, 0);
+  matteCtx.putImageData(matte, 0, 0);
+  return { color: colorCanvas, matte: matteCanvas, width, height };
+}
+
+/** The subject, ready to place on a background. `softness` (0–100) feathers the edge by up to 0.4% of the long edge. */
+export function cutSubject({ color, matte, width, height }: Matte, softness: number): HTMLCanvasElement {
+  const [canvas, ctx] = makeCanvas(width, height);
+  ctx.drawImage(color, 0, 0);
   ctx.globalCompositeOperation = "destination-in";
-  // Up to 1% of the long edge, e.g. 16 px on a 1600 px photo.
-  const radius = (softness / 100) * Math.max(source.width, source.height) * 0.01;
+  const radius = (softness / 100) * Math.max(width, height) * 0.004;
   if (radius > 0.1) ctx.filter = `blur(${radius.toFixed(2)}px)`;
-  ctx.drawImage(cutout, 0, 0, source.width, source.height);
+  ctx.drawImage(matte, 0, 0);
   return canvas;
 }
 
@@ -173,10 +241,28 @@ export async function loadPhoto(file: File): Promise<{ bitmap: ImageBitmap; uplo
   ctx.drawImage(decoded, 0, 0, canvas.width, canvas.height);
   decoded.close();
   const upload = await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Couldn't read the photo."))), "image/jpeg", 0.92),
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Couldn't read the photo."))), "image/jpeg", 0.95),
   );
   const bitmap = await createImageBitmap(canvas);
   return { bitmap, upload, original };
+}
+
+/** JPEG of `image` scaled to fit `maxEdge` (the uniform model takes at most 512 px). */
+export function scaledJpeg(image: CanvasImageSource & Size, maxEdge: number): Promise<Blob> {
+  const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
+  const [canvas, ctx] = makeCanvas(Math.round(image.width * scale), Math.round(image.height * scale));
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Couldn't prepare the photo."))), "image/jpeg", 0.92),
+  );
+}
+
+/** Size to generate a photo of this shape at: long edge 1024, multiples of 16 (what FLUX.2 expects). */
+export function generationSize(image: Size): Size {
+  const scale = 1024 / Math.max(image.width, image.height);
+  const round = (n: number) => Math.min(1920, Math.max(256, Math.round((n * scale) / 16) * 16));
+  return { width: round(image.width), height: round(image.height) };
 }
 
 const HEX = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i;
