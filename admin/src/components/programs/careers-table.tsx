@@ -1,7 +1,7 @@
 "use client";
 
 import styles from "@/components/shared/motion.module.css";
-import { formatLevels } from "@/lib/programs";
+import { formatLevels, textOn } from "@/lib/programs";
 import { cn } from "@/lib/utils";
 import type { Career } from "@/types/program.types";
 
@@ -12,11 +12,13 @@ interface CareersTableProps {
   /** Replays the entrance when the list is re-filtered. */
   resultKey: string;
   onEdit: (career: Career) => void;
+  /** The career's display color (its own, else a stable fallback). */
+  colorOf: (career: Career) => string;
   emptyText: string;
 }
 
 /** Bordered careers list: code pill, name, grade levels, Edit. */
-export function CareersTable({ careers, flashed, resultKey, onEdit, emptyText }: CareersTableProps) {
+export function CareersTable({ careers, flashed, resultKey, onEdit, colorOf, emptyText }: CareersTableProps) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-background scrollbar-thin">
       <table className="w-full min-w-140 table-fixed border-separate border-spacing-0 text-left">
@@ -58,9 +60,7 @@ export function CareersTable({ careers, flashed, resultKey, onEdit, emptyText }:
                 )}
               >
                 <td className="pl-3.5">
-                  <span className="inline-flex h-4.5 items-center rounded-[3px] bg-primary px-1.75 font-mono text-[0.625rem] leading-none font-semibold tracking-[0.06em] text-primary-foreground">
-                    {career.code}
-                  </span>
+                  <CareerCode code={career.code} color={colorOf(career)} />
                 </td>
                 <td className="truncate pr-3 text-[0.875rem] font-medium text-foreground">{career.name}</td>
                 <td className="text-[0.8125rem] text-foreground/85 tabular-nums">{formatLevels(career)}</td>
@@ -83,5 +83,17 @@ export function CareersTable({ careers, flashed, resultKey, onEdit, emptyText }:
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** "TER" pill filled with the career's color. */
+export function CareerCode({ code, color }: { code: string; color: string }) {
+  return (
+    <span
+      className="inline-flex h-5.5 items-center rounded-md px-2 font-mono text-[0.65625rem] leading-none font-medium tracking-[0.04em]"
+      style={{ backgroundColor: color, color: textOn(color) }}
+    >
+      {code}
+    </span>
   );
 }

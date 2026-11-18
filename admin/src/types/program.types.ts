@@ -24,6 +24,10 @@ export interface CareerInput {
   name: string;
   minLevel: number;
   maxLevel: number;
+  /** "#FFC200" */
+  color: string;
+  /** Program codes under this career. */
+  programScope: string[];
 }
 
 export interface ProgramInput {
