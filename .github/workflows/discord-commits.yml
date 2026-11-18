@@ -21,6 +21,7 @@ jobs:
             allowed_mentions: { parse: ["everyone"] },
             content: (
               "@everyone **\(.pusher.name)** pushed \(.commits | length) commit(s) to `\(.ref | sub("refs/heads/"; ""))`\n"
-              + ([.commits[:10][] | "• [`\(.id[0:7])`](<\(.url)>) \(.message | split("\n")[0])"] | join("\n"))
+              + "Repo: <\(.repository.html_url)>\n"
+              + ([.commits[:10][] | "• `\(.id[0:7])` \(.message | split("\n")[0] | .[0:100])\n  <\(.url)>"] | join("\n"))
             )
           }' "$GITHUB_EVENT_PATH" | curl -sS --fail-with-body -H "Content-Type: application/json" -d @- "$WEBHOOK"
