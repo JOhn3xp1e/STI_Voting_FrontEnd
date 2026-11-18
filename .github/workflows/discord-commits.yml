@@ -1,0 +1,26 @@
+name: Discord commit ping
+
+# Posts each push to Discord and pings @everyone.
+# Needs the repo secret DISCORD_WEBHOOK_URL (a Discord channel webhook).
+on:
+  push:
+    branches: ["**"]
+
+jobs:
+  notify:
+    # Skip branch deletions (they have no commits).
+    if: github.event.deleted == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post commits to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          jq '{
+            username: "GitHub",
+            allowed_mentions: { parse: ["everyone"] },
+            content: (
+              "@everyone **\(.pusher.name)** pushed \(.commits | length) commit(s) to `\(.ref | sub("refs/heads/"; ""))`\n"
+              + ([.commits[:10][] | "• [`\(.id[0:7])`](<\(.url)>) \(.message | split("\n")[0])"] | join("\n"))
+            )
+          }' "$GITHUB_EVENT_PATH" | curl -sS --fail-with-body -H "Content-Type: application/json" -d @- "$WEBHOOK"
