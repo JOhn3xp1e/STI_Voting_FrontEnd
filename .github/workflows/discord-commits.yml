@@ -16,12 +16,25 @@ jobs:
         env:
           WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          jq '{
+          # The mention has to be in `content`; mentions inside an embed don't notify.
+          jq '(.ref | sub("refs/heads/"; "")) as $branch | (.commits | length) as $count | {
             username: "GitHub",
             allowed_mentions: { parse: ["everyone"] },
-            content: (
-              "@everyone **\(.pusher.name)** pushed \(.commits | length) commit(s) to `\(.ref | sub("refs/heads/"; ""))`\n"
-              + "Repo: <\(.repository.html_url)>\n"
-              + ([.commits[:10][] | "• `\(.id[0:7])` \(.message | split("\n")[0] | .[0:100])\n  <\(.url)>"] | join("\n"))
-            )
+            content: "@everyone",
+            embeds: [{
+              author: { name: .sender.login, url: .sender.html_url, icon_url: .sender.avatar_url },
+              title: ("[\(.repository.name):\($branch)] \($count) new commit\(if $count == 1 then "" else "s" end)" | .[0:256]),
+              url: .compare,
+              color: 1002654,
+              description: (
+                [.commits[:10][] | "[`\(.id[0:7])`](\(.url)) \(.message | split("\n")[0] | .[0:100]) — \(.author.name)"]
+                + (if $count > 10 then ["…and \($count - 10) more"] else [] end)
+                | join("\n")
+              ),
+              fields: [
+                { name: "Repository", value: "[\(.repository.full_name)](\(.repository.html_url))", inline: true },
+                { name: "Branch", value: "[`\($branch)`](\(.repository.html_url)/tree/\($branch))", inline: true }
+              ],
+              timestamp: (now | todate)
+            }]
           }' "$GITHUB_EVENT_PATH" | curl -sS --fail-with-body -H "Content-Type: application/json" -d @- "$WEBHOOK"
