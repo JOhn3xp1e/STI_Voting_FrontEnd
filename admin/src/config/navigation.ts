@@ -186,6 +186,30 @@ const PAGE_META_PATTERNS: { pattern: RegExp; config: PageMetaConfig }[] = [
 /** An election's own pages, e.g. `/elections/ELC-00007/ballot` (and anything nested under them). */
 const ELECTION_PAGE_PATTERN = new RegExp(`^/elections/([^/]+)/(${ELECTION_PAGES.map((p) => p.page).join("|")})(?:/|$)`);
 
+/** Where an election page sits, for the header breadcrumb. */
+export interface ElectionRoute {
+  electionId: string;
+  page: ElectionPage;
+  /** The page's own name, e.g. "Party lists". */
+  pageTitle: string;
+  /** A nested segment, e.g. `PL-00001` or `new` under party lists; `null` on the page itself. */
+  sub: string | null;
+}
+
+/** `/elections/ELC-00007/party-lists/PL-00001` → its election, page and nested segment; `null` for other routes. */
+export function parseElectionRoute(pathname: string): ElectionRoute | null {
+  const match = ELECTION_PAGE_PATTERN.exec(pathname);
+  if (!match) return null;
+  const page = match[2] as ElectionPage;
+  const rest = pathname.slice(match[0].length).split("/").filter(Boolean);
+  return {
+    electionId: decodeURIComponent(match[1]),
+    page,
+    pageTitle: ELECTION_PAGES.find((p) => p.page === page)!.title,
+    sub: rest[0] ? decodeURIComponent(rest[0]) : null,
+  };
+}
+
 /** Title used when no configured route matches. */
 const FALLBACK_TITLE = "Admin Portal";
 

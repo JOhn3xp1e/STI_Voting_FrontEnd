@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, LoaderCircle, SearchX } from "lucide-react";
+import { LoaderCircle, SearchX } from "lucide-react";
 
+import { usePageCrumb } from "@/components/dashboard/page-description";
 import { useElectionsNav } from "@/components/elections/elections-nav";
+import styles from "@/components/shared/motion.module.css";
 import { errorClassName, fieldClassName, labelClassName } from "@/components/shared/form-styles";
 import { IMAGE_TYPES, checkImage } from "@/components/shared/image-dropzone";
 import { PageError, Toast, useNotice } from "@/components/shared/page-feedback";
@@ -81,7 +83,7 @@ export function PartyListEditorPage({ electionId, partylistId }: PartyListEditor
     return () => controller.abort();
   }, [electionId, partylistId, attempt]);
 
-  if (state.status === "loading") return <PartyListEditorSkeleton isNew={partylistId === null} />;
+  if (state.status === "loading") return <PartyListEditorSkeleton />;
   if (state.status === "not-found") {
     return (
       <div className="flex min-h-80 flex-col items-center justify-center gap-3 px-4 text-center">
@@ -219,24 +221,13 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
 
   const sayError = (message: string) => say(message, "error");
 
+  // Last crumb of the header breadcrumb: the name as it's typed, with the party's id.
+  usePageCrumb({ label: name || party?.name || "New party list", detail: party?.id });
+
   return (
     <div className="px-4 pb-16 sm:px-6 lg:px-8">
-      {/* Breadcrumb + actions */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Link
-            href={listHref}
-            className="inline-flex shrink-0 items-center gap-1 rounded-sm text-[0.8125rem] text-brand-blue outline-none hover:underline hover:underline-offset-2 focus-visible:ring-2 focus-visible:ring-brand-blue/30 dark:text-[#7aa7e6]"
-          >
-            <ArrowLeft aria-hidden className="size-3.5" />
-            Party lists
-          </Link>
-          <span aria-hidden className="text-[0.6875rem] text-muted-foreground">
-            /
-          </span>
-          <span className="truncate text-[0.875rem] font-semibold text-foreground">{name || (party ? party.name : "New party list")}</span>
-          {party ? <span className="shrink-0 text-[0.65625rem] text-muted-foreground">{party.id}</span> : null}
-        </div>
+      {/* Actions (the breadcrumb is in the header) */}
+      <div className={cn("flex items-center justify-end pb-5", styles.riseIn)}>
         <div className="flex shrink-0 items-center gap-2.5">
           <Link href={listHref} className={cn(toolbarButtonClassName, "h-9 px-4 text-[0.8125rem] font-semibold text-foreground", saving && "pointer-events-none opacity-60")}>
             Discard
@@ -249,14 +240,17 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
       </div>
 
       {error ? (
-        <p role="alert" className="mb-5 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[0.8125rem] leading-5 text-destructive">
+        <p
+          role="alert"
+          className="mb-5 animate-in rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[0.8125rem] leading-5 text-destructive duration-300 fade-in slide-in-from-top-1 motion-reduce:animate-none"
+        >
           {error}
         </p>
       ) : null}
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
         <div className="min-w-0 space-y-5">
-          <SectionCard title="Identity" aside={party ? `partyID ${party.id} · auto` : "partyID is assigned on save"} className={cardRadius} bodyClassName={cardBody}>
+          <SectionCard title="Identity" aside={party ? `partyID ${party.id} · auto` : "partyID is assigned on save"} className={cn(cardRadius, styles.riseIn)} style={{ animationDelay: "40ms" }} bodyClassName={cardBody}>
             <div className="grid grid-cols-1 gap-x-3 gap-y-3.5 sm:grid-cols-2">
               <div>
                 <label htmlFor="party-name" className={fieldLabelClassName}>
@@ -323,7 +317,7 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
             </div>
           </SectionCard>
 
-          <SectionCard title="Party color" aside="used for tags, banner and ballot" className={cardRadius} bodyClassName={cardBody}>
+          <SectionCard title="Party color" aside="used for tags, banner and ballot" className={cn(cardRadius, styles.riseIn)} style={{ animationDelay: "90ms" }} bodyClassName={cardBody}>
             <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
               <div role="group" aria-label="Party color" className="flex flex-wrap items-center gap-2.5 pb-1">
                 {PARTY_SWATCHES.map((swatch) => {
@@ -338,8 +332,8 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
                       onClick={() => update({ color: swatch })}
                       style={{ backgroundColor: swatch }}
                       className={cn(
-                        "size-7.5 cursor-pointer rounded-full outline-none transition-[box-shadow,scale] duration-150 hover:scale-108 focus-visible:ring-3 focus-visible:ring-brand-blue/30 motion-reduce:hover:scale-100",
-                        active && "ring-2 ring-foreground ring-inset",
+                        "size-7.5 cursor-pointer rounded-full outline-none transition-[box-shadow,scale] duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-108 focus-visible:ring-3 focus-visible:ring-brand-blue/30 motion-reduce:hover:scale-100",
+                        active && "scale-110 ring-2 ring-foreground ring-inset hover:scale-110",
                       )}
                     />
                   );
@@ -370,7 +364,7 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
             ) : null}
           </SectionCard>
 
-          <SectionCard title="Logo & banner" aside="drag an image onto a row to replace it" className={cardRadius} bodyClassName={cn(cardBody, "space-y-4")}>
+          <SectionCard title="Logo & banner" aside="drag an image onto a row to replace it" className={cn(cardRadius, styles.riseIn)} style={{ animationDelay: "140ms" }} bodyClassName={cn(cardBody, "space-y-4")}>
             <ImageRow
               label="Logo"
               hint="Square PNG, JPG or WebP · max 1 MB · shown on the ballot"
@@ -383,7 +377,7 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
               media={
                 <span
                   aria-hidden
-                  className={cn("flex size-14 shrink-0 items-center justify-center rounded-full bg-cover bg-center text-[1.625rem] font-semibold", !colorStyle && partyColorFallbackClassName)}
+                  className={cn("flex size-14 shrink-0 items-center justify-center rounded-full bg-cover bg-center text-[1.625rem] font-semibold transition-[background-color,color] duration-300 ease-out", !colorStyle && partyColorFallbackClassName)}
                   style={{ ...colorStyle, ...(logoUrl ? { backgroundImage: `url("${logoUrl}")` } : null) }}
                 >
                   {logoUrl ? null : partyInitial(form.name)}
@@ -403,7 +397,7 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
               stacked
               media={
                 <div
-                  className={cn("flex aspect-3/1 w-full items-center overflow-hidden rounded-lg bg-cover bg-center px-3.5", !colorStyle && partyColorFallbackClassName)}
+                  className={cn("flex aspect-3/1 w-full items-center overflow-hidden rounded-lg bg-cover bg-center px-3.5 transition-[background-color,color] duration-300 ease-out", !colorStyle && partyColorFallbackClassName)}
                   style={{ ...colorStyle, ...(bannerUrl ? { backgroundImage: `url("${bannerUrl}")` } : null) }}
                 >
                   {bannerUrl ? <span className="sr-only">Banner image</span> : <span className="truncate text-[0.8125rem] font-semibold">{name || "Party name"}</span>}
@@ -412,7 +406,7 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
             />
           </SectionCard>
 
-          <SectionCard title="Platform" aside="shown on the ballot" className={cardRadius} bodyClassName={cardBody}>
+          <SectionCard title="Platform" aside="shown on the ballot" className={cn(cardRadius, styles.riseIn)} style={{ animationDelay: "190ms" }} bodyClassName={cardBody}>
             <label htmlFor="party-platform" className="sr-only">
               Platform
             </label>
@@ -433,9 +427,9 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
 
         {/* Live preview */}
         <aside className="xl:sticky xl:top-6">
-          <SectionCard title="Preview" aside="voter ballot" className={cardRadius} bodyClassName={cn(cardBody, "space-y-3.5")}>
+          <SectionCard title="Preview" aside="voter ballot" className={cn(cardRadius, styles.riseIn)} style={{ animationDelay: "110ms" }} bodyClassName={cn(cardBody, "space-y-3.5")}>
             <div
-              className={cn("relative flex items-center gap-2.5 overflow-hidden rounded-lg bg-cover bg-center p-3.5", !colorStyle && partyColorFallbackClassName)}
+              className={cn("relative flex items-center gap-2.5 overflow-hidden rounded-lg bg-cover bg-center p-3.5 transition-[background-color,color] duration-300 ease-out", !colorStyle && partyColorFallbackClassName)}
               style={{ ...colorStyle, ...(bannerUrl ? { backgroundImage: `url("${bannerUrl}")`, color: "#ffffff" } : null) }}
             >
               {bannerUrl ? <span aria-hidden className="absolute inset-0 bg-brand-navy/55" /> : null}
@@ -462,7 +456,7 @@ function Editor({ electionId, party }: { electionId: string; party: Partylist | 
                 <p className="truncate text-[0.65625rem] text-muted-foreground">{previewCandidate?.position ?? "Position"}</p>
               </div>
               <span
-                className={cn("max-w-28 shrink-0 truncate rounded px-1.75 py-0.75 text-[0.65625rem] uppercase", !colorStyle && partyColorFallbackClassName)}
+                className={cn("max-w-28 shrink-0 truncate rounded px-1.75 py-0.75 text-[0.65625rem] uppercase transition-[background-color,color] duration-300 ease-out", !colorStyle && partyColorFallbackClassName)}
                 style={colorStyle}
               >
                 {name || "Party"}

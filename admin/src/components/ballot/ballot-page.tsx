@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { Check, ChevronDown, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Pencil, Plus, RotateCw, Trash2, X } from "lucide-react";
 
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import styles from "@/components/shared/motion.module.css";
@@ -13,6 +13,7 @@ import { checkboxClassName } from "@/components/students/student-table";
 import { primaryButtonClassName, toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
 import { CareerCode } from "@/components/programs/careers-table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useLeaving } from "@/hooks/use-leaving";
 import { positionSummary, sortPositions, toCandidateRow, type CandidateRow } from "@/lib/ballot";
 import { normalizeHex, sortPartylists } from "@/lib/partylists";
 import { careerColor, sortCareers } from "@/lib/programs";
@@ -54,6 +55,14 @@ const listGridClassName =
 
 const iconButtonClassName =
   "flex size-7.5 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-blue/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground";
+
+/** Ballot checkboxes: navy with a gold tick when checked (gold with a navy tick in dark mode); the tick pops in. */
+const ballotCheckboxClassName = cn(
+  checkboxClassName,
+  "data-checked:border-brand-navy data-checked:bg-brand-navy data-checked:text-brand-gold data-indeterminate:border-brand-navy data-indeterminate:bg-brand-navy data-indeterminate:text-brand-gold",
+  "dark:data-checked:border-brand-gold dark:data-checked:bg-brand-gold dark:data-checked:text-brand-navy dark:data-indeterminate:border-brand-gold dark:data-indeterminate:bg-brand-gold dark:data-indeterminate:text-brand-navy",
+  "[&_[data-slot=checkbox-indicator]]:animate-in [&_[data-slot=checkbox-indicator]]:zoom-in-50 [&_[data-slot=checkbox-indicator]]:duration-200 motion-reduce:[&_[data-slot=checkbox-indicator]]:animate-none",
+);
 
 /** `/elections/[id]/ballot`: positions with their candidates, from `/api/admin/positions` and `/api/admin/candidates`. */
 export function BallotPage({ electionId }: { electionId: string }) {
@@ -131,6 +140,12 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
   const [creatingPosition, setCreatingPosition] = useState(false);
   const [deletingPosition, setDeletingPosition] = useState<Position | null>(null);
   const [candidateTarget, setCandidateTarget] = useState<CandidateDialogTarget>(null);
+  /** The candidate whose card "Delete" is being confirmed. */
+  const [deletingCandidate, setDeletingCandidate] = useState<Candidate | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  /** Bumped by Refresh, so the positions replay their entrance. */
+  const [revision, setRevision] = useState(0);
+  const { leaving, leave } = useLeaving();
   const { notice, say } = useNotice();
 
   const partyById = useMemo(() => new Map(parties.map((p) => [p.id, p])), [parties]);
@@ -194,15 +209,49 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
     });
   }
 
+  /** Plays the rows' / cards' exit, then drops the candidates from the ballot. */
+  function removeCandidates(ids: ReadonlySet<string>) {
+    setSelected((current) => new Set([...current].filter((id) => !ids.has(id))));
+    leave(ids, () => setCandidates((current) => current.filter((c) => !ids.has(c.id))));
+  }
+
   async function deleteSelected() {
     const ids = [...selected];
     const results = await Promise.allSettled(ids.map((id) => deleteCandidate(id)));
     const deleted = new Set(ids.filter((_, index) => results[index].status === "fulfilled"));
     const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
-    setCandidates((current) => current.filter((c) => !deleted.has(c.id)));
-    setSelected((current) => new Set([...current].filter((id) => !deleted.has(id))));
+    removeCandidates(deleted);
     if (failed) say(`Deleted ${deleted.size} of ${ids.length}. ${getApiErrorMessage(failed.reason)}`, "error");
     else say(`Deleted ${deleted.size} ${deleted.size === 1 ? "candidate" : "candidates"}.`);
+  }
+
+  async function confirmDeleteCandidate(candidate: Candidate) {
+    try {
+      await deleteCandidate(candidate.id);
+    } catch (cause) {
+      // Shown inside the dialog, which stays open.
+      throw new Error(getApiErrorMessage(cause));
+    }
+    removeCandidates(new Set([candidate.id]));
+    say("Removed the candidate.");
+  }
+
+  /** Reloads positions and candidates in place (no skeleton), keeping filters and the selection that still exists. */
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      const [nextPositions, nextCandidates] = await Promise.all([fetchPositions(electionId), fetchCandidates(electionId)]);
+      setPositions(sortPositions(nextPositions));
+      setCandidates(nextCandidates);
+      const known = new Set(nextCandidates.map((c) => c.id));
+      setSelected((current) => new Set([...current].filter((id) => known.has(id))));
+      if (positionFilter && !nextPositions.some((p) => p.id === positionFilter)) setPositionFilter(null);
+      setRevision((n) => n + 1);
+    } catch (error) {
+      say(`Couldn't refresh. ${getApiErrorMessage(error)}`, "error");
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   async function confirmDeletePosition(position: Position) {
@@ -225,9 +274,9 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
   return (
     <div className="px-4 pb-24 sm:px-6 lg:px-8">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-5">
+      <div className={cn("flex flex-wrap items-center justify-between gap-3 pb-5", styles.riseIn)}>
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
-          <SearchInput value={query} onChange={setQuery} placeholder="Search candidates" />
+          <SearchInput value={query} onChange={setQuery} placeholder="Search candidates" className="sm:w-44" />
           <OptionMenu label="Filter by position" value={positionFilter} options={positionOptions} onChange={setPositionFilter} clearLabel="All positions" triggerClassName={filterTriggerClassName}>
             <span className={cn("max-w-36 truncate", positionFilter && "font-medium text-foreground")}>{positionLabel}</span>
             <Caret />
@@ -237,11 +286,20 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
             <Caret />
           </OptionMenu>
         </div>
-        <div className="flex shrink-0 items-center gap-4">
+        <div className="flex shrink-0 items-center gap-2.5">
           <PhotoToggle checked={showPhotos} onChange={setShowPhotos} />
-          <button type="button" onClick={() => setCreatingPosition(true)} className={cn(primaryButtonClassName, "gap-1.5")}>
-            <Plus aria-hidden className="size-4" strokeWidth={2.2} />
-            Create position
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={refreshing}
+            aria-label="Refresh"
+            title="Refresh"
+            className={cn(toolbarButtonClassName, "ml-1.5 w-8.5 justify-center px-0 disabled:cursor-wait")}
+          >
+            <RotateCw aria-hidden className={cn("size-4", refreshing && "animate-spin motion-reduce:animate-none")} strokeWidth={1.75} />
+          </button>
+          <button type="button" onClick={() => setCreatingPosition(true)} className={primaryButtonClassName}>
+            + Create position
           </button>
         </div>
       </div>
@@ -267,14 +325,16 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
         ) : groups.length === 0 ? (
           <EmptyState title="No candidates match" detail="Try a different name, student number or party list." />
         ) : (
-          groups.map(({ position, total, rows: shown }, index) => {
+          // Keyed by the view and refreshes, so switching list ↔ photos replays the entrance.
+          <div key={`${showPhotos ? "photos" : "list"}|${revision}`}>
+          {groups.map(({ position, total, rows: shown }, index) => {
             const ids = shown.map((r) => r.candidate.id);
             const checkedCount = ids.filter((id) => selected.has(id)).length;
             const open = !collapsed.has(position.id);
             return (
-              <section key={position.id} aria-labelledby={`position-${position.id}`} className={cn(index < 12 && styles.rowIn)} style={index < 12 ? { animationDelay: `${index * 32}ms` } : undefined}>
+              <section key={position.id} aria-labelledby={`position-${position.id}`} className={cn(index < 12 && styles.rowIn)} style={index < 12 ? { animationDelay: `${index * 40}ms` } : undefined}>
                 {/* Position header */}
-                <div className="group/pos flex h-9.5 items-center border-b border-border bg-muted/45 pr-2 dark:bg-white/3">
+                <div className="group/pos flex h-9.5 items-center border-b border-border bg-muted/45 pr-2 transition-colors duration-200 hover:bg-muted/70 dark:bg-white/3 dark:hover:bg-white/5">
                   <span className="flex w-9.5 shrink-0 justify-center">
                     <Checkbox
                       aria-label={`Select the candidates for ${position.title}`}
@@ -282,7 +342,7 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
                       indeterminate={checkedCount > 0 && checkedCount < ids.length}
                       disabled={ids.length === 0}
                       onCheckedChange={(checked) => setChecked(ids, checked)}
-                      className={checkboxClassName}
+                      className={ballotCheckboxClassName}
                     />
                   </span>
                   <button
@@ -319,27 +379,51 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
                   </div>
                 </div>
 
-                {/* Candidates */}
-                {open ? (
-                  shown.length === 0 ? (
-                    <p className="border-b border-border py-3.5 pl-17 text-[0.8125rem] text-muted-foreground">No candidates yet.</p>
-                  ) : showPhotos ? (
-                    <div className="flex flex-wrap gap-3 border-b border-border py-3 pl-15.5 pr-2">
-                      {shown.map((row) => (
-                        <CandidateCard key={row.candidate.id} row={row} party={partyById.get(row.candidate.partylistId ?? "")} careerColor={colorOfCareer(row.student?.careerCode)} checked={selected.has(row.candidate.id)} onCheck={(checked) => setChecked([row.candidate.id], checked)} onEdit={() => setCandidateTarget({ mode: "edit", candidate: row.candidate })} />
-                      ))}
-                    </div>
-                  ) : (
-                    <ul>
-                      {shown.map((row) => (
-                        <CandidateListRow key={row.candidate.id} row={row} party={partyById.get(row.candidate.partylistId ?? "")} careerColor={colorOfCareer(row.student?.careerCode)} checked={selected.has(row.candidate.id)} onCheck={(checked) => setChecked([row.candidate.id], checked)} onEdit={() => setCandidateTarget({ mode: "edit", candidate: row.candidate })} />
-                      ))}
-                    </ul>
-                  )
-                ) : null}
+                {/* Candidates (folds open and closed) */}
+                <div className={styles.fold} data-open={open} inert={!open}>
+                  <div>
+                    {shown.length === 0 ? (
+                      <p className="border-b border-border py-3.5 pl-17 text-[0.8125rem] text-muted-foreground">No candidates yet.</p>
+                    ) : showPhotos ? (
+                      <div className="flex flex-wrap items-start gap-3 border-b border-border py-3 pr-2 pl-15.5">
+                        {shown.map((row, cardIndex) => (
+                          <CandidateCard
+                            key={row.candidate.id}
+                            row={row}
+                            index={cardIndex}
+                            positionTitle={position.title}
+                            party={partyById.get(row.candidate.partylistId ?? "")}
+                            careerColor={colorOfCareer(row.student?.careerCode)}
+                            checked={selected.has(row.candidate.id)}
+                            leaving={leaving.has(row.candidate.id)}
+                            onCheck={(checked) => setChecked([row.candidate.id], checked)}
+                            onEdit={() => setCandidateTarget({ mode: "edit", candidate: row.candidate })}
+                            onDelete={() => setDeletingCandidate(row.candidate)}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <ul>
+                        {shown.map((row) => (
+                          <CandidateListRow
+                            key={row.candidate.id}
+                            row={row}
+                            party={partyById.get(row.candidate.partylistId ?? "")}
+                            careerColor={colorOfCareer(row.student?.careerCode)}
+                            checked={selected.has(row.candidate.id)}
+                            leaving={leaving.has(row.candidate.id)}
+                            onCheck={(checked) => setChecked([row.candidate.id], checked)}
+                            onEdit={() => setCandidateTarget({ mode: "edit", candidate: row.candidate })}
+                          />
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
               </section>
             );
-          })
+          })}
+          </div>
         )}
       </div>
 
@@ -375,10 +459,23 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
           say("Saved the new photo.");
         }}
         onRemoved={(removed) => {
-          setCandidates((current) => current.filter((c) => c.id !== removed.id));
-          setSelected((current) => new Set([...current].filter((id) => id !== removed.id)));
+          removeCandidates(new Set([removed.id]));
           say("Removed the candidate.");
         }}
+      />
+
+      <ConfirmDeleteDialog
+        item={deletingCandidate}
+        getKey={(candidate) => candidate.id}
+        title={(candidate) => `Remove ${rows.find((r) => r.candidate.id === candidate.id)?.name ?? "this candidate"}?`}
+        description={() => "They're taken off the ballot. This can't be undone."}
+        summary={(candidate) => {
+          const position = positions.find((p) => p.id === candidate.positionId);
+          return `${candidate.studentId}${position ? ` · ${position.title}` : ""}`;
+        }}
+        confirmLabel="Remove candidate"
+        onClose={() => setDeletingCandidate(null)}
+        onConfirm={confirmDeleteCandidate}
       />
 
       <ConfirmDeleteDialog
@@ -462,6 +559,8 @@ interface CandidateItemProps {
   /** Color of the candidate's career; `undefined` when unknown (the code is shown as plain text). */
   careerColor: string | undefined;
   checked: boolean;
+  /** Being deleted: plays the exit animation. */
+  leaving: boolean;
   onCheck: (checked: boolean) => void;
   onEdit: () => void;
 }
@@ -474,18 +573,19 @@ function Initials({ row, className }: { row: CandidateRow; className?: string })
   );
 }
 
-function CandidateListRow({ row, party, careerColor, checked, onCheck, onEdit }: CandidateItemProps) {
+function CandidateListRow({ row, party, careerColor, checked, leaving, onCheck, onEdit }: CandidateItemProps) {
   const hasPhoto = row.candidate.portraitUrl !== null;
   return (
     <li
       data-selected={checked || undefined}
       className={cn(
-        "grid h-14 items-center border-b border-border transition-colors duration-200 hover:bg-muted/40 data-selected:bg-brand-blue/2.5 dark:hover:bg-white/3",
+        "grid h-14 items-center border-b border-border transition-colors duration-200 hover:bg-muted/40 data-selected:bg-brand-blue/3 dark:hover:bg-white/3 dark:data-selected:bg-white/3",
         listGridClassName,
+        leaving && styles.rowOut,
       )}
     >
       <span className="flex justify-center">
-        <Checkbox aria-label={`Select ${row.name}`} checked={checked} onCheckedChange={onCheck} className={checkboxClassName} />
+        <Checkbox aria-label={`Select ${row.name}`} checked={checked} onCheckedChange={onCheck} className={ballotCheckboxClassName} />
       </span>
       <div className="relative flex min-w-0 items-center gap-2.5 pl-6">
         {/* Tree line from the position header. */}
@@ -517,10 +617,11 @@ function CandidateListRow({ row, party, careerColor, checked, onCheck, onEdit }:
           {hasPhoto ? <Check aria-hidden className="size-3" strokeWidth={3} /> : <X aria-hidden className="size-3" strokeWidth={3} />}
         </span>
       </span>
-      <span className="flex justify-center">
+      <span className="flex items-center justify-center">
         <button type="button" onClick={onEdit} aria-label={`Edit ${row.name}`} title="Edit candidate" className={iconButtonClassName}>
           <Pencil aria-hidden className="size-4" strokeWidth={1.75} />
         </button>
+        <span aria-hidden className="ml-1 hidden h-4.5 w-px bg-border xl:block" />
       </span>
     </li>
   );
@@ -546,36 +647,90 @@ function StudentCell({ value }: { value: string | null | undefined }) {
   );
 }
 
-function CandidateCard({ row, party, careerColor, checked, onCheck, onEdit }: CandidateItemProps) {
+/** Small outlined square button on a selected card (Edit, Delete). */
+const cardActionClassName =
+  "flex size-7 cursor-pointer items-center justify-center rounded-md border border-border bg-background text-muted-foreground outline-none transition-[background-color,color,border-color,scale] duration-150 hover:bg-muted hover:text-foreground active:scale-90 focus-visible:ring-2 focus-visible:ring-brand-blue/30 motion-reduce:active:scale-100";
+
+const initialsPlaceholderClassName =
+  "absolute inset-0 flex items-center justify-center text-[2.25rem] font-semibold tracking-wide text-[#64748b]/80 dark:text-white/35";
+
+interface CandidateCardProps extends CandidateItemProps {
+  /** Position in its row, for the staggered entrance. */
+  index: number;
+  positionTitle: string;
+  onDelete: () => void;
+}
+
+/**
+ * Photo view card: the portrait (initials while it loads), or the "No photo yet"
+ * mascot; then name, student number and party. Selecting it outlines it and
+ * unfolds a footer with its position, Edit and Delete.
+ */
+function CandidateCard({ row, index, positionTitle, party, careerColor, checked, leaving, onCheck, onEdit, onDelete }: CandidateCardProps) {
   const portrait = row.candidate.portraitUrl;
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+
   return (
     <div
       data-selected={checked || undefined}
-      className="relative w-57.5 overflow-hidden rounded-lg border border-border bg-card transition-[border-color,box-shadow] duration-200 data-selected:border-brand-blue data-selected:shadow-[0_0_0_1px_var(--color-brand-blue)]"
+      style={{ animationDelay: `${Math.min(index, 8) * 45}ms` }}
+      className={cn(
+        "group/card relative w-57.5 overflow-hidden rounded-[0.625rem] border border-border bg-card",
+        "transition-[border-color,box-shadow,translate] duration-250 ease-out hover:-translate-y-0.5 hover:shadow-[0_14px_28px_-20px_rgb(15_23_42/0.45)] motion-reduce:hover:translate-y-0",
+        "data-selected:border-brand-blue data-selected:shadow-[0_0_0_1px_var(--color-brand-blue)] dark:data-selected:border-[#7aa7e6] dark:data-selected:shadow-[0_0_0_1px_#7aa7e6]",
+        styles.cellIn,
+        leaving && styles.cardOut,
+      )}
     >
-      <div
-        className={cn("relative flex h-38 items-center justify-center bg-cover bg-top", portrait ? "bg-muted" : "bg-linear-to-b from-[#e8eef7] to-[#d5deeb] dark:from-white/8 dark:to-white/4")}
-        style={portrait ? { backgroundImage: `url("${portrait}")` } : undefined}
-      >
+      <div className="relative h-38 overflow-hidden bg-[#f1f4f8] dark:bg-white/5">
+        {portrait !== null ? (
+          <>
+            <span aria-hidden className={initialsPlaceholderClassName}>
+              {row.initials}
+            </span>
+            {failedSrc !== portrait ? (
+              // eslint-disable-next-line @next/next/no-img-element -- portraits come from the API's storage host
+              <img
+                src={portrait}
+                alt=""
+                onLoad={() => setLoadedSrc(portrait)}
+                onError={() => setFailedSrc(portrait)}
+                className={cn(
+                  "absolute inset-0 size-full object-cover object-top transition-[opacity,scale] duration-500 ease-out group-hover/card:scale-[1.03] motion-reduce:transition-opacity",
+                  loadedSrc === portrait ? "opacity-100" : "opacity-0",
+                )}
+              />
+            ) : null}
+          </>
+        ) : (
+          <span aria-hidden className="absolute inset-0 flex flex-col items-center justify-center pt-2">
+            <span className="absolute top-2.5 left-2.5 rounded-[0.1875rem] bg-brand-gold px-1.5 py-0.5 font-mono text-[0.5625rem] font-semibold tracking-wider text-brand-navy">
+              MISSING
+            </span>
+            {/* eslint-disable-next-line @next/next/no-img-element -- tiny static illustration */}
+            <img
+              src="/images/nophotoyet.png"
+              alt=""
+              width={60}
+              height={79}
+              className="h-17 w-auto opacity-90 transition-transform duration-300 ease-out group-hover/card:-translate-y-0.5 group-hover/card:-rotate-3 motion-reduce:transition-none dark:opacity-70 dark:invert"
+            />
+            <span className="mt-1.5 text-[0.75rem] font-medium text-foreground/80">No photo yet</span>
+            <span className="text-[0.65625rem] text-muted-foreground">Add one from Edit</span>
+          </span>
+        )}
         <button
           type="button"
           onClick={onEdit}
           aria-label={portrait ? `Edit ${row.name}` : `Add a photo for ${row.name}`}
-          className="group/photo absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-1 outline-none focus-visible:ring-3 focus-visible:ring-brand-blue/30 focus-visible:ring-inset"
-        >
-          {portrait ? null : (
-            <>
-              <span className="absolute top-2.5 left-2.5 rounded-[0.1875rem] bg-brand-gold px-1.5 py-0.5 font-mono text-[0.5625rem] font-semibold tracking-wider text-brand-navy">MISSING</span>
-              <Plus aria-hidden className="size-5 text-brand-muted transition-transform duration-200 group-hover/photo:scale-110" strokeWidth={1.75} />
-              <span className="text-[0.8125rem] text-brand-muted">Add photo</span>
-              <span className="font-mono text-[0.625rem] text-brand-muted/80">JPG/PNG · 4:5</span>
-            </>
-          )}
-        </button>
+          className="absolute inset-0 cursor-pointer outline-none focus-visible:ring-3 focus-visible:ring-brand-blue/30 focus-visible:ring-inset"
+        />
         <span className="absolute top-2.5 right-2.5">
-          <Checkbox aria-label={`Select ${row.name}`} checked={checked} onCheckedChange={onCheck} className={checkboxClassName} />
+          <Checkbox aria-label={`Select ${row.name}`} checked={checked} onCheckedChange={onCheck} className={cn(ballotCheckboxClassName, "shadow-sm")} />
         </span>
       </div>
+
       <div className="px-3.5 pt-2.5 pb-3">
         <button
           type="button"
@@ -584,10 +739,33 @@ function CandidateCard({ row, party, careerColor, checked, onCheck, onEdit }: Ca
         >
           {row.name}
         </button>
-        <p className="truncate font-mono text-[0.6875rem] text-muted-foreground">{row.candidate.studentId}</p>
+        <p className="mt-0.5 truncate font-mono text-[0.6875rem] text-muted-foreground">{row.candidate.studentId}</p>
         <div className="mt-2 flex items-center justify-between gap-2">
           <PartyTag party={party} />
           {careerColor && row.student?.careerCode ? <CareerCode code={row.student.careerCode} color={careerColor} /> : null}
+        </div>
+      </div>
+
+      {/* Footer of a selected card: its position, Edit and Delete. */}
+      <div className={styles.fold} data-open={checked} inert={!checked}>
+        <div>
+          <div className="flex items-center justify-between gap-2 px-3.5 pb-3">
+            <span className="truncate text-[0.75rem] text-muted-foreground">{positionTitle}</span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <button type="button" onClick={onEdit} aria-label={`Edit ${row.name}`} title="Edit candidate" className={cardActionClassName}>
+                <Pencil aria-hidden className="size-3.5" strokeWidth={1.75} />
+              </button>
+              <button
+                type="button"
+                onClick={onDelete}
+                aria-label={`Delete ${row.name}`}
+                title="Delete candidate"
+                className={cn(cardActionClassName, "hover:border-destructive/30 hover:bg-destructive/8 hover:text-destructive")}
+              >
+                <Trash2 aria-hidden className="size-3.5" strokeWidth={1.75} />
+              </button>
+            </span>
+          </div>
         </div>
       </div>
     </div>

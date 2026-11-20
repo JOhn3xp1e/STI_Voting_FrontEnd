@@ -8,11 +8,13 @@ import type { Election } from "@/types/election.types";
 interface ElectionsNavValue {
   /** Every election, as last loaded. Empty until the first load finishes (or if it fails). */
   elections: readonly Election[];
+  /** The first load has finished (successfully or not). */
+  loaded: boolean;
   /** Loads the list again; call after creating, editing or deleting an election. */
   refresh: () => void;
 }
 
-const ElectionsNavContext = createContext<ElectionsNavValue>({ elections: [], refresh: () => {} });
+const ElectionsNavContext = createContext<ElectionsNavValue>({ elections: [], loaded: false, refresh: () => {} });
 
 /**
  * The elections shown in the dashboard frame: the sidebar's election groups
@@ -22,19 +24,24 @@ const ElectionsNavContext = createContext<ElectionsNavValue>({ elections: [], re
 export function ElectionsNavProvider({ children }: { children: ReactNode }) {
   const [elections, setElections] = useState<readonly Election[]>([]);
   const [version, setVersion] = useState(0);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
     fetchElections({ signal: controller.signal })
-      .then(setElections)
+      .then((list) => {
+        setElections(list);
+        setLoaded(true);
+      })
       .catch(() => {
         // The Elections page reports load errors; the frame stays usable without the groups.
+        if (!controller.signal.aborted) setLoaded(true);
       });
     return () => controller.abort();
   }, [version]);
 
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
-  const value = useMemo(() => ({ elections, refresh }), [elections, refresh]);
+  const value = useMemo(() => ({ elections, loaded, refresh }), [elections, loaded, refresh]);
 
   return <ElectionsNavContext.Provider value={value}>{children}</ElectionsNavContext.Provider>;
 }

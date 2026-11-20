@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 /** With Cache Components the id is request-time data, so it's read inside Suspense. */
 export default function NewPartyListRoute({ params }: PageProps<"/elections/[id]/party-lists/new">) {
   return (
-    <Suspense fallback={<PartyListEditorSkeleton isNew />}>
+    <Suspense fallback={<PartyListEditorSkeleton />}>
       {params.then(({ id }) => (
         <PartyListEditorPage electionId={decodeURIComponent(id)} partylistId={null} />
       ))}

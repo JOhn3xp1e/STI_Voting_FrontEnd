@@ -14,7 +14,7 @@ import { ElectionsNavProvider, useElectionsNav } from "@/components/elections/el
 
 import entrance from "./dashboard-entrance.module.css";
 import { DashboardHeader } from "./dashboard-header";
-import { PageDescriptionProvider } from "./page-description";
+import { PageCrumbProvider, PageDescriptionProvider } from "./page-description";
 import { Sidebar } from "./sidebar";
 
 /** Matches Tailwind's `md` breakpoint: persistent sidebar from here up, drawer below. */
@@ -119,6 +119,7 @@ function Shell({ admin, children }: DashboardShellProps) {
   return (
     <ProfileDialogProvider>
     <PageDescriptionProvider>
+    <PageCrumbProvider>
     <div data-themed className="flex min-h-dvh flex-1 bg-background text-foreground transition-colors duration-500">
       <a
         href="#main-content"
@@ -205,6 +206,7 @@ function Shell({ admin, children }: DashboardShellProps) {
       {/* Entrance after signing in: lifts away from the sign-in screen's navy (CSS only; hidden otherwise). */}
       <div aria-hidden className={entrance.curtain} onAnimationEnd={endDashboardEntrance} />
     </div>
+    </PageCrumbProvider>
     </PageDescriptionProvider>
     </ProfileDialogProvider>
   );

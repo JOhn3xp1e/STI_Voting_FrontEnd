@@ -4,7 +4,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Menu as MenuIcon } from "lucide-react";
 
-import { getPageMeta } from "@/config/navigation";
+import { getPageMeta, parseElectionRoute } from "@/config/navigation";
 import { useElectionsNav } from "@/components/elections/elections-nav";
 import { cn } from "@/lib/utils";
 import type { AdminProfile } from "@/types/auth.types";
@@ -13,7 +13,8 @@ import { AdminAvatar } from "./admin-avatar";
 import styles from "./dashboard-header.module.css";
 import { headerIconButtonClassName } from "./header-icon-button";
 import { NotificationMenu } from "./notification-menu";
-import { usePageDescriptionOverride } from "./page-description";
+import { ElectionBreadcrumb } from "./election-breadcrumb";
+import { usePageCrumbOverride, usePageDescriptionOverride } from "./page-description";
 import { ProfileMenu } from "./profile-menu";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -33,11 +34,13 @@ interface DashboardHeaderProps {
  */
 export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, className }: DashboardHeaderProps) {
   const pathname = usePathname();
-  const { elections } = useElectionsNav();
+  const { elections, loaded } = useElectionsNav();
   const meta = getPageMeta(pathname, admin.firstName, elections);
   const { title, headerTheme, headerDivider } = meta;
   const description = usePageDescriptionOverride(pathname) ?? meta.description;
   const hero = headerTheme === "hero";
+  const electionRoute = parseElectionRoute(pathname);
+  const crumb = usePageCrumbOverride(pathname);
 
   return (
     <header
@@ -81,33 +84,37 @@ export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, class
             <MenuIcon aria-hidden strokeWidth={1.75} />
           </button>
 
-          <div
-            className={cn(
-              "flex min-w-0 flex-1 flex-col gap-x-3.5 gap-y-1",
-              hero ? "xl:flex-row xl:items-baseline" : "lg:flex-row lg:items-baseline",
-            )}
-          >
-            <h1
+          {electionRoute ? (
+            <ElectionBreadcrumb route={electionRoute} elections={elections} loaded={loaded} tail={crumb} />
+          ) : (
+            <div
               className={cn(
-                "truncate text-xl leading-tight font-semibold tracking-tight transition-colors duration-500 sm:text-2xl",
-                hero
-                  ? "font-display text-brand-navy dark:text-brand-white"
-                  : "font-sans text-brand-navy dark:text-brand-white",
+                "flex min-w-0 flex-1 flex-col gap-x-3.5 gap-y-1",
+                hero ? "xl:flex-row xl:items-baseline" : "lg:flex-row lg:items-baseline",
               )}
             >
-              {title}
-            </h1>
-            {description ? (
-              <p
+              <h1
                 className={cn(
-                  "line-clamp-2 font-mono text-[0.6875rem] transition-colors duration-500 sm:text-xs",
-                  hero ? "text-brand-navy/60 xl:truncate dark:text-brand-white/65" :"text-brand-muted lg:truncate dark:text-shell-item",
+                  "truncate text-xl leading-tight font-semibold tracking-tight transition-colors duration-500 sm:text-2xl",
+                  hero
+                    ? "font-display text-brand-navy dark:text-brand-white"
+                    : "font-sans text-brand-navy dark:text-brand-white",
                 )}
               >
-                {description}
-              </p>
-            ) : null}
-          </div>
+                {title}
+              </h1>
+              {description ? (
+                <p
+                  className={cn(
+                    "line-clamp-2 font-mono text-[0.6875rem] transition-colors duration-500 sm:text-xs",
+                    hero ? "text-brand-navy/60 xl:truncate dark:text-brand-white/65" :"text-brand-muted lg:truncate dark:text-shell-item",
+                  )}
+                >
+                  {description}
+                </p>
+              ) : null}
+            </div>
+          )}
 
           <div className="flex shrink-0 items-center gap-2.5 sm:gap-4">
             <NotificationMenu unreadCount={0} />

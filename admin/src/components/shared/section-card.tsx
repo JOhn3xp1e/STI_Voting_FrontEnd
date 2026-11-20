@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -12,12 +12,13 @@ interface SectionCardProps {
   children: ReactNode;
   bodyClassName?: string;
   className?: string;
+  style?: CSSProperties;
 }
 
 /** Card with a mono uppercase title bar ("PROFILE", "DETAILS") and an optional hint or action on the right. */
-export function SectionCard({ title, aside, children, bodyClassName, className }: SectionCardProps) {
+export function SectionCard({ title, aside, children, bodyClassName, className, style }: SectionCardProps) {
   return (
-    <section className={cn(cardClassName, className)}>
+    <section className={cn(cardClassName, className)} style={style}>
       <header className="flex min-h-12 items-center justify-between gap-3 border-b border-[#e2e8f0] px-5 py-2 dark:border-border">
         <h2 className="font-mono text-[0.6875rem] font-semibold tracking-[0.16em] text-foreground uppercase">{title}</h2>
         {typeof aside === "string" ? (

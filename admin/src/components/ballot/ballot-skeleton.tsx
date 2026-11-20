@@ -1,4 +1,4 @@
-import { ChevronDown, Plus, Search } from "lucide-react";
+import { ChevronDown, Plus, RotateCw, Search } from "lucide-react";
 
 import { Skeleton, SkeletonCheckbox, SkeletonLine, SkeletonRegion, pickWidth, skeletonDelay } from "@/components/shared/skeleton";
 import { Caret } from "@/components/students/option-menu";
@@ -64,32 +64,32 @@ export function BallotSkeleton() {
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-5">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
-          <div className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
+          <div className="relative min-w-0 flex-1 sm:w-44 sm:flex-none">
             <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3.25 size-4 -translate-y-1/2 text-muted-foreground" />
             <span className="flex h-8.5 w-full items-center rounded-md border border-border bg-background pl-8.75 text-[0.875rem] text-muted-foreground">
               Search candidates
             </span>
           </div>
           <span className={cn(toolbarButtonClassName, "gap-1")}>
-            All positions
+            Position
             <Caret />
           </span>
           <span className={cn(toolbarButtonClassName, "gap-1")}>
-            All party lists
+            Party list
             <Caret />
           </span>
         </div>
-        <div className="flex shrink-0 items-center gap-4">
+        <div className="flex shrink-0 items-center gap-2.5">
           <span className="flex items-center gap-2.5 text-[0.84375rem] text-foreground/85">
             Show photos
             <span className="relative h-5.5 w-9.5 shrink-0 rounded-full bg-[#d5dbe3] dark:bg-white/15">
               <span className="absolute top-0.75 left-0.75 size-4 rounded-full bg-white shadow-sm" />
             </span>
           </span>
-          <span className={cn(primaryButtonClassName, "gap-1.5")}>
-            <Plus aria-hidden className="size-4" strokeWidth={2.2} />
-            Create position
+          <span className={cn(toolbarButtonClassName, "ml-1.5 w-8.5 justify-center px-0")}>
+            <RotateCw aria-hidden className="size-4" strokeWidth={1.75} />
           </span>
+          <span className={primaryButtonClassName}>+ Create position</span>
         </div>
       </div>
 

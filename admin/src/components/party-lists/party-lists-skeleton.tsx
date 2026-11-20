@@ -1,4 +1,4 @@
-import { ArrowLeft, Plus, Search } from "lucide-react";
+import { RotateCw, Search } from "lucide-react";
 
 import { SectionCard } from "@/components/shared/section-card";
 import {
@@ -21,27 +21,30 @@ const MOTTO_WIDTHS = ["w-[62%]", "w-[48%]", "w-[70%]", "w-[56%]", "w-[52%]"];
 export function PartyListsSkeleton() {
   return (
     <SkeletonRegion label="Loading party lists…" className="px-4 pb-24 sm:px-6 lg:px-8">
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-5">
-        <div className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
+      <div className="flex flex-wrap items-center gap-2.5 pb-5">
+        <div className="relative min-w-0 flex-1 sm:w-44 sm:flex-none">
           <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3.25 size-4 -translate-y-1/2 text-muted-foreground" />
           <span className="flex h-8.5 w-full items-center rounded-md border border-border bg-background pl-8.75 text-[0.875rem] text-muted-foreground">
             Search party lists
           </span>
         </div>
-        <span className={cn(primaryButtonClassName, "gap-1.5")}>
-          <Plus aria-hidden className="size-4" strokeWidth={2.2} />
-          Add party list
-        </span>
+        <div className="ml-auto flex items-center gap-2.5">
+          <span className={cn(toolbarButtonClassName, "w-8.5 justify-center px-0")}>
+            <RotateCw aria-hidden className="size-4" strokeWidth={1.75} />
+          </span>
+          <span className={primaryButtonClassName}>+ Add party list</span>
+        </div>
       </div>
 
       <div className="overflow-hidden border-t border-border">
-        <table className="w-full min-w-140 table-fixed border-separate border-spacing-0 text-left">
+        <table className="w-full min-w-160 table-fixed border-separate border-spacing-0 text-left">
           <colgroup>
             <col className="w-9.5" />
             <col />
             <col className="w-27.5" />
             <col className="w-27.5" />
-            <col className="w-22" />
+            <col className="w-27.5" />
+            <col className="w-21" />
           </colgroup>
           <thead>
             <tr className={skeletonHeadRowClassName}>
@@ -51,6 +54,7 @@ export function PartyListsSkeleton() {
               <th className="border-b border-border font-normal">Party list</th>
               <th className="border-b border-border font-normal">ID</th>
               <th className="border-b border-border font-normal">Candidates</th>
+              <th className="border-b border-border font-normal">Platform</th>
               <th className="border-b border-border font-normal" />
             </tr>
           </thead>
@@ -73,7 +77,10 @@ export function PartyListsSkeleton() {
                   <Skeleton className="h-2.5 w-[70%]" />
                 </td>
                 <td className="border-b border-border pr-3">
-                  <Skeleton className="h-2.5 w-6" />
+                  <Skeleton className="h-2.5 w-8" />
+                </td>
+                <td className="border-b border-border pr-3">
+                  <Skeleton className={cn("h-4.5 rounded-[3px]", index % 3 === 2 ? "w-11" : "w-16")} />
                 </td>
                 <td className="border-b border-border pr-1">
                   <div className="flex items-center justify-end gap-0.5">
@@ -110,26 +117,11 @@ function FieldSkeleton({ label }: { label: string }) {
   );
 }
 
-/** Party list editor placeholder: breadcrumb + actions, the four form cards and the ballot preview. */
-export function PartyListEditorSkeleton({ isNew = false }: { isNew?: boolean }) {
+/** Party list editor placeholder: actions, the four form cards and the ballot preview (the breadcrumb is in the header). */
+export function PartyListEditorSkeleton() {
   return (
     <SkeletonRegion label="Loading the party list…" className="px-4 pb-16 sm:px-6 lg:px-8">
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="inline-flex shrink-0 items-center gap-1 text-[0.8125rem] text-brand-blue dark:text-[#7aa7e6]">
-            <ArrowLeft aria-hidden className="size-3.5" />
-            Party lists
-          </span>
-          <span className="text-[0.6875rem] text-muted-foreground">/</span>
-          {isNew ? (
-            <span className="truncate text-[0.875rem] font-semibold text-foreground">New party list</span>
-          ) : (
-            <>
-              <Skeleton className="h-3 w-36" />
-              <Skeleton className="h-2 w-12" />
-            </>
-          )}
-        </div>
+      <div className="flex items-center justify-end pb-5">
         <div className="flex shrink-0 items-center gap-2.5">
           <span className={cn(toolbarButtonClassName, "h-9 px-4 text-[0.8125rem] font-semibold text-foreground")}>Discard</span>
           <span className={cn(primaryButtonClassName, "h-9 gap-2 text-[0.8125rem]")}>Save party list</span>

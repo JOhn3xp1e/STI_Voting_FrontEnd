@@ -1,4 +1,4 @@
-import { PageSkeleton, Skeleton, SkeletonFade, SkeletonLine, skeletonDelay } from "@/components/shared/skeleton";
+    import { PageSkeleton, Skeleton, SkeletonFade, SkeletonLine, skeletonDelay } from "@/components/shared/skeleton";
 import { cn } from "@/lib/utils";
 
 const NAV = [

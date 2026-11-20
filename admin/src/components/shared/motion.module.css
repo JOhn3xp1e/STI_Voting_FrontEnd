@@ -169,6 +169,48 @@
   }
 }
 
+/* A deleted row / card fades and slides away before it is removed (see useLeaving). */
+.rowOut {
+  pointer-events: none;
+  animation: row-out 240ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes row-out {
+  to {
+    opacity: 0;
+    transform: translate3d(12px, 0, 0);
+  }
+}
+
+.cardOut {
+  pointer-events: none;
+  animation: card-out 240ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes card-out {
+  to {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+/* Section bodies that open and close (ballot positions): rows fold with a grid-rows transition. */
+.fold {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 240ms ease-out;
+}
+
+.fold[data-open="false"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.fold > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rowIn,
   .rowFlash,
@@ -182,7 +224,15 @@
   .cellIn,
   .dayPop,
   .fieldError,
-  .trashIn {
+  .trashIn,
+  .rowOut,
+  .cardOut {
     animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fold {
+    transition: none;
   }
 }

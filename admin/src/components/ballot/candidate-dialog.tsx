@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent 
 import { Check, LoaderCircle, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
 
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
+import motionStyles from "@/components/shared/motion.module.css";
 import { DialogCancel, DialogFrame, DialogHeading, dialogDangerLinkClassName, dialogPrimaryClassName, dialogSecondaryClassName } from "@/components/shared/dialog-frame";
 import { errorClassName, fieldClassName, labelClassName } from "@/components/shared/form-styles";
 import { IMAGE_TYPES } from "@/components/shared/image-dropzone";
@@ -29,6 +30,7 @@ import { getApiErrorMessage } from "@/services/api/error-message";
 import { createCandidate, deleteCandidate, updateCandidate } from "@/services/ballot/ballot.service";
 import { SOCIAL_PLATFORMS, type Candidate, type Position, type SocialPlatform } from "@/types/ballot.types";
 import type { Partylist } from "@/types/partylist.types";
+import { useLeaving } from "@/hooks/use-leaving";
 import type { Student } from "@/types/student.types";
 
 /** What the dialog is open for: a new candidate (optionally for a given position) or an existing one. */
@@ -60,6 +62,9 @@ const secondaryButtonClassName = cn(dialogSecondaryClassName, "inline-flex items
 
 const platformOptions = SOCIAL_PLATFORMS.map((p) => ({ value: p, label: PLATFORM_LABELS[p] }));
 
+/** Something that just replaced something else (student ID ↔ student card, party card, portrait) settles in. */
+const swapInClassName = "animate-in fade-in zoom-in-[0.98] slide-in-from-top-1 duration-300 ease-out motion-reduce:animate-none";
+
 function initialForm(target: CandidateDialogTarget): CandidateForm {
   if (target?.mode === "edit") {
     const c = target.candidate;
@@ -82,6 +87,8 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
   const editorRuns = useRef(0);
   /** The candidate as last saved from here (a new portrait is saved as soon as the editor closes). */
   const [savedCandidate, setSavedCandidate] = useState<Candidate | null>(null);
+  /** Link rows playing their exit before they are removed. */
+  const { leaving: leavingLinks, leave: leaveLink } = useLeaving();
 
   // Start from the target each time the dialog opens for something new.
   const [openedFor, setOpenedFor] = useState(target);
@@ -224,12 +231,12 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
 
             <div className="min-w-0 space-y-3.5">
               {editing || studentMatched ? (
-                <div>
+                <div key="student" className={swapInClassName}>
                   <p className={fieldLabelClassName}>Student</p>
                   <StudentCard student={student} studentId={form.studentId} onClear={editing ? undefined : () => update({ studentId: "" })} />
                 </div>
               ) : (
-                <div>
+                <div key="student-id" className={swapInClassName}>
                   <label htmlFor="candidate-student-id" className={fieldLabelClassName}>
                     Student ID
                   </label>
@@ -283,7 +290,7 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
                   onChange={(value) => update({ partylistId: !value || value === PARTY_INDEPENDENT ? null : value })}
                   triggerClassName="block w-full cursor-pointer rounded-lg text-left outline-none focus-visible:ring-3 focus-visible:ring-brand-blue/25"
                 >
-                  <PartyCard party={party} />
+                  <PartyCard key={party?.id ?? "independent"} party={party} />
                 </OptionMenu>
               </div>
 
@@ -305,7 +312,13 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
                 links={form.links}
                 errors={errors.links}
                 onChange={(key, patch) => updateLink(key, patch)}
-                onRemove={(key) => update({ links: form.links.filter((l) => l.key !== key) })}
+                leaving={leavingLinks}
+                onRemove={(key) =>
+                  leaveLink([key], () => {
+                    setForm((current) => ({ ...current, links: current.links.filter((l) => l.key !== key) }));
+                    setError(null);
+                  })
+                }
                 onAdd={() => update({ links: [...form.links, newLinkDraft({ platform: nextPlatform(form.links) })] })}
               />
 
@@ -416,8 +429,10 @@ function PortraitPicker({ url, picked, onEdit, onOpen, onUndo }: PortraitPickerP
     return (
       <div {...dropProps} className="flex h-80 justify-center rounded-[0.875rem] bg-background">
         <div
+          key={url}
           className={cn(
-            "group/portrait relative h-full w-[14.625rem] max-w-full overflow-hidden rounded-[0.875rem] border-2 bg-muted bg-cover bg-top transition-colors duration-200",
+            swapInClassName,
+            "group/portrait relative h-full w-58.5 max-w-full overflow-hidden rounded-[0.875rem] border-2 bg-muted bg-cover bg-top transition-colors duration-200",
             dragging ? "border-brand-blue/60" : "border-[#e4e8f0] dark:border-border",
           )}
           style={{ backgroundImage: `url("${url}")` }}
@@ -451,18 +466,18 @@ function PortraitPicker({ url, picked, onEdit, onOpen, onUndo }: PortraitPickerP
     <div
       {...dropProps}
       className={cn(
-        "flex h-80 flex-col items-center justify-center gap-3 rounded-[0.875rem] border-[1.5px] border-dashed px-6 py-5 text-center transition-[border-color,background-color] duration-200",
+        "group/drop flex h-80 flex-col items-center justify-center gap-3 rounded-[0.875rem] border-[1.5px] border-dashed px-6 py-5 text-center transition-[border-color,background-color] duration-200 hover:border-brand-blue/35",
         dragging ? "border-brand-blue/60 bg-brand-blue/4" : "border-[#e4e8f0] dark:border-white/15",
       )}
     >
-      <span className="flex size-11 items-center justify-center rounded-[0.875rem] bg-brand-blue/10 text-brand-blue dark:text-[#7aa7e6]">
+      <span className={cn("flex size-11 items-center justify-center rounded-[0.875rem] bg-brand-blue/10 text-brand-blue transition-transform duration-300 ease-out group-hover/drop:-translate-y-0.5 motion-reduce:transition-none dark:text-[#7aa7e6]", dragging && "-translate-y-1 scale-110")}>
         <Upload aria-hidden className="size-5" strokeWidth={1.75} />
       </span>
       <p className="mt-3 text-[0.875rem] leading-5 font-semibold text-foreground">Drag and drop a photo</p>
       <p className="text-[0.75rem] leading-5 text-muted-foreground">
-        or choose a file · JPG, PNG or WebP
+        or choose a file · JPG/PNG/WebP
         <br />
-        Framed to 4:5 in the photo editor
+        4:5 · framed in the photo editor
       </p>
       <button type="button" onClick={() => inputRef.current?.click()} className={cn(dialogPrimaryClassName, "mt-3 h-8.5 px-4 text-[0.8125rem]")}>
         Choose photo
@@ -508,7 +523,7 @@ function StudentCard({ student, studentId, onClear }: { student: Student | null;
 function PartyCard({ party }: { party: Partylist | null }) {
   if (!party) {
     return (
-      <span className="flex min-h-17.5 items-center justify-between gap-3 rounded-lg border border-[#e4e8f0] p-3.5 dark:border-border">
+      <span className={cn("flex min-h-17.5 items-center justify-between gap-3 rounded-lg border border-[#e4e8f0] p-3.5 transition-colors duration-200 hover:bg-muted/50 dark:border-border", swapInClassName)}>
         <span className="text-[0.875rem] font-medium text-foreground">Independent</span>
         <span className="flex items-center gap-1 text-[0.78125rem] font-medium text-foreground">
           Change <Caret className="text-current" />
@@ -519,7 +534,14 @@ function PartyCard({ party }: { party: Partylist | null }) {
   const style = partyColorStyle(party.color);
   const motto = mottoText(party.motto);
   return (
-    <span className={cn("flex min-h-17.5 items-center gap-2.5 rounded-lg p-3.5", !style && partyColorFallbackClassName)} style={style}>
+    <span
+      className={cn(
+        "flex min-h-17.5 items-center gap-2.5 rounded-lg p-3.5 transition-[filter,box-shadow] duration-200 hover:brightness-[1.04] hover:shadow-[0_10px_24px_-16px_rgb(15_23_42/0.5)]",
+        swapInClassName,
+        !style && partyColorFallbackClassName,
+      )}
+      style={style}
+    >
       <span
         aria-hidden
         className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white bg-cover bg-center text-[1.125rem] font-semibold text-[#334155]"
@@ -541,13 +563,15 @@ function PartyCard({ party }: { party: Partylist | null }) {
 interface LinksFieldProps {
   links: readonly LinkDraft[];
   errors: Record<string, string> | undefined;
+  /** Rows playing their exit animation. */
+  leaving: ReadonlySet<string>;
   onChange: (key: string, patch: Partial<LinkDraft>) => void;
   onRemove: (key: string) => void;
   onAdd: () => void;
 }
 
 /** Platform + URL rows with a remove button each, then "+ Add link". */
-function LinksField({ links, errors, onChange, onRemove, onAdd }: LinksFieldProps) {
+function LinksField({ links, errors, leaving, onChange, onRemove, onAdd }: LinksFieldProps) {
   return (
     <div role="group" aria-labelledby="candidate-links-label" className="space-y-3">
       <div className="space-y-1">
@@ -562,7 +586,7 @@ function LinksField({ links, errors, onChange, onRemove, onAdd }: LinksFieldProp
         const urlId = `candidate-link-${link.key}`;
         const name = PLATFORM_LABELS[link.platform];
         return (
-          <div key={link.key}>
+          <div key={link.key} className={cn(swapInClassName, leaving.has(link.key) && motionStyles.rowOut)}>
             <div className="grid grid-cols-[6.875rem_minmax(0,1fr)_1.25rem] items-end gap-2">
               <div>
                 <p className={fieldLabelClassName}>Platform</p>
