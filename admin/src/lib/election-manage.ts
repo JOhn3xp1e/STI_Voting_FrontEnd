@@ -64,6 +64,8 @@ export interface ChecklistItem {
   done: boolean;
   /** Where to fix or look at it. */
   page: ElectionPage;
+  /** Settings tab to open (#voters, #logins). */
+  tab?: "voters" | "logins";
   /** Link text when it isn't done ("Add positions"); "View" otherwise. */
   action: string;
 }
@@ -129,6 +131,7 @@ export function buildChecklist({ parties, positions, candidates, voters, emails,
           : `${plural(total, "voter")} from students matching the election filters${missing ? ` · ${count(missing)} not added` : ""}`,
     done: total > 0 && missing === 0,
     page: "settings",
+    tab: "voters",
     action: "Open voters",
   });
 
@@ -139,6 +142,7 @@ export function buildChecklist({ parties, positions, candidates, voters, emails,
     detail: total ? `${count(total)} of ${count(total)} · stored as a hash` : "Made with each voter",
     done: total > 0,
     page: "settings",
+    tab: "logins",
     action: "Open voter logins",
   });
 
@@ -156,6 +160,7 @@ export function buildChecklist({ parties, positions, candidates, voters, emails,
         : [`${count(sent)} of ${count(total)} sent`, queued ? `${count(queued)} still queued` : null, failed ? `${count(failed)} failed` : null].filter(Boolean).join(" · "),
     done: total > 0 && sent >= total,
     page: "settings",
+    tab: "logins",
     action: queued ? `Send ${count(queued)} queued` : "Open voter logins",
   });
 

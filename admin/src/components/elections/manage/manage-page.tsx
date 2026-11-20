@@ -491,7 +491,7 @@ function Checklist({ election, items, done }: { election: Election; items: Check
                     <p className="truncate text-[0.75rem] text-muted-foreground">{item.detail}</p>
                   </div>
                   <Link
-                    href={electionPageHref(election.id, item.page)}
+                    href={`${electionPageHref(election.id, item.page)}${item.tab ? `#${item.tab}` : ""}`}
                     className={cn(
                       "group/link inline-flex shrink-0 items-center gap-1 rounded-sm text-[0.8125rem] outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/30",
                       item.done || !preparing ? "text-muted-foreground hover:text-foreground" : "font-medium text-brand-blue hover:underline dark:text-[#7aa7e6]",

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, KeyRound, LoaderCircle, Lock, Mail, SearchX, Users } from "lucide-react";
+import { ArrowRight, LoaderCircle, Lock, Mail, SearchX } from "lucide-react";
 
 import { usePageCrumb } from "@/components/dashboard/page-description";
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
@@ -17,6 +17,8 @@ import { toolbarButtonClassName } from "@/components/students/student-toolbar-st
 import { termOptionLabel } from "@/components/elections/create/create-election-steps";
 import { CareerBadge, DateTimePicker, SectionCard, careerStyle, ctaButtonClassName, outlineButtonClassName } from "@/components/elections/create/create-election-ui";
 import { useElectionsNav } from "@/components/elections/elections-nav";
+import { useElectionVoters } from "./use-election-voters";
+import { VotersPanel } from "./voters-panel";
 import { StatusAction } from "@/components/elections/status-action";
 import { todayIso } from "@/lib/dates";
 import {
@@ -131,9 +133,15 @@ const TABS: { value: Tab; label: string }[] = [
 
 function SettingsWorkspace({ loaded, onElection }: { loaded: Loaded; onElection: (election: Election) => void }) {
   const { election, terms, careers, enrollments } = loaded;
-  // Voters and Voter logins wait on the voters service, so the page opens on the details.
-  const [tab, setTab] = useState<Tab>("details");
+  // Opens on Voters; a link can pick the tab with #voters, #logins or #details.
+  const [tab, setTab] = useState<Tab>(() => {
+    const hash = typeof window === "undefined" ? "" : window.location.hash.slice(1);
+    return TABS.some((t) => t.value === hash) ? (hash as Tab) : "voters";
+  });
   const { notice, say } = useNotice();
+  // Loaded once for both voter tabs, so switching between them is instant.
+  const voters = useElectionVoters(election.id);
+  const [testMode, setTestMode] = useState(false);
   usePageCrumb({ label: TABS.find((t) => t.value === tab)!.label });
 
   // Who can vote, the same way the election wizard counts it.
@@ -156,13 +164,30 @@ function SettingsWorkspace({ loaded, onElection }: { loaded: Loaded; onElection:
 
   return (
     <div className="px-4 pb-16 sm:px-6 lg:px-8">
-      <UnderlineTabs label="Election settings" tabs={TABS} value={tab} onChange={setTab} listClassName="gap-8" />
+      <UnderlineTabs
+        label="Election settings"
+        tabs={TABS}
+        value={tab}
+        onChange={(next) => {
+          setTab(next);
+          window.history.replaceState(null, "", `#${next}`);
+        }}
+        listClassName="gap-8"
+      />
 
       <div key={tab} className="mt-5 animate-in fade-in slide-in-from-bottom-1 duration-300 motion-reduce:animate-none">
         {tab === "details" ? (
           <DetailsTab election={election} terms={terms} scope={scope} onElection={onElection} say={say} />
         ) : (
-          <ComingSoon tab={tab} eligible={scope.eligible} />
+          <VotersPanel
+            mode={tab}
+            election={election}
+            enrollments={enrollments}
+            data={voters}
+            testMode={testMode}
+            onTestMode={() => setTestMode(true)}
+            say={say}
+          />
         )}
       </div>
 
@@ -172,51 +197,6 @@ function SettingsWorkspace({ loaded, onElection }: { loaded: Loaded; onElection:
 }
 
 const rise = (index: number): CSSProperties => ({ animationDelay: `${index * 70}ms` });
-
-/* -------------------------------------------------------------------------- */
-/*                            Voters / Voter logins                           */
-/* -------------------------------------------------------------------------- */
-
-const COMING: Record<Exclude<Tab, "details">, { icon: ReactNode; title: string; body: string; items: string[] }> = {
-  voters: {
-    icon: <Users className="size-5" strokeWidth={1.75} />,
-    title: "Voters aren't generated yet",
-    body: "This tab will list one voter per eligible student, with their vote status. It turns on once the voters service is connected to the server.",
-    items: ["One voter per student who matches the scope", "Not started, voted and inactive at a glance", "Add students who joined after the list was made"],
-  },
-  logins: {
-    icon: <KeyRound className="size-5" strokeWidth={1.75} />,
-    title: "Voter logins come after voters",
-    body: "Passcodes and login emails are made for each voter, so this tab turns on with the voters service.",
-    items: ["A passcode per voter, stored only as a hash", "Login emails sent in batches, with bounces to retry", "Resend or regenerate one voter's login"],
-  },
-};
-
-function ComingSoon({ tab, eligible }: { tab: Exclude<Tab, "details">; eligible: number | null }) {
-  const content = COMING[tab];
-  return (
-    <div className="flex flex-col items-center rounded-[0.375rem] border border-dashed border-[#d5dbe3] px-6 py-14 text-center dark:border-white/15">
-      <span className="flex size-12 items-center justify-center rounded-full bg-brand-blue/8 text-brand-blue animate-in zoom-in-75 duration-500 dark:bg-white/8 dark:text-[#7aa7e6] motion-reduce:animate-none">
-        {content.icon}
-      </span>
-      <p className="mt-4 text-[1rem] font-semibold text-foreground">{content.title}</p>
-      <p className="mt-1.5 max-w-lg text-[0.875rem] leading-5.5 text-muted-foreground">{content.body}</p>
-      {eligible !== null ? (
-        <p className="mt-4 inline-flex items-center gap-2 rounded-full bg-muted px-3.5 py-1.5 text-[0.8125rem] text-foreground">
-          <Users aria-hidden className="size-3.5 text-muted-foreground" />
-          <AnimatedNumber value={eligible} from={0} duration={900} className="font-semibold tabular-nums" /> students match this election&apos;s scope
-        </p>
-      ) : null}
-      <ul className="mt-6 grid w-full max-w-2xl gap-3 text-left sm:grid-cols-3">
-        {content.items.map((item, index) => (
-          <li key={item} style={rise(index + 1)} className={cn("rounded-[0.375rem] border border-[#e2e8f0] px-3.5 py-3 text-[0.8125rem] leading-5 text-muted-foreground dark:border-border", motion.riseIn)}>
-            {item}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
 
 /* -------------------------------------------------------------------------- */
 /*                               Election details                             */
