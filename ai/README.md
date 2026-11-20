@@ -4,8 +4,9 @@ The AI behind SLVP, as one Cloudflare Worker: the prompts, the model choice and 
 
 | Caller | Uses | How it connects |
 | --- | --- | --- |
-| Backend (`POST /api/chatbot/ask`) | `POST /chat` (STI Vote Buddy) | HTTPS to `https://slvp-ai.<subdomain>.workers.dev` |
+| Backend (`POST /api/chatbot/ask`) | `POST /chat` (Owlie) | HTTPS to `https://slvp-ai.<subdomain>.workers.dev` |
 | Admin app (`/api/students/convert`) | `POST /import/spec`, `POST /import/names` | `SLVP_AI` service binding |
+| Admin app (`/api/chat/summarize`) | `POST /chat/summarize` | `SLVP_AI` service binding |
 
 Callers check who the signed-in user is and what they may see. This worker only checks that the caller is one of ours: every request except `GET /health` needs `Authorization: Bearer <AI_API_TOKEN>`.
 
@@ -16,9 +17,11 @@ All errors are JSON `{ "message": "..." }`.
 - `GET /health` → `{ "ok": true }` (no token)
 - `GET /status` → `{ "chat": { "model", "ready" }, "import": { "model", "ready" } }`
 - `POST /chat`
-  - body: `{ "question": "...", "context": "<election data the user may see>", "history": [{ "role": "user" | "assistant", "content": "..." }] }` (`context` and `history` are optional)
+  - body: `{ "question": "...", "context": "<election data the user may see>", "summary": "...", "history": [{ "role": "user" | "assistant", "content": "..." }] }` (`context`, `summary` and `history` are optional)
   - → `{ "answer": "...", "model": "..." }`
   - `context` is plain text. Put only the elections this user may see in it (e.g. one line per election with title, status, voting window, positions and candidate counts). The model is told to answer only from it.
+- `POST /chat/summarize`: `{ "summary": "<previous summary, optional>", "turns": [{ "role": "user" | "assistant", "content": "..." }] }` (up to 60 turns) → `{ "summary": "...", "model" }`
+  - The admin app's chat panel calls it (through its own `/api/chat/summarize` route) every 20 exchanges and sends the result with later questions.
 - `POST /import/spec`: the file summary from the Students page → `{ "answer": <conversion rules JSON>, "model" }`
 - `POST /import/names`: `{ "names": ["ANGELINA KATE MILLENA", ...] }` (up to 100) → `{ "answer": { "splits": [...] }, "model" }`
 

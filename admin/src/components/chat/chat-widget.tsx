@@ -1,20 +1,73 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight, Calendar, Check, Minus, Plus, RotateCcw, Shield, Square, SquareCheck, Users, X, type LucideIcon } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Calendar, Check, History, Minus, Plus, RotateCcw, Shield, Square, SquareCheck, Trash2, Users, X, type LucideIcon } from "lucide-react";
 
 import { answerQuickAction, askAssistant, type ChatMessage, type QuickActionId } from "@/lib/chat";
+import {
+  archiveChat,
+  contextFor,
+  deletePastChat,
+  dueForSummary,
+  listPastChats,
+  loadChat,
+  markSummarized,
+  openPastChat,
+  saveChat,
+  type PastChat,
+  type SavedChat,
+} from "@/lib/chat-memory";
 import { cn } from "@/lib/utils";
+import { summarizeChat } from "@/services/chatbot/chatbot.service";
 import { fetchElections } from "@/services/elections/elections.service";
 import type { Election } from "@/types/election.types";
 
-/*
- * STI Vote Buddy (Figma "Chat launcher" + "Chat panel"): the owl at the bottom-right of every
- * dashboard page opens a 360 px panel 24 px above it. Quick actions are answered in the browser;
- * typed questions go to the backend's /api/chatbot/ask, one question at a time.
+import { ChatMarkdown } from "./chat-markdown";
+import { LAUNCHER_HEIGHT, LAUNCHER_WIDTH, clampPosition, saveLauncherPosition, useLauncherPosition, type LauncherPosition } from "./launcher-position";
+import { DEFAULT_PANEL_WIDTH, clampPanelSize, loadPanelSize, savePanelSize, type PanelSize } from "./panel-size";
+
+/** Pointer travel (px) before a press on the launcher counts as a drag instead of a click. */
+const DRAG_THRESHOLD = 5;
+/** Alt + arrow keys move the launcher by this much; arrow keys on the resize grip resize by this much. */
+const KEY_STEP = 24;
+/** The resize grip is shown from this viewport width up (below it the panel spans the screen). */
+const RESIZE_MIN_VIEWPORT = 640;
+
+/** Which edge of the panel stays put: the one next to the launcher. The grip is on the opposite corner. */
+type PanelAnchor = "bottom" | "top";
+
+/**
+ * Where the panel goes for a moved launcher: 24 px above it (as in the design) when there's
+ * room, otherwise below it; lined up with its right edge and kept 16 px inside the viewport.
+ * A resized panel keeps its size, up to the room there is.
  */
+function panelPlacement(launcher: LauncherPosition, viewport: { width: number; height: number }, size: PanelSize | null): { style: CSSProperties; anchor: PanelAnchor } {
+  const width = Math.min(size?.width ?? DEFAULT_PANEL_WIDTH, viewport.width - 32);
+  const left = Math.min(Math.max(launcher.x + LAUNCHER_WIDTH + 20 - width, 16), viewport.width - width - 16);
+  const roomAbove = launcher.y - 24 - 16;
+  const roomBelow = viewport.height - (launcher.y + LAUNCHER_HEIGHT + 16) - 16;
+  const originX = launcher.x + LAUNCHER_WIDTH / 2 > viewport.width / 2 ? "right" : "left";
+  const above = roomAbove >= (size?.height ?? 420) || roomAbove >= roomBelow;
+  const maxHeight = above ? roomAbove : roomBelow;
+  const height = size ? Math.min(size.height, maxHeight) : undefined;
+  return above
+    ? { anchor: "bottom", style: { left, width, height, bottom: viewport.height - launcher.y + 24, maxHeight, transformOrigin: `${originX} bottom` } }
+    : { anchor: "top", style: { left, width, height, top: launcher.y + LAUNCHER_HEIGHT + 16, maxHeight, transformOrigin: `${originX} top` } };
+}
+
+/*
+ * Owlie (Figma "Chat launcher" + "Chat panel"): the owl at the bottom-right of every
+ * dashboard page opens a 360 px panel 24 px above it. Quick actions are answered in the browser;
+ * typed questions go to the backend's /api/chatbot/ask with the conversation so far.
+ *
+ * The conversation is kept in this tab's sessionStorage and summarized every 20 exchanges
+ * (lib/chat-memory).
+ */
+
+/** After a failed summary, wait this long before trying again. */
+const SUMMARY_RETRY_MS = 60_000;
 
 const QUICK_ACTIONS: readonly { id: QuickActionId; label: string; icon: LucideIcon }[] = [
   { id: "how-to-vote", label: "How do I vote?", icon: SquareCheck },
@@ -36,17 +89,168 @@ function Owl({ className, sizes }: { className: string; sizes: string }) {
   );
 }
 
-export function ChatWidget() {
+/** `adminId` keys the saved conversation; render with `key={adminId}` so another admin starts fresh. */
+export function ChatWidget({ adminId }: { adminId: string }) {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // The panel starts closed, so restoring here doesn't change the server-rendered markup.
+  const [saved] = useState(() => loadChat(adminId));
+  const [messages, setMessages] = useState<ChatMessage[]>(() => saved?.messages ?? []);
+  const [summary, setSummary] = useState(() => saved?.summary ?? "");
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
+  /** The earlier-conversations list in place of the chat (History button). */
+  const [showHistory, setShowHistory] = useState(false);
+  const [pastChats, setPastChats] = useState<PastChat[]>([]);
   const elections = useRef<Promise<Election[] | null> | null>(null);
   const request = useRef<AbortController | null>(null);
+  const summarizing = useRef<AbortController | null>(null);
+  const summaryRetryAt = useRef(0);
   const launcherRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+
+  // Movable launcher: the saved spot, or the spot under the pointer while dragging.
+  const { position: savedPosition, viewport } = useLauncherPosition();
+  const [dragPosition, setDragPosition] = useState<LauncherPosition | null>(null);
+  const drag = useRef<{ startX: number; startY: number; origin: LauncherPosition; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  /** The panel was open when a drag started: it's hidden while dragging and comes back on drop. */
+  const reopenAfterDrag = useRef(false);
+  const launcherPosition = dragPosition ?? savedPosition;
+
+  // Resizable panel: the saved size (null = the design's default), kept inside the viewport.
+  // Read on the client only; the panel starts closed, so the server markup doesn't depend on it.
+  const [savedSize, setSavedSize] = useState<PanelSize | null>(() => loadPanelSize());
+  const resize = useRef<{ startX: number; startY: number; start: PanelSize; anchor: PanelAnchor } | null>(null);
+  const canResize = viewport !== null && viewport.width >= RESIZE_MIN_VIEWPORT;
+  const panelSize = savedSize && viewport && canResize ? clampPanelSize(savedSize, viewport) : null;
+  const placement = launcherPosition && viewport ? panelPlacement(launcherPosition, viewport, panelSize) : null;
+  const panelAnchor: PanelAnchor = placement?.anchor ?? "bottom";
+  // Default spot: CSS places the panel; a resized one only needs its size.
+  const panelStyle: CSSProperties | undefined = placement?.style ?? (panelSize ? { width: panelSize.width, height: panelSize.height } : undefined);
+
+  function startResize(event: PointerEvent<HTMLButtonElement>) {
+    const panel = panelRef.current;
+    if (event.button !== 0 || !panel) return;
+    event.preventDefault();
+    const box = panel.getBoundingClientRect();
+    resize.current = { startX: event.clientX, startY: event.clientY, start: { width: box.width, height: box.height }, anchor: panelAnchor };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  /** The grip is on the panel's left corner, so dragging left widens it; up or down moves the free edge. */
+  function sizeFromPointer(event: PointerEvent<HTMLButtonElement>): PanelSize | null {
+    const current = resize.current;
+    if (!current) return null;
+    const dy = event.clientY - current.startY;
+    return clampPanelSize({
+      width: current.start.width - (event.clientX - current.startX),
+      height: current.anchor === "bottom" ? current.start.height - dy : current.start.height + dy,
+    });
+  }
+
+  function moveResize(event: PointerEvent<HTMLButtonElement>) {
+    const next = sizeFromPointer(event);
+    if (next) setSavedSize(next);
+  }
+
+  function endResize(event: PointerEvent<HTMLButtonElement>) {
+    const next = sizeFromPointer(event);
+    resize.current = null;
+    if (!next) return;
+    setSavedSize(next);
+    savePanelSize(next);
+  }
+
+  /** Arrow keys move the grip's corner; Home (or a double-click) goes back to the default size. */
+  function resizeWithKeys(event: KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "Home") {
+      event.preventDefault();
+      resetSize();
+      return;
+    }
+    const panel = panelRef.current;
+    const steps: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const step = steps[event.key];
+    if (!step || !panel) return;
+    event.preventDefault();
+    const box = panel.getBoundingClientRect();
+    const dy = step[1] * KEY_STEP;
+    const next = clampPanelSize({
+      width: box.width - step[0] * KEY_STEP,
+      height: panelAnchor === "bottom" ? box.height - dy : box.height + dy,
+    });
+    setSavedSize(next);
+    savePanelSize(next);
+  }
+
+  function resetSize() {
+    setSavedSize(null);
+    savePanelSize(null);
+  }
+
+  function startDrag(event: PointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    const box = event.currentTarget.getBoundingClientRect();
+    drag.current = { startX: event.clientX, startY: event.clientY, origin: { x: box.left, y: box.top }, moved: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveDrag(event: PointerEvent<HTMLButtonElement>) {
+    const current = drag.current;
+    if (!current) return;
+    const dx = event.clientX - current.startX;
+    const dy = event.clientY - current.startY;
+    if (!current.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    if (!current.moved && open) {
+      // Get the panel out of the way while the owl moves; it reopens next to the new spot.
+      reopenAfterDrag.current = true;
+      setOpen(false);
+    }
+    current.moved = true;
+    setDragPosition(clampPosition({ x: current.origin.x + dx, y: current.origin.y + dy }));
+  }
+
+  function endDrag(event: PointerEvent<HTMLButtonElement>) {
+    const current = drag.current;
+    drag.current = null;
+    if (!current?.moved) return;
+    // The click that follows a drag shouldn't open or close the panel.
+    suppressClick.current = true;
+    saveLauncherPosition(clampPosition({ x: current.origin.x + event.clientX - current.startX, y: current.origin.y + event.clientY - current.startY }));
+    setDragPosition(null);
+    reopenIfHiddenByDrag();
+  }
+
+  function cancelDrag() {
+    drag.current = null;
+    setDragPosition(null);
+    reopenIfHiddenByDrag();
+  }
+
+  function reopenIfHiddenByDrag() {
+    if (!reopenAfterDrag.current) return;
+    reopenAfterDrag.current = false;
+    setOpen(true);
+  }
+
+  /** Alt + arrows move the launcher; Alt + Home puts it back in its default spot. */
+  function moveWithKeys(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!event.altKey) return;
+    if (event.key === "Home") {
+      event.preventDefault();
+      saveLauncherPosition(null);
+      return;
+    }
+    const steps: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const step = steps[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const box = event.currentTarget.getBoundingClientRect();
+    saveLauncherPosition(clampPosition({ x: box.left + step[0] * KEY_STEP, y: box.top + step[1] * KEY_STEP }));
+  }
 
   /** The elections list, loaded once per conversation (null when it couldn't be loaded). */
   function loadElections() {
@@ -64,7 +268,39 @@ export function ChatWidget() {
     if (log) log.scrollTop = log.scrollHeight;
   }, [messages]);
 
-  useEffect(() => () => request.current?.abort(), []);
+  useEffect(
+    () => () => {
+      request.current?.abort();
+      summarizing.current?.abort();
+      summarizing.current = null;
+    },
+    [],
+  );
+
+  // Keep the conversation in this tab (finished messages only).
+  useEffect(() => saveChat(adminId, { summary, messages }), [adminId, summary, messages]);
+
+  // Every 20 exchanges, fold them into the running summary in the background. On failure the
+  // messages stay as they are and it tries again after a later exchange.
+  useEffect(() => {
+    if (summarizing.current || Date.now() < summaryRetryAt.current) return;
+    const due = dueForSummary(messages);
+    if (!due) return;
+    const controller = new AbortController();
+    summarizing.current = controller;
+    summarizeChat(summary, due.turns, controller.signal)
+      .then((next) => {
+        if (controller.signal.aborted) return;
+        setSummary(next);
+        setMessages((current) => markSummarized(current, due.throughId));
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) summaryRetryAt.current = Date.now() + SUMMARY_RETRY_MS;
+      })
+      .finally(() => {
+        if (summarizing.current === controller) summarizing.current = null;
+      });
+  }, [messages, summary]);
 
   function show() {
     setOpen(true);
@@ -77,25 +313,66 @@ export function ChatWidget() {
     launcherRef.current?.focus();
   }
 
-  function reset() {
+  /**
+   * Stops anything in flight (so a summary of this chat can't land on the next one) and starts
+   * over, empty or with `next` (a past chat being reopened).
+   */
+  function reset(next?: SavedChat) {
     request.current?.abort();
     request.current = null;
+    summarizing.current?.abort();
+    summarizing.current = null;
+    summaryRetryAt.current = 0;
     elections.current = null;
-    setMessages([]);
+    setMessages(next?.messages ?? []);
+    setSummary(next?.summary ?? "");
     setQuestion("");
     setBusy(false);
   }
 
-  /** Closes the panel and ends the conversation. */
+  /** Keeps the current conversation in History (only if it has finished messages). */
+  function archiveCurrent() {
+    archiveChat(adminId, { summary, messages });
+  }
+
+  /** Closes the panel and ends the conversation (it stays in History). */
   function close() {
+    archiveCurrent();
     reset();
+    setShowHistory(false);
     minimize();
   }
 
   function startNewChat() {
+    archiveCurrent();
     reset();
+    setShowHistory(false);
     void loadElections();
     inputRef.current?.focus();
+  }
+
+  function toggleHistory() {
+    if (!showHistory) setPastChats(listPastChats(adminId));
+    setShowHistory(!showHistory);
+  }
+
+  /** Puts the current chat in History and continues the chosen one. */
+  function reopen(id: string) {
+    archiveCurrent();
+    const chat = openPastChat(adminId, id);
+    if (!chat) {
+      setPastChats(listPastChats(adminId));
+      return;
+    }
+    reset(chat);
+    setShowHistory(false);
+    void loadElections();
+    inputRef.current?.focus();
+  }
+
+  function remove(id: string) {
+    deletePastChat(adminId, id);
+    setPastChats(listPastChats(adminId));
   }
 
   /** Adds the user's message and a pending reply, then fills the reply from `produce`. */
@@ -130,12 +407,13 @@ export function ChatWidget() {
     void exchange(label, async (signal) => answerQuickAction(id, id === "schedule" || id === "candidates" ? await loadElections() : null, signal));
   }
 
-  /** The backend answers each question on its own (it doesn't see earlier messages). */
+  /** Sends the question with the running summary and the latest messages not in it yet. */
   function ask(text: string) {
     const trimmed = text.trim();
     if (!trimmed || busy) return;
     setQuestion("");
-    void exchange(trimmed, async (signal) => ({ text: await askAssistant(trimmed, signal) }));
+    const context = contextFor(summary, messages);
+    void exchange(trimmed, async (signal) => ({ text: await askAssistant(trimmed, context, signal) }));
   }
 
   function retry(index: number) {
@@ -150,6 +428,7 @@ export function ChatWidget() {
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    setShowHistory(false);
     ask(question);
   }
 
@@ -159,6 +438,7 @@ export function ChatWidget() {
     <>
       {open ? (
         <section
+          ref={panelRef}
           role="dialog"
           aria-labelledby={titleId}
           onKeyDown={(event) => {
@@ -167,22 +447,50 @@ export function ChatWidget() {
               minimize();
             }
           }}
+          style={panelStyle}
           className={cn(
-            "fixed right-4 bottom-29.5 left-4 z-40 flex max-h-[calc(100dvh-8.5rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground sm:left-auto sm:right-6 sm:w-90",
+            "fixed z-40 flex flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground",
+            // Default spot (launcher not moved): 24 px above the launcher at the bottom-right, as in the design.
+            !placement && "right-4 bottom-29.5 left-4 max-h-[calc(100dvh-8.5rem)] origin-bottom-right sm:left-auto sm:right-6 sm:w-90",
             "shadow-[0_12px_32px_0_rgb(15_23_41/0.18)] dark:shadow-[0_12px_32px_0_rgb(0_0_0/0.5)]",
-            "origin-bottom-right animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 duration-200 motion-reduce:animate-none",
+            "animate-in fade-in-0 zoom-in-95 duration-200 motion-reduce:animate-none",
           )}
         >
-          {/* Header */}
-          <header className="flex shrink-0 items-center gap-2.5 px-4 py-3.5">
+          {/* Resize grip: on the left corner away from the launcher (the panel grows away from the owl) */}
+          {canResize ? (
+            <button
+              type="button"
+              onPointerDown={startResize}
+              onPointerMove={moveResize}
+              onPointerUp={endResize}
+              onPointerCancel={() => {
+                resize.current = null;
+              }}
+              onDoubleClick={resetSize}
+              onKeyDown={resizeWithKeys}
+              aria-label="Resize chat. Arrow keys resize, Home resets."
+              title="Drag to resize · double-click to reset"
+              className={cn(
+                "absolute left-0 z-10 flex size-5 touch-none items-center justify-center outline-none select-none focus-visible:ring-2 focus-visible:ring-brand-blue/40",
+                panelAnchor === "bottom" ? "top-0 cursor-nwse-resize rounded-tl-2xl text-[#0f172a]/45" : "bottom-0 cursor-nesw-resize rounded-bl-2xl text-muted-foreground",
+              )}
+            >
+              <svg aria-hidden viewBox="0 0 10 10" className={cn("size-2.5", panelAnchor === "top" && "-scale-y-100")} fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round">
+                <path d="M1 9 9 1M1 5 5 1" />
+              </svg>
+            </button>
+          ) : null}
+
+          {/* Header (brand gold in both themes, as in the design) */}
+          <header className="flex shrink-0 items-center gap-2.5 bg-brand-gold px-4 py-3.5">
             <Owl className="h-7 w-9" sizes="32px" />
-            <div className="min-w-0 flex-1">
-              <h2 id={titleId} className="truncate text-[0.875rem] font-semibold text-foreground">
-                STI Vote Buddy
+            <div className="min-w-0 flex-1 text-white">
+              <h2 id={titleId} className="truncate text-[0.875rem] font-semibold">
+                Owlie
               </h2>
-              <p className="truncate text-[0.6875rem] text-muted-foreground">Your friendly election assistant</p>
+              <p className="truncate text-[0.6875rem]">Your friendly election assistant</p>
             </div>
-            <div className="flex shrink-0 items-center gap-1 text-muted-foreground">
+            <div className="flex shrink-0 items-center gap-1 text-[#0f172a]">
               <WindowButton label="Minimize" onClick={minimize}>
                 <Minus aria-hidden className="size-4" strokeWidth={1.75} />
               </WindowButton>
@@ -204,6 +512,19 @@ export function ChatWidget() {
             </p>
             <button
               type="button"
+              onClick={toggleHistory}
+              aria-pressed={showHistory}
+              aria-label="Chat history"
+              title="Chat history"
+              className={cn(
+                "flex h-7 w-8.75 cursor-pointer items-center justify-center rounded-md border border-border bg-card text-muted-foreground outline-none transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-blue/30",
+                showHistory && "bg-muted text-foreground",
+              )}
+            >
+              <History aria-hidden className="size-4" strokeWidth={1.75} />
+            </button>
+            <button
+              type="button"
               onClick={startNewChat}
               disabled={!started && !question}
               className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[0.6875rem] font-medium text-foreground outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand-blue/30 disabled:cursor-default disabled:hover:bg-transparent"
@@ -213,37 +534,44 @@ export function ChatWidget() {
             </button>
           </div>
 
-          {/* Conversation */}
-          <div ref={logRef} role="log" aria-label="Conversation" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            {started ? (
-              <ol className="flex flex-col gap-3 px-4 py-4">
-                {messages.map((message, index) => (
-                  <MessageItem key={message.id} message={message} onRetry={() => retry(index)} retryDisabled={busy} />
-                ))}
-              </ol>
-            ) : (
-              <div className="flex flex-col items-center gap-2.5 px-7 pt-7 pb-6">
-                <Owl className="h-15.75 w-20" sizes="72px" />
-                <p className="text-center text-[1.0625rem] font-semibold text-foreground">Hi! Need help with the election?</p>
+          {/* Earlier conversations (History button), in place of the chat */}
+          {showHistory ? (
+            <HistoryList chats={pastChats} onOpen={reopen} onDelete={remove} />
+          ) : (
+            <>
+              {/* Conversation */}
+              <div ref={logRef} role="log" aria-label="Conversation" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                {started ? (
+                  <ol className="flex flex-col gap-3 px-4 py-4">
+                    {messages.map((message, index) => (
+                      <MessageItem key={message.id} message={message} onRetry={() => retry(index)} retryDisabled={busy} />
+                    ))}
+                  </ol>
+              ) : (
+                  <div className="flex flex-col items-center gap-2.5 px-7 pt-7 pb-6">
+                    <Owl className="h-15.75 w-20" sizes="72px" />
+                    <p className="text-center text-[1.0625rem] font-semibold text-foreground">Hi! Need help with the election?</p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Quick actions (until the conversation starts) */}
-          {started ? null : (
-            <div className="grid shrink-0 grid-cols-2 gap-x-2 gap-y-2.5 border-t border-border px-4 pt-4 pb-3">
-              {QUICK_ACTIONS.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => runQuickAction(id, label)}
-                  className="flex min-w-0 cursor-pointer items-center gap-2 rounded-[0.625rem] border border-border px-3 py-2.5 text-left text-[0.75rem] font-medium text-foreground outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand-blue/30"
-                >
-                  <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
-                  <span className="truncate">{label}</span>
-                </button>
-              ))}
-            </div>
+              {/* Quick actions (until the conversation starts) */}
+              {started ? null : (
+                <div className="grid shrink-0 grid-cols-2 gap-x-2 gap-y-2.5 border-t border-border px-4 pt-4 pb-3">
+                  {QUICK_ACTIONS.map(({ id, label, icon: Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => runQuickAction(id, label)}
+                      className="flex min-w-0 cursor-pointer items-center gap-2 rounded-[0.625rem] border border-border px-3 py-2.5 text-left text-[0.75rem] font-medium text-foreground outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+                    >
+                      <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                      <span className="truncate">{label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
           {/* Composer */}
@@ -296,13 +624,31 @@ export function ChatWidget() {
       <button
         ref={launcherRef}
         type="button"
-        onClick={() => (open ? minimize() : show())}
+        onClick={() => {
+          if (suppressClick.current) {
+            suppressClick.current = false;
+            return;
+          }
+          if (open) minimize();
+          else show();
+        }}
+        onPointerDown={startDrag}
+        onPointerMove={moveDrag}
+        onPointerUp={endDrag}
+        onPointerCancel={cancelDrag}
+        onKeyDown={moveWithKeys}
         aria-expanded={open}
-        aria-label={open ? "Hide STI Vote Buddy" : "Open STI Vote Buddy, the election assistant"}
-        title="STI Vote Buddy"
+        aria-label={open ? "Hide Owlie" : "Open Owlie, the election assistant"}
+        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight Alt+Home"
+        title="Owlie · drag to move"
+        style={launcherPosition ? { left: launcherPosition.x, top: launcherPosition.y } : undefined}
         className={cn(
-          "group fixed right-4 bottom-10.5 z-40 h-13 w-17.25 cursor-pointer rounded-xl outline-none sm:right-11",
-          "transition-transform duration-200 ease-out hover:-translate-y-0.5 focus-visible:ring-3 focus-visible:ring-brand-blue/40 active:translate-y-0 active:scale-95 motion-reduce:transition-none",
+          "group fixed z-40 h-13 w-17.25 touch-none rounded-xl outline-none select-none",
+          !launcherPosition && "right-4 bottom-10.5 sm:right-11",
+          dragPosition
+            ? "cursor-grabbing scale-105"
+            : "cursor-pointer transition-transform duration-200 ease-out hover:-translate-y-0.5 active:translate-y-0 active:scale-95 motion-reduce:transition-none",
+          "focus-visible:ring-3 focus-visible:ring-brand-blue/40",
         )}
       >
         <Image src="/images/chat/launcher-bubble.svg" alt="" width={67} height={54} unoptimized className="pointer-events-none absolute top-[-0.74px] left-px h-[53.97px] w-16.75 max-w-none" />
@@ -314,6 +660,56 @@ export function ChatWidget() {
   );
 }
 
+const historyTime = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+function formatHistoryTime(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "" : historyTime.format(date);
+}
+
+/** Earlier conversations in this tab, newest first: open one to continue it, or delete it. */
+function HistoryList({ chats, onOpen, onDelete }: { chats: readonly PastChat[]; onOpen: (id: string) => void; onDelete: (id: string) => void }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+      <p className="px-4 pt-3.5 pb-2 font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground uppercase">Earlier chats</p>
+      {chats.length === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-7 pt-6 pb-8 text-center">
+          <History aria-hidden className="size-5 text-muted-foreground" strokeWidth={1.75} />
+          <p className="text-[0.8125rem] font-medium text-foreground">No earlier chats yet</p>
+          <p className="text-[0.75rem] leading-[1.4] text-muted-foreground">When you start a new chat, the current one is kept here until you close this tab.</p>
+        </div>
+      ) : (
+        <ul className="flex flex-col pb-2">
+          {chats.map((chat) => (
+            <li key={chat.id} className="group/chat relative flex items-center border-t border-border first:border-t-0">
+              <button
+                type="button"
+                onClick={() => onOpen(chat.id)}
+                className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 px-4 py-2.5 pr-12 text-left outline-none transition-colors duration-150 hover:bg-muted focus-visible:bg-muted dark:hover:bg-white/4"
+              >
+                <span className="truncate text-[0.8125rem] font-medium text-foreground">{chat.title}</span>
+                <span className="text-[0.6875rem] text-muted-foreground">
+                  {chat.messageCount} {chat.messageCount === 1 ? "message" : "messages"}
+                  {formatHistoryTime(chat.updatedAt) ? ` · ${formatHistoryTime(chat.updatedAt)}` : ""}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(chat.id)}
+                aria-label={`Delete “${chat.title}”`}
+                title="Delete"
+                className="absolute right-3 flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground opacity-0 outline-none transition-[opacity,color,background-color] duration-150 group-hover/chat:opacity-100 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+              >
+                <Trash2 aria-hidden className="size-3.5" strokeWidth={1.75} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function WindowButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
     <button
@@ -321,7 +717,7 @@ function WindowButton({ label, onClick, children }: { label: string; onClick: ()
       onClick={onClick}
       aria-label={label}
       title={label}
-      className="flex size-7 cursor-pointer items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+      className="flex size-7 cursor-pointer items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-black/10 focus-visible:ring-2 focus-visible:ring-brand-navy/40"
     >
       {children}
     </button>
@@ -346,8 +742,8 @@ function MessageItem({ message, onRetry, retryDisabled }: { message: ChatMessage
       <div className="flex max-w-[85%] min-w-0 flex-col gap-2">
         <div
           className={cn(
-            "rounded-xl rounded-bl-sm px-3 py-2 text-[0.8125rem] leading-[1.45] whitespace-pre-wrap",
-            message.state === "error" ? "border border-destructive/25 bg-destructive/5 text-destructive" : "bg-muted text-foreground dark:bg-white/6",
+            "min-w-0 rounded-xl rounded-bl-sm px-3 py-2 text-[0.8125rem] leading-[1.45]",
+            message.state === "error" ? "border border-destructive/25 bg-destructive/5 whitespace-pre-wrap text-destructive" : "bg-muted text-foreground dark:bg-white/6",
           )}
         >
           {waiting ? (
@@ -356,8 +752,10 @@ function MessageItem({ message, onRetry, retryDisabled }: { message: ChatMessage
                 <span key={delay} className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60 motion-reduce:animate-none" style={{ animationDelay: `${delay}ms` }} />
               ))}
             </span>
-          ) : (
+          ) : message.state === "error" ? (
             message.text
+          ) : (
+            <ChatMarkdown text={message.text} />
           )}
         </div>
         {message.links?.length ? (

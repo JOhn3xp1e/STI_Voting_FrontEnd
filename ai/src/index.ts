@@ -1,4 +1,4 @@
-import { handleChat } from "./chat";
+import { handleChat, handleChatSummary } from "./chat";
 import { handleImportNames, handleImportSpec } from "./import";
 import { AiError, modelReady } from "./models";
 
@@ -7,7 +7,8 @@ import { AiError, modelReady } from "./models";
  *
  *   GET  /health        { ok: true }                       (no token; for uptime checks)
  *   GET  /status        which models are set up             (token)
- *   POST /chat          STI Vote Buddy (the backend)       (token)
+ *   POST /chat          Owlie (the backend)       (token)
+ *   POST /chat/summarize  running chat summary (admin)     (token)
  *   POST /import/spec   "Convert with AI" rules (admin)     (token)
  *   POST /import/names  first / middle name splits (admin)  (token)
  *
@@ -22,6 +23,7 @@ type Handler = (env: Env, body: unknown, signal: AbortSignal) => Promise<Respons
 
 const POST_ROUTES: Record<string, Handler> = {
   "/chat": handleChat,
+  "/chat/summarize": handleChatSummary,
   "/import/spec": handleImportSpec,
   "/import/names": handleImportNames,
 };
