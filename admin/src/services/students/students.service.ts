@@ -1,3 +1,4 @@
+import { careerColor } from "@/lib/programs";
 import { apiClient } from "@/services/api/client";
 import { getApiErrorMessage } from "@/services/api/error-message";
 import type {
@@ -97,6 +98,10 @@ interface ProgramDto {
 interface CareerDto {
   code: string;
   name: string;
+  minLevel?: number | null;
+  maxLevel?: number | null;
+  color?: string | null;
+  programScope?: string[] | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -176,14 +181,21 @@ export async function fetchStudentCatalog({ signal }: RequestOptions = {}): Prom
   ]);
 
   const terms = termDtos.map(toTerm).sort((a, b) => b.id.localeCompare(a.id));
-  const careers: CareerOption[] = careerDtos
-    .map((c) => ({ code: c.code, name: c.name }))
-    .sort((a, b) => a.code.localeCompare(b.code));
+  const sortedCareers = [...careerDtos].sort((a, b) => a.code.localeCompare(b.code));
+  const careers: CareerOption[] = sortedCareers.map((c) => ({
+    code: c.code,
+    name: c.name,
+    color: careerColor({ code: c.code, color: c.color ?? null }, sortedCareers),
+    programs: (c.programScope ?? []).map((p) => p.toUpperCase()),
+    minLevel: c.minLevel ?? null,
+    maxLevel: c.maxLevel ?? null,
+  }));
 
   return {
     terms,
     currentTerm: pickCurrentTerm(terms),
     programs: programDtos.map((p) => p.code).sort((a, b) => a.localeCompare(b)),
+    programNames: Object.fromEntries(programDtos.map((p) => [p.code, p.name])),
     careers,
     yearLevels: [...YEAR_LEVELS],
   };

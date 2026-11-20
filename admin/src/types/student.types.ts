@@ -57,6 +57,13 @@ export interface TermOption {
 export interface CareerOption {
   code: string;
   name: string;
+  /** Display color (the career's own, else a stable fallback), as on Programs & careers. */
+  color: string;
+  /** Program codes listed under the career; empty for careers without programs (e.g. JHS). */
+  programs: ProgramCode[];
+  /** Inclusive year / grade range; `null` when the backend doesn't send it. */
+  minLevel: number | null;
+  maxLevel: number | null;
 }
 
 /** Reference lists the Students page needs (terms, programs, careers). */
@@ -66,6 +73,8 @@ export interface StudentCatalog {
   /** The term running today, else the newest one. `null` when no term exists yet. */
   currentTerm: TermOption | null;
   programs: ProgramCode[];
+  /** Program code → full name, e.g. BSIT → "BS Information Technology". */
+  programNames: Record<ProgramCode, string>;
   careers: CareerOption[];
   /** Year levels offered in the year pickers. */
   yearLevels: YearLevel[];

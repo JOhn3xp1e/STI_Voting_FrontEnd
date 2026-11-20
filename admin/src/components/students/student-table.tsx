@@ -1,8 +1,9 @@
 "use client";
 
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Checkbox } from "@/components/ui/checkbox";
+import { textOn } from "@/lib/programs";
 import { formatStudentName, formatYear, getStudentInitials, getStudentStatus } from "@/lib/students";
 import { cn } from "@/lib/utils";
 import type { Student, StudentStatus } from "@/types/student.types";
@@ -51,6 +52,8 @@ function StatusBadge({ status }: { status: StudentStatus }) {
 
 interface RowProps {
   student: Student;
+  /** The student's career color (`undefined` when unknown). */
+  careerColor: string | undefined;
   checked: boolean;
   highlighted: boolean;
   /** Position in the entrance stagger, or -1 for no entrance. */
@@ -59,7 +62,7 @@ interface RowProps {
   onToggle: (studentNo: string, checked: boolean) => void;
 }
 
-const StudentRow = memo(function StudentRow({ student, checked, highlighted, introIndex, currentTermId, onToggle }: RowProps) {
+const StudentRow = memo(function StudentRow({ student, careerColor, checked, highlighted, introIndex, currentTermId, onToggle }: RowProps) {
   const name = formatStudentName(student);
   return (
     <tr
@@ -94,6 +97,22 @@ const StudentRow = memo(function StudentRow({ student, checked, highlighted, int
         </div>
       </td>
       <td className="border-b border-border font-mono text-[0.75rem] text-muted-foreground tabular-nums">{student.studentNo}</td>
+      <td className="border-b border-border">
+        {student.careerCode ? (
+          careerColor ? (
+            <span
+              className="inline-flex h-5 items-center rounded px-1.75 font-mono text-[0.625rem] leading-none font-medium tracking-[0.04em] transition-transform duration-200 group-hover/row:scale-105 motion-reduce:transition-none"
+              style={{ backgroundColor: careerColor, color: textOn(careerColor) }}
+            >
+              {student.careerCode}
+            </span>
+          ) : (
+            <span className="font-mono text-[0.75rem] text-muted-foreground">{student.careerCode}</span>
+          )
+        ) : (
+          <span className="text-[0.75rem] text-muted-foreground/60">—</span>
+        )}
+      </td>
       <td className="border-b border-border text-[0.8125rem] text-muted-foreground">{student.program ?? "—"}</td>
       <td className="border-b border-border font-mono text-[0.75rem] text-muted-foreground">{formatYear(student.year)}</td>
       <td
@@ -128,7 +147,9 @@ interface StudentTableProps {
  * renders rows in batches as you scroll, so the full roster stays smooth.
  */
 export function StudentTable({ students, selected, onToggle, onToggleAll, highlighted, resultKey, emptyAction }: StudentTableProps) {
-  const currentTermId = useStudentCatalog().currentTerm?.id ?? null;
+  const { currentTerm, careers } = useStudentCatalog();
+  const currentTermId = currentTerm?.id ?? null;
+  const careerColors = useMemo(() => new Map(careers.map((c) => [c.code, c.color])), [careers]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLTableRowElement>(null);
 
@@ -177,7 +198,7 @@ export function StudentTable({ students, selected, onToggle, onToggleAll, highli
       ref={scrollRef}
       className="max-h-[calc(2.625rem+7*3.625rem+1px)] overflow-auto overscroll-contain border-t border-border scrollbar-thin"
     >
-      <table className="w-full min-w-160 table-fixed border-separate border-spacing-0 text-left">
+      <table className="w-full min-w-176 table-fixed border-separate border-spacing-0 text-left">
         <caption className="sr-only">
           Students, {students.length.toLocaleString("en-US")} {students.length === 1 ? "result" : "results"}
         </caption>
@@ -185,6 +206,7 @@ export function StudentTable({ students, selected, onToggle, onToggleAll, highli
           <col className="w-9.5" />
           <col />
           <col className="w-28 min-[90rem]:w-31.5" />
+          <col className="w-18 min-[90rem]:w-21" />
           <col className="w-17 min-[90rem]:w-19.5" />
           <col className="w-14 min-[90rem]:w-15.5" />
           <col className="w-24 min-[90rem]:w-26.5" />
@@ -204,6 +226,7 @@ export function StudentTable({ students, selected, onToggle, onToggleAll, highli
             </th>
             <th scope="col" className="border-b border-border font-normal">Student</th>
             <th scope="col" className="border-b border-border font-normal">Student no.</th>
+            <th scope="col" className="border-b border-border font-normal">Career</th>
             <th scope="col" className="border-b border-border font-normal">Program</th>
             <th scope="col" className="border-b border-border font-normal">Year</th>
             <th scope="col" className="border-b border-border font-normal">Term</th>
@@ -213,7 +236,7 @@ export function StudentTable({ students, selected, onToggle, onToggleAll, highli
         <tbody key={resultKey}>
           {students.length === 0 ? (
             <tr className={styles.rowIn}>
-              <td colSpan={7} className="h-50 border-b border-border text-center">
+              <td colSpan={8} className="h-50 border-b border-border text-center">
                 <p className="text-[0.875rem] font-medium text-foreground">No students match</p>
                 <p className="mt-1 text-[0.8125rem] text-muted-foreground">Try another search or loosen the filters.</p>
                 {emptyAction ? <div className="mt-3.5">{emptyAction}</div> : null}
@@ -224,6 +247,7 @@ export function StudentTable({ students, selected, onToggle, onToggleAll, highli
               <StudentRow
                 key={student.studentNo}
                 student={student}
+                careerColor={student.careerCode ? careerColors.get(student.careerCode) : undefined}
                 checked={selected.has(student.studentNo)}
                 highlighted={highlighted.has(student.studentNo)}
                 introIndex={intro && index < INTRO_ROWS ? index : -1}
@@ -234,7 +258,7 @@ export function StudentTable({ students, selected, onToggle, onToggleAll, highli
           )}
           {hasMore ? (
             <tr ref={sentinelRef} aria-hidden>
-              <td colSpan={7} className="h-px p-0" />
+              <td colSpan={8} className="h-px p-0" />
             </tr>
           ) : null}
         </tbody>

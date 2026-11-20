@@ -1,9 +1,7 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { CircleAlert, CircleCheck } from "lucide-react";
-
-import { StudentsSkeleton } from "./students-skeleton";
 
 import { NO_FACETS, countByStatus, countFacets, formatStudentName, formatYear, matchesFilters } from "@/lib/students";
 import { cn } from "@/lib/utils";
@@ -17,14 +15,15 @@ import {
 } from "@/services/students/students.service";
 import type { EnrollmentStatus, FacetFilters, Student, StudentCatalog, YearLevel } from "@/types/student.types";
 
-import { AddStudentForm } from "./add-student-form";
+import { AddStudentDialog } from "./add-student-dialog";
 import { BulkActionBar } from "./bulk-action-bar";
-import { CsvImportDialog } from "./csv-import-dialog";
+import { CsvImportDialog, type ImportOutcome } from "./csv-import-dialog";
 import { StudentCatalogProvider, useStudentCatalog } from "./student-catalog";
 import { StudentStats, type StudentStat } from "./student-stats";
 import { StudentTable } from "./student-table";
 import { StudentToolbar } from "./student-toolbar";
 import { toolbarButtonClassName } from "./student-toolbar-styles";
+import { StudentsSkeleton } from "./students-skeleton";
 
 /** Requests sent at once during a CSV import. */
 const IMPORT_CONCURRENCY = 4;
@@ -61,6 +60,11 @@ export function StudentsPage() {
     setAttempt((n) => n + 1);
   }
 
+  const setCatalog = useCallback(
+    (catalog: StudentCatalog) => setState((current) => (current.status === "ready" ? { ...current, catalog } : current)),
+    [],
+  );
+
   if (state.status === "loading") return <StudentsSkeleton />;
 
   if (state.status === "error") {
@@ -82,7 +86,7 @@ export function StudentsPage() {
 
   return (
     <StudentCatalogProvider value={state.catalog}>
-      <StudentsRoster key={attempt} initialStudents={state.students} loadedAt={state.loadedAt} />
+      <StudentsRoster key={attempt} initialStudents={state.students} loadedAt={state.loadedAt} onCatalog={setCatalog} />
     </StudentCatalogProvider>
   );
 }
@@ -91,11 +95,12 @@ export function StudentsPage() {
 /*                                   Helpers                                  */
 /* -------------------------------------------------------------------------- */
 
-/** Runs `task` over `items`, a few at a time, and never rejects. */
-async function settleInBatches<T, R>(items: readonly T[], size: number, task: (item: T) => Promise<R>) {
+/** Runs `task` over `items`, a few at a time, never rejects, and reports how many are done. */
+async function settleInBatches<T, R>(items: readonly T[], size: number, task: (item: T) => Promise<R>, onSettled?: (count: number) => void) {
   const results: PromiseSettledResult<R>[] = [];
   for (let i = 0; i < items.length; i += size) {
     results.push(...(await Promise.allSettled(items.slice(i, i + size).map(task))));
+    onSettled?.(results.length);
   }
   return results;
 }
@@ -117,6 +122,9 @@ function growthTrend(students: readonly Student[], now: number, points = 10): nu
 // No program check: careers without programs (e.g. JHS) enroll students with program = null.
 const hasEnrollment = (s: Student) => s.careerCode !== null && s.year !== null && s.term !== null;
 
+/** "Tertiary" stays a word; longer career names ("Senior High School") use their code. */
+const careerWord = (career: { code: string; name: string }) => (career.name.length <= 10 ? career.name : career.code);
+
 /* -------------------------------------------------------------------------- */
 /*                                   Roster                                   */
 /* -------------------------------------------------------------------------- */
@@ -127,21 +135,30 @@ interface Notice {
   tone: "success" | "error";
 }
 
-function StudentsRoster({ initialStudents, loadedAt }: { initialStudents: Student[]; loadedAt: number }) {
+interface RosterProps {
+  initialStudents: Student[];
+  loadedAt: number;
+  /** Replaces the catalog after a refresh. */
+  onCatalog: (catalog: StudentCatalog) => void;
+}
+
+function StudentsRoster({ initialStudents, loadedAt, onCatalog }: RosterProps) {
   const catalog = useStudentCatalog();
   const currentTerm = catalog.currentTerm;
   const currentTermId = currentTerm?.id ?? null;
-  const firstFieldRef = useRef<HTMLInputElement>(null);
 
   const [students, setStudents] = useState<Student[]>(initialStudents);
   const [query, setQuery] = useState("");
   const [facets, setFacets] = useState<FacetFilters>(NO_FACETS);
+  const [career, setCareer] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [highlighted, setHighlighted] = useState<Set<string>>(() => new Set());
-  /** Bumped when rows are added, so the table replays its entrance from the top. */
+  /** Bumped when rows are added or reloaded, so the table replays its entrance from the top. */
   const [revision, setRevision] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
 
   // Typing stays responsive; the table catches up with the deferred value.
@@ -163,17 +180,25 @@ function StudentsRoster({ initialStudents, loadedAt }: { initialStudents: Studen
 
   const say = (text: string, tone: Notice["tone"] = "success") => setNotice({ id: Date.now(), text, tone });
 
+  const inCareer = useCallback((s: Student) => career === null || s.careerCode === career, [career]);
+
   const visible = useMemo(
-    () => students.filter((s) => matchesFilters(s, deferredQuery, facets, currentTermId)),
-    [students, deferredQuery, facets, currentTermId],
+    () => students.filter((s) => inCareer(s) && matchesFilters(s, deferredQuery, facets, currentTermId)),
+    [students, inCareer, deferredQuery, facets, currentTermId],
   );
 
   const countMatches = useCallback(
-    (draft: FacetFilters) => students.reduce((n, s) => n + (matchesFilters(s, query, draft, currentTermId) ? 1 : 0), 0),
-    [students, query, currentTermId],
+    (draft: FacetFilters) => students.reduce((n, s) => n + (inCareer(s) && matchesFilters(s, query, draft, currentTermId) ? 1 : 0), 0),
+    [students, inCareer, query, currentTermId],
   );
 
   const counts = useMemo(() => countByStatus(students, currentTermId), [students, currentTermId]);
+
+  const careerCounts = useMemo(() => {
+    const byCareer: Record<string, number> = {};
+    for (const s of students) if (s.careerCode) byCareer[s.careerCode] = (byCareer[s.careerCode] ?? 0) + 1;
+    return { total: students.length, byCareer };
+  }, [students]);
 
   const addedThisTerm = useMemo(() => {
     if (!currentTerm) return 0;
@@ -183,12 +208,17 @@ function StudentsRoster({ initialStudents, loadedAt }: { initialStudents: Studen
 
   const totalTrend = useMemo(() => growthTrend(students, loadedAt), [students, loadedAt]);
 
+  const careerBreakdown = catalog.careers
+    .filter((c) => careerCounts.byCareer[c.code])
+    .map((c) => `${careerCounts.byCareer[c.code].toLocaleString("en-US")} ${careerWord(c)}`)
+    .join(" · ");
+
   const termName = currentTermId ?? "the current term";
   const stats: StudentStat[] = [
     {
       label: "Total students",
       value: students.length,
-      detail: currentTerm ? `+${addedThisTerm} this term` : "no term yet",
+      detail: catalog.careers.length > 1 && careerBreakdown ? careerBreakdown : currentTerm ? `+${addedThisTerm} this term` : "no term yet",
       tone: "blue",
       trend: totalTrend,
     },
@@ -200,7 +230,7 @@ function StudentsRoster({ initialStudents, loadedAt }: { initialStudents: Studen
   const existingStudentNos = useMemo(() => new Set(students.map((s) => s.studentNo)), [students]);
   const existingEmails = useMemo(() => new Set(students.map((s) => s.email.toLowerCase())), [students]);
 
-  const resultKey = `${deferredQuery.trim().toLowerCase()}|${JSON.stringify(facets)}|${revision}`;
+  const resultKey = `${deferredQuery.trim().toLowerCase()}|${JSON.stringify(facets)}|${career ?? ""}|${revision}`;
 
   /* ---------------------------------- selection ---------------------------------- */
 
@@ -267,12 +297,30 @@ function StudentsRoster({ initialStudents, loadedAt }: { initialStudents: Studen
     }
   }
 
-  /* ------------------------------------ adding ------------------------------------ */
+  /* ------------------------------------ data ------------------------------------- */
+
+  /** Reloads the roster and catalog in place, keeping search, filters and the selection that still exists. */
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      const [nextCatalog, nextStudents] = await Promise.all([fetchStudentCatalog(), fetchStudents()]);
+      onCatalog(nextCatalog);
+      setStudents(nextStudents);
+      const known = new Set(nextStudents.map((s) => s.studentNo));
+      setSelected((current) => new Set([...current].filter((no) => known.has(no))));
+      setRevision((r) => r + 1);
+    } catch (error) {
+      say(`Couldn't refresh. ${getStudentsErrorMessage(error)}`, "error");
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   /** Shows every student again so new rows are visible at the top. */
   function revealAdded(studentNos: string[]) {
     setQuery("");
     setFacets(NO_FACETS);
+    setCareer(null);
     setRevision((r) => r + 1);
     setHighlighted(new Set(studentNos));
   }
@@ -289,91 +337,89 @@ function StudentsRoster({ initialStudents, loadedAt }: { initialStudents: Studen
     say(`Added ${formatStudentName(saved)} · enrolled in ${saved.term ?? student.term}.`);
   }
 
-  async function applyImport({ added, updated }: { added: Student[]; updated: Student[] }) {
-    const created = await settleInBatches(added, IMPORT_CONCURRENCY, createStudent);
-    const changed = await settleInBatches(updated, IMPORT_CONCURRENCY, async (s) => {
-      await updateEnrollment(s);
-      return s;
-    });
+  async function applyImport(
+    { added, updated }: { added: Student[]; updated: Student[] },
+    onProgress: (done: number, total: number) => void,
+  ): Promise<ImportOutcome> {
+    const total = added.length + updated.length;
+    const created = await settleInBatches(added, IMPORT_CONCURRENCY, createStudent, (n) => onProgress(n, total));
+    const changed = await settleInBatches(
+      updated,
+      IMPORT_CONCURRENCY,
+      async (s) => {
+        await updateEnrollment(s);
+        return s;
+      },
+      (n) => onProgress(added.length + n, total),
+    );
 
     const ok = [...created, ...changed].flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
     const failures = [...created, ...changed].flatMap((r) => (r.status === "rejected" ? [r.reason as unknown] : []));
     const okAdded = created.filter((r) => r.status === "fulfilled").length;
-    const okUpdated = ok.length - okAdded;
 
-    if (ok.length === 0) {
-      throw new Error(`Nothing was imported. ${getStudentsErrorMessage(failures[0])}`);
+    if (ok.length > 0) {
+      setStudents((list) => {
+        const byNo = new Map(ok.map((s) => [s.studentNo, s]));
+        const known = new Set(list.map((s) => s.studentNo));
+        return [...ok.filter((s) => !known.has(s.studentNo)), ...list.map((s) => byNo.get(s.studentNo) ?? s)];
+      });
+      revealAdded(ok.map((s) => s.studentNo));
     }
 
-    setStudents((list) => {
-      const byNo = new Map(ok.map((s) => [s.studentNo, s]));
-      const known = new Set(list.map((s) => s.studentNo));
-      return [...ok.filter((s) => !known.has(s.studentNo)), ...list.map((s) => byNo.get(s.studentNo) ?? s)];
-    });
-    revealAdded(ok.map((s) => s.studentNo));
-
-    const summary = `Imported ${okAdded} new · ${okUpdated} updated.`;
-    if (failures.length) {
-      say(`${summary} ${failures.length} failed: ${getStudentsErrorMessage(failures[0])}`, "error");
-    } else {
-      say(summary);
-    }
+    return {
+      added: okAdded,
+      updated: ok.length - okAdded,
+      failed: failures.length,
+      firstError: failures.length ? getStudentsErrorMessage(failures[0]) : null,
+    };
   }
 
-  const filtersActive = query.trim() !== "" || countFacets(facets) > 0;
+  const filtersActive = query.trim() !== "" || countFacets(facets) > 0 || career !== null;
 
   return (
     <div className="px-4 pt-0 pb-28 sm:px-6 lg:px-8">
       <StudentStats stats={stats} />
 
-      {/* Toolbar above the table; the Add student card lines up with the table's top edge. */}
-      <div className="mt-5 grid grid-cols-1 items-start gap-x-6 gap-y-5.5 min-[85rem]:grid-cols-[minmax(0,1fr)_22.5rem]">
-        <StudentToolbar
-          query={query}
-          onQueryChange={setQuery}
-          facets={facets}
-          onFacetsChange={setFacets}
-          countMatches={countMatches}
-          onImport={() => setImportOpen(true)}
-          onAddStudent={() => {
-            const field = firstFieldRef.current;
-            field?.scrollIntoView({ behavior: "smooth", block: "center" });
-            field?.focus({ preventScroll: true });
-          }}
-          className="min-[85rem]:col-start-1"
-        />
+      <StudentToolbar
+        query={query}
+        onQueryChange={setQuery}
+        facets={facets}
+        onFacetsChange={setFacets}
+        countMatches={countMatches}
+        careers={catalog.careers}
+        careerCounts={careerCounts}
+        career={career}
+        onCareerChange={setCareer}
+        refreshing={refreshing}
+        onRefresh={() => void refresh()}
+        onImport={() => setImportOpen(true)}
+        onAddStudent={() => setAddOpen(true)}
+        className="mt-5"
+      />
 
-        <div className="min-w-0 min-[85rem]:col-start-1 min-[85rem]:row-start-2">
-          <StudentTable
-            students={visible}
-            selected={selected}
-            onToggle={toggle}
-            onToggleAll={toggleAll}
-            highlighted={highlighted}
-            resultKey={resultKey}
-            emptyAction={
-              filtersActive ? (
-                <button
-                  type="button"
-                  className={cn(toolbarButtonClassName, "h-8 text-[0.8125rem]")}
-                  onClick={() => {
-                    setQuery("");
-                    setFacets(NO_FACETS);
-                  }}
-                >
-                  Clear search &amp; filters
-                </button>
-              ) : null
-            }
-          />
-        </div>
-
-        <AddStudentForm
-          existingStudentNos={existingStudentNos}
-          existingEmails={existingEmails}
-          onAdd={addStudent}
-          firstFieldRef={firstFieldRef}
-          className="min-[85rem]:col-start-2 min-[85rem]:row-start-2"
+      <div className="mt-5.5 min-w-0">
+        <StudentTable
+          students={visible}
+          selected={selected}
+          onToggle={toggle}
+          onToggleAll={toggleAll}
+          highlighted={highlighted}
+          resultKey={resultKey}
+          emptyAction={
+            filtersActive ? (
+              <button
+                type="button"
+                className={cn(toolbarButtonClassName, "h-8 text-[0.8125rem]")}
+                onClick={() => {
+                  setQuery("");
+                  setFacets(NO_FACETS);
+                  setCareer(null);
+                }}
+              >
+                Clear search &amp; filters
+              </button>
+            ) : null
+          }
         />
       </div>
 
@@ -397,6 +443,7 @@ function StudentsRoster({ initialStudents, loadedAt }: { initialStudents: Studen
         onDiscard={() => setSelected(new Set())}
       />
 
+      <AddStudentDialog open={addOpen} onOpenChange={setAddOpen} existingStudentNos={existingStudentNos} existingEmails={existingEmails} onAdd={addStudent} />
       <CsvImportDialog open={importOpen} onOpenChange={setImportOpen} students={students} onApply={applyImport} />
 
       {/* Feedback toast */}

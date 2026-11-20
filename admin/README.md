@@ -105,9 +105,3 @@ npx shadcn@latest add <component>
 
 Components are written to `src/components/ui` and import `cn` from `@/lib/utils`.
 
-0B1220  
-0F4C9E  
-0F172A
-64748B
-FFC200                
-FFFFFF

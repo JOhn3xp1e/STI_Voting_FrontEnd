@@ -1,4 +1,4 @@
-import { parseCsv } from "@/lib/students";
+import { parseCsv } from "@/lib/student-import";
 import type { Career, CareerInput, Program, ProgramInput } from "@/types/program.types";
 
 /** Grade levels a career can cover (kinder = 0 … grade 12; college years are 1–4). Same as the backend. */

@@ -180,3 +180,21 @@
   );
   background-size: 24px 24px;
 }
+/* Success tick that draws itself (Import complete). */
+@keyframes draw-tick {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Soft ring that ripples out once behind a success mark. */
+@keyframes ripple {
+  from {
+    opacity: 0.9;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.1);
+  }
+}
