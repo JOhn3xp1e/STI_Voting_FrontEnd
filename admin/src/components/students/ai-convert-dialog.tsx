@@ -194,7 +194,8 @@ export function AiConvertDialog({ open, onOpenChange, students, onImport }: AiCo
       await pause(350, signal);
 
       setDirection(1);
-      setTab("all");
+      // Nothing converted but some errors: open on the errors, which is what needs fixing.
+      setTab(result.counts.ready + result.counts.check === 0 && result.counts.error > 0 ? "error" : "all");
       setRevision((r) => r + 1);
       setAdjust("");
       setStep({ name: "review", sheet, spec, result, notice, error: null });
@@ -869,19 +870,31 @@ function ReviewStep({ step, format, tab, onTab, adjust, onAdjust, progress, down
     return [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]?.toLowerCase() ?? null;
   }, [result]);
 
+  // Why rows can't be imported, most common first ("Email already used by Juan Cruz" → "Email already used").
+  const errorReasons = useMemo(() => {
+    const tally = new Map<string, number>();
+    for (const r of result.rows) {
+      if (r.status !== "error" || !r.reason) continue;
+      const key = r.reason.replace(/\s+by\s+.+$/i, "").replace(/\s*'[^']*'/g, "");
+      tally.set(key, (tally.get(key) ?? 0) + 1);
+    }
+    return [...tally.entries()].sort((a, b) => b[1] - a[1]);
+  }, [result]);
+
   const cards: { tab: Tab; label: string; value: number; detail: string }[] = [
     { tab: "all", label: "Rows converted", value: converted, detail: "ready to import" },
     { tab: "blank", label: "Blank rows", value: result.blankLines.length, detail: "removed" },
     { tab: "check", label: "Need a look", value: counts.check, detail: counts.check ? (checkReason ?? "check these") : "none" },
-    { tab: "error", label: "Errors", value: counts.error, detail: counts.error ? "fix or skip on import" : "none" },
+    { tab: "error", label: "Errors", value: counts.error, detail: counts.error ? (errorReasons[0]?.[0]?.toLowerCase() ?? "fix or skip on import") : "none" },
   ];
 
   const shown = tab === "all" ? result.rows : tab === "blank" ? [] : result.rows.filter((r) => r.status === tab);
 
   return (
     <>
-      <div className="relative min-h-0 flex-1">
-        <div className={cn("h-full space-y-4 overflow-y-auto px-6 pt-5 pb-6 [scrollbar-width:thin]", busy && "pointer-events-none select-none")} aria-hidden={busy || undefined}>
+      {/* A flex column, so the list scrolls inside the pop-up instead of running under the footer. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className={cn("min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 pt-5 pb-6 [scrollbar-width:thin]", busy && "pointer-events-none select-none")} aria-hidden={busy || undefined}>
           {/* Counts, which double as tabs for the preview. */}
           <div role="tablist" aria-label="Rows to show" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {cards.map((card, index) => {
@@ -914,6 +927,18 @@ function ReviewStep({ step, format, tab, onTab, adjust, onAdjust, progress, down
 
           {step.error ? <Alert>{step.error}</Alert> : null}
           {step.notice ? <Alert tone="warning">{step.notice}</Alert> : null}
+          {counts.error ? (
+            <Alert>
+              <span className="font-semibold">
+                {converted === 0 ? "None of the rows can be imported yet." : `${plural(counts.error, "row")} can't be imported.`}
+              </span>{" "}
+              {errorReasons
+                .slice(0, 3)
+                .map(([reason, n]) => `${reason} (${count(n)})`)
+                .join(" · ")}
+              {errorReasons.length > 3 ? " · …" : ""}. The Note column says what to fix for each row.
+            </Alert>
+          ) : null}
 
           {/* What Groq changed */}
           <section className="overflow-hidden rounded-xl border border-border animate-in fade-in slide-in-from-bottom-2 duration-500 delay-150 fill-mode-both motion-reduce:animate-none">
@@ -971,7 +996,7 @@ function ReviewStep({ step, format, tab, onTab, adjust, onAdjust, progress, down
                   : "No blank rows."}
               </p>
             ) : (
-              <PreviewTable key={tab} rows={shown.slice(0, TABLE_LIMIT)} withNote={tab === "check" || tab === "error"} />
+              <PreviewTable key={tab} rows={shown.slice(0, TABLE_LIMIT)} withNote={shown.some((r) => r.reason)} />
             )}
           </section>
 
@@ -1041,7 +1066,7 @@ function PreviewTable({ rows, withNote }: { rows: readonly ConvertedRow[]; withN
   }
   return (
     <div className="overflow-x-auto rounded-xl border border-border [scrollbar-width:thin]">
-      <table className="w-full min-w-200 border-separate border-spacing-0 text-left text-[0.875rem]">
+      <table className={cn("w-full border-separate border-spacing-0 text-left text-[0.875rem]", withNote ? "min-w-280" : "min-w-200")}>
         <thead className="text-[0.75rem] tracking-[0.04em] text-muted-foreground uppercase">
           <tr>
             <th scope="col" className="w-28 border-b border-border px-3.5 py-2.5 font-normal">
@@ -1053,7 +1078,7 @@ function PreviewTable({ rows, withNote }: { rows: readonly ConvertedRow[]; withN
               </th>
             ))}
             {withNote ? (
-              <th scope="col" className="border-b border-border px-3.5 py-2.5 font-normal">
+              <th scope="col" className="min-w-56 border-b border-border px-3.5 py-2.5 font-normal">
                 Note
               </th>
             ) : null}
@@ -1098,7 +1123,11 @@ function PreviewTable({ rows, withNote }: { rows: readonly ConvertedRow[]; withN
                     </td>
                   );
                 })}
-                {withNote ? <td className={cn(cellClassName, "text-[0.8125rem]", row.status === "error" ? "text-[#ef4444]" : "text-[#b45309] dark:text-brand-gold")}>{row.reason}</td> : null}
+                {withNote ? (
+                  <td className={cn(cellClassName, "text-[0.8125rem] leading-5", row.status === "error" ? "text-[#dc2626] dark:text-[#f87171]" : "text-[#b45309] dark:text-brand-gold")}>
+                    {row.reason ?? <span className="text-muted-foreground">—</span>}
+                  </td>
+                ) : null}
               </tr>
             );
           })}
