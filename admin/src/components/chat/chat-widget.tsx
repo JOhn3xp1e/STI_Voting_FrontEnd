@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, ArrowUpRight, Calendar, Check, History, Minus, Plus, RotateCcw, Shield, Square, SquareCheck, Trash2, Users, X, type LucideIcon } from "lucide-react";
@@ -23,6 +23,29 @@ import { cn } from "@/lib/utils";
 import { summarizeChat } from "@/services/chatbot/chatbot.service";
 import { fetchElections } from "@/services/elections/elections.service";
 import type { Election } from "@/types/election.types";
+
+import { ChatMarkdown } from "./chat-markdown";
+import { LAUNCHER_HEIGHT, LAUNCHER_WIDTH, clampPosition, saveLauncherPosition, useLauncherPosition, type LauncherPosition } from "./launcher-position";
+
+/** Pointer travel (px) before a press on the launcher counts as a drag instead of a click. */
+const DRAG_THRESHOLD = 5;
+/** Alt + arrow keys move the launcher by this much. */
+const KEY_STEP = 24;
+
+/**
+ * Where the panel goes for a moved launcher: 24 px above it (as in the design) when there's
+ * room, otherwise below it; lined up with its right edge and kept 16 px inside the viewport.
+ */
+function panelPlacement(launcher: LauncherPosition, viewport: { width: number; height: number }): CSSProperties {
+  const width = Math.min(360, viewport.width - 32);
+  const left = Math.min(Math.max(launcher.x + LAUNCHER_WIDTH + 20 - width, 16), viewport.width - width - 16);
+  const roomAbove = launcher.y - 24 - 16;
+  const roomBelow = viewport.height - (launcher.y + LAUNCHER_HEIGHT + 16) - 16;
+  const originX = launcher.x + LAUNCHER_WIDTH / 2 > viewport.width / 2 ? "right" : "left";
+  return roomAbove >= 420 || roomAbove >= roomBelow
+    ? { left, width, bottom: viewport.height - launcher.y + 24, maxHeight: roomAbove, transformOrigin: `${originX} bottom` }
+    : { left, width, top: launcher.y + LAUNCHER_HEIGHT + 16, maxHeight: roomBelow, transformOrigin: `${originX} top` };
+}
 
 /*
  * Owlie (Figma "Chat launcher" + "Chat panel"): the owl at the bottom-right of every
@@ -76,6 +99,62 @@ export function ChatWidget({ adminId }: { adminId: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+
+  // Movable launcher: the saved spot, or the spot under the pointer while dragging.
+  const { position: savedPosition, viewport } = useLauncherPosition();
+  const [dragPosition, setDragPosition] = useState<LauncherPosition | null>(null);
+  const drag = useRef<{ startX: number; startY: number; origin: LauncherPosition; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const launcherPosition = dragPosition ?? savedPosition;
+  const panelStyle = launcherPosition && viewport ? panelPlacement(launcherPosition, viewport) : undefined;
+
+  function startDrag(event: PointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    const box = event.currentTarget.getBoundingClientRect();
+    drag.current = { startX: event.clientX, startY: event.clientY, origin: { x: box.left, y: box.top }, moved: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveDrag(event: PointerEvent<HTMLButtonElement>) {
+    const current = drag.current;
+    if (!current) return;
+    const dx = event.clientX - current.startX;
+    const dy = event.clientY - current.startY;
+    if (!current.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    current.moved = true;
+    setDragPosition(clampPosition({ x: current.origin.x + dx, y: current.origin.y + dy }));
+  }
+
+  function endDrag(event: PointerEvent<HTMLButtonElement>) {
+    const current = drag.current;
+    drag.current = null;
+    if (!current?.moved) return;
+    // The click that follows a drag shouldn't open or close the panel.
+    suppressClick.current = true;
+    saveLauncherPosition(clampPosition({ x: current.origin.x + event.clientX - current.startX, y: current.origin.y + event.clientY - current.startY }));
+    setDragPosition(null);
+  }
+
+  function cancelDrag() {
+    drag.current = null;
+    setDragPosition(null);
+  }
+
+  /** Alt + arrows move the launcher; Alt + Home puts it back in its default spot. */
+  function moveWithKeys(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!event.altKey) return;
+    if (event.key === "Home") {
+      event.preventDefault();
+      saveLauncherPosition(null);
+      return;
+    }
+    const steps: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const step = steps[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const box = event.currentTarget.getBoundingClientRect();
+    saveLauncherPosition(clampPosition({ x: box.left + step[0] * KEY_STEP, y: box.top + step[1] * KEY_STEP }));
+  }
 
   /** The elections list, loaded once per conversation (null when it couldn't be loaded). */
   function loadElections() {
@@ -271,10 +350,13 @@ export function ChatWidget({ adminId }: { adminId: string }) {
               minimize();
             }
           }}
+          style={panelStyle}
           className={cn(
-            "fixed right-4 bottom-29.5 left-4 z-40 flex max-h-[calc(100dvh-8.5rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground sm:left-auto sm:right-6 sm:w-90",
+            "fixed z-40 flex flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground",
+            // Default spot (launcher not moved): 24 px above the launcher at the bottom-right, as in the design.
+            !panelStyle && "right-4 bottom-29.5 left-4 max-h-[calc(100dvh-8.5rem)] origin-bottom-right sm:left-auto sm:right-6 sm:w-90",
             "shadow-[0_12px_32px_0_rgb(15_23_41/0.18)] dark:shadow-[0_12px_32px_0_rgb(0_0_0/0.5)]",
-            "origin-bottom-right animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 duration-200 motion-reduce:animate-none",
+            "animate-in fade-in-0 zoom-in-95 duration-200 motion-reduce:animate-none",
           )}
         >
           {/* Header (brand gold in both themes, as in the design) */}
@@ -420,13 +502,31 @@ export function ChatWidget({ adminId }: { adminId: string }) {
       <button
         ref={launcherRef}
         type="button"
-        onClick={() => (open ? minimize() : show())}
+        onClick={() => {
+          if (suppressClick.current) {
+            suppressClick.current = false;
+            return;
+          }
+          if (open) minimize();
+          else show();
+        }}
+        onPointerDown={startDrag}
+        onPointerMove={moveDrag}
+        onPointerUp={endDrag}
+        onPointerCancel={cancelDrag}
+        onKeyDown={moveWithKeys}
         aria-expanded={open}
         aria-label={open ? "Hide Owlie" : "Open Owlie, the election assistant"}
-        title="Owlie"
+        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight Alt+Home"
+        title="Owlie · drag to move"
+        style={launcherPosition ? { left: launcherPosition.x, top: launcherPosition.y } : undefined}
         className={cn(
-          "group fixed right-4 bottom-10.5 z-40 h-13 w-17.25 cursor-pointer rounded-xl outline-none sm:right-11",
-          "transition-transform duration-200 ease-out hover:-translate-y-0.5 focus-visible:ring-3 focus-visible:ring-brand-blue/40 active:translate-y-0 active:scale-95 motion-reduce:transition-none",
+          "group fixed z-40 h-13 w-17.25 touch-none rounded-xl outline-none select-none",
+          !launcherPosition && "right-4 bottom-10.5 sm:right-11",
+          dragPosition
+            ? "cursor-grabbing scale-105"
+            : "cursor-pointer transition-transform duration-200 ease-out hover:-translate-y-0.5 active:translate-y-0 active:scale-95 motion-reduce:transition-none",
+          "focus-visible:ring-3 focus-visible:ring-brand-blue/40",
         )}
       >
         <Image src="/images/chat/launcher-bubble.svg" alt="" width={67} height={54} unoptimized className="pointer-events-none absolute top-[-0.74px] left-px h-[53.97px] w-16.75 max-w-none" />
@@ -520,8 +620,8 @@ function MessageItem({ message, onRetry, retryDisabled }: { message: ChatMessage
       <div className="flex max-w-[85%] min-w-0 flex-col gap-2">
         <div
           className={cn(
-            "rounded-xl rounded-bl-sm px-3 py-2 text-[0.8125rem] leading-[1.45] whitespace-pre-wrap",
-            message.state === "error" ? "border border-destructive/25 bg-destructive/5 text-destructive" : "bg-muted text-foreground dark:bg-white/6",
+            "min-w-0 rounded-xl rounded-bl-sm px-3 py-2 text-[0.8125rem] leading-[1.45]",
+            message.state === "error" ? "border border-destructive/25 bg-destructive/5 whitespace-pre-wrap text-destructive" : "bg-muted text-foreground dark:bg-white/6",
           )}
         >
           {waiting ? (
@@ -530,8 +630,10 @@ function MessageItem({ message, onRetry, retryDisabled }: { message: ChatMessage
                 <span key={delay} className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60 motion-reduce:animate-none" style={{ animationDelay: `${delay}ms` }} />
               ))}
             </span>
-          ) : (
+          ) : message.state === "error" ? (
             message.text
+          ) : (
+            <ChatMarkdown text={message.text} />
           )}
         </div>
         {message.links?.length ? (

@@ -51,6 +51,9 @@ function relevantElections(elections: readonly Election[]): Election[] {
 
 const active = (elections: readonly Election[]) => relevantElections(elections).filter((e) => e.status === "Ongoing" || e.status === "Upcoming");
 
+/** Admin-entered text (titles) inside a Markdown answer, with Markdown characters escaped. */
+const md = (text: string) => text.replace(/[\\`*_{}[\]()<>#+|~!-]/g, "\\$&");
+
 const HOW_TO_VOTE = [
   "Here's how voting works on SLVP:",
   "1. When voting opens, check your email for “Your SLVP voting code”.",
@@ -85,7 +88,7 @@ export async function answerQuickAction(id: QuickActionId, elections: readonly E
         e.status === "Ongoing"
           ? `voting closes ${formatDayTime(instantToLocal(e.endsAt))}`
           : `voting opens ${formatDayTime(instantToLocal(e.startsAt))}`;
-      return `• ${e.title}: ${e.status.toLowerCase()}, ${formatVotingDates(e.startsAt, e.endsAt)} (${when})`;
+      return `- **${md(e.title)}**: ${e.status.toLowerCase()}, ${formatVotingDates(e.startsAt, e.endsAt)} (${when})`;
     });
     return {
       text: [shown.length === 1 ? "Here's the election schedule:" : "Here are the election schedules:", ...lines].join("\n"),
@@ -101,12 +104,12 @@ export async function answerQuickAction(id: QuickActionId, elections: readonly E
     }),
   );
   const blocks = ballots.map(({ election, positions, candidates }) => {
-    if (positions.length === 0) return `${election.title}: no positions yet.`;
+    if (positions.length === 0) return `**${md(election.title)}**: no positions yet.`;
     const rows = positions.map((p) => {
       const count = candidates.filter((c) => c.positionId === p.id).length;
-      return `• ${p.title}: ${count} ${count === 1 ? "candidate" : "candidates"}`;
+      return `- ${md(p.title)}: ${count} ${count === 1 ? "candidate" : "candidates"}`;
     });
-    return [`${election.title} (${candidates.length} ${candidates.length === 1 ? "candidate" : "candidates"}):`, ...rows].join("\n");
+    return [`**${md(election.title)}** (${candidates.length} ${candidates.length === 1 ? "candidate" : "candidates"}):`, ...rows].join("\n");
   });
   return {
     text: blocks.join("\n\n"),
