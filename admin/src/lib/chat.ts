@@ -1,5 +1,6 @@
 import { formatDayTime, formatVotingDates, instantToLocal } from "@/lib/elections";
 import { sortPositions } from "@/lib/ballot";
+import type { ChatContext } from "@/lib/chat-memory";
 import { isApiError } from "@/services/api/client";
 import { getApiErrorMessage } from "@/services/api/error-message";
 import { fetchCandidates, fetchPositions } from "@/services/ballot/ballot.service";
@@ -7,10 +8,11 @@ import { askChatbot } from "@/services/chatbot/chatbot.service";
 import type { Election } from "@/types/election.types";
 
 /*
- * STI Vote Buddy, the chat panel's assistant.
+ * Owlie, the chat panel's assistant.
  *
  * Quick actions are answered here in the browser (fixed text, or the admin API);
- * typed questions go to the backend's chatbot endpoint (services/chatbot), one question at a time.
+ * typed questions go to the backend's chatbot endpoint (services/chatbot) with the conversation
+ * so far: a running summary plus the latest messages (lib/chat-memory).
  */
 
 export type ChatRole = "user" | "assistant";
@@ -28,6 +30,8 @@ export interface ChatMessage {
   links?: ChatLink[];
   /** `pending` while the answer is on its way; `error` when the text is an error message. */
   state?: "pending" | "error";
+  /** Already folded into the conversation summary (lib/chat-memory), so not sent again. */
+  summarized?: boolean;
 }
 
 export type QuickActionId = "how-to-vote" | "schedule" | "candidates" | "secret";
@@ -110,10 +114,13 @@ export async function answerQuickAction(id: QuickActionId, elections: readonly E
   };
 }
 
-/** Asks the backend's chatbot. Throws an Error with a message for the panel when it can't answer. */
-export async function askAssistant(question: string, signal?: AbortSignal): Promise<string> {
+/**
+ * Asks the backend's chatbot, with the conversation so far (`context`, from lib/chat-memory).
+ * Throws an Error with a message for the panel when it can't answer.
+ */
+export async function askAssistant(question: string, context: ChatContext, signal?: AbortSignal): Promise<string> {
   try {
-    const answer = (await askChatbot(question, { signal })).trim();
+    const answer = (await askChatbot(question, { ...context, signal })).trim();
     if (!answer) throw new Error("The assistant didn't answer. Try asking another way.");
     return answer;
   } catch (error) {

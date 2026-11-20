@@ -1,5 +1,6 @@
 import { isAuthApiError, isAuthError, isAuthRetryableFetchError, type Session } from "@supabase/supabase-js";
 
+import { clearSavedChats } from "@/lib/chat-memory";
 import { getSupabase, SupabaseConfigError, setRememberSession } from "@/lib/supabase/client";
 import { getApiErrorMessage } from "@/services/api/error-message";
 import { apiClient, isApiError } from "@/services/api/client";
@@ -181,6 +182,7 @@ export async function getCurrentSignInMethod(): Promise<SignInMethod | null> {
 /** Ends the session on this device. Never throws. */
 export async function signOut(): Promise<void> {
   cachedMe = null;
+  clearSavedChats();
   try {
     await getSupabase().auth.signOut({ scope: "local" });
   } catch {

@@ -204,7 +204,7 @@ function Shell({ admin, children }: DashboardShellProps) {
         </main>
       </div>
 
-      <ChatWidget />
+      <ChatWidget key={admin.id} adminId={admin.id} />
 
       {/* Entrance after signing in: lifts away from the sign-in screen's navy (CSS only; hidden otherwise). */}
       <div aria-hidden className={entrance.curtain} onAnimationEnd={endDashboardEntrance} />

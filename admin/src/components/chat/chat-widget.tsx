@@ -3,18 +3,38 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight, Calendar, Check, Minus, Plus, RotateCcw, Shield, Square, SquareCheck, Users, X, type LucideIcon } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Calendar, Check, History, Minus, Plus, RotateCcw, Shield, Square, SquareCheck, Trash2, Users, X, type LucideIcon } from "lucide-react";
 
 import { answerQuickAction, askAssistant, type ChatMessage, type QuickActionId } from "@/lib/chat";
+import {
+  archiveChat,
+  contextFor,
+  deletePastChat,
+  dueForSummary,
+  listPastChats,
+  loadChat,
+  markSummarized,
+  openPastChat,
+  saveChat,
+  type PastChat,
+  type SavedChat,
+} from "@/lib/chat-memory";
 import { cn } from "@/lib/utils";
+import { summarizeChat } from "@/services/chatbot/chatbot.service";
 import { fetchElections } from "@/services/elections/elections.service";
 import type { Election } from "@/types/election.types";
 
 /*
- * STI Vote Buddy (Figma "Chat launcher" + "Chat panel"): the owl at the bottom-right of every
+ * Owlie (Figma "Chat launcher" + "Chat panel"): the owl at the bottom-right of every
  * dashboard page opens a 360 px panel 24 px above it. Quick actions are answered in the browser;
- * typed questions go to the backend's /api/chatbot/ask, one question at a time.
+ * typed questions go to the backend's /api/chatbot/ask with the conversation so far.
+ *
+ * The conversation is kept in this tab's sessionStorage and summarized every 20 exchanges
+ * (lib/chat-memory).
  */
+
+/** After a failed summary, wait this long before trying again. */
+const SUMMARY_RETRY_MS = 60_000;
 
 const QUICK_ACTIONS: readonly { id: QuickActionId; label: string; icon: LucideIcon }[] = [
   { id: "how-to-vote", label: "How do I vote?", icon: SquareCheck },
@@ -36,13 +56,22 @@ function Owl({ className, sizes }: { className: string; sizes: string }) {
   );
 }
 
-export function ChatWidget() {
+/** `adminId` keys the saved conversation; render with `key={adminId}` so another admin starts fresh. */
+export function ChatWidget({ adminId }: { adminId: string }) {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // The panel starts closed, so restoring here doesn't change the server-rendered markup.
+  const [saved] = useState(() => loadChat(adminId));
+  const [messages, setMessages] = useState<ChatMessage[]>(() => saved?.messages ?? []);
+  const [summary, setSummary] = useState(() => saved?.summary ?? "");
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
+  /** The earlier-conversations list in place of the chat (History button). */
+  const [showHistory, setShowHistory] = useState(false);
+  const [pastChats, setPastChats] = useState<PastChat[]>([]);
   const elections = useRef<Promise<Election[] | null> | null>(null);
   const request = useRef<AbortController | null>(null);
+  const summarizing = useRef<AbortController | null>(null);
+  const summaryRetryAt = useRef(0);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -64,7 +93,39 @@ export function ChatWidget() {
     if (log) log.scrollTop = log.scrollHeight;
   }, [messages]);
 
-  useEffect(() => () => request.current?.abort(), []);
+  useEffect(
+    () => () => {
+      request.current?.abort();
+      summarizing.current?.abort();
+      summarizing.current = null;
+    },
+    [],
+  );
+
+  // Keep the conversation in this tab (finished messages only).
+  useEffect(() => saveChat(adminId, { summary, messages }), [adminId, summary, messages]);
+
+  // Every 20 exchanges, fold them into the running summary in the background. On failure the
+  // messages stay as they are and it tries again after a later exchange.
+  useEffect(() => {
+    if (summarizing.current || Date.now() < summaryRetryAt.current) return;
+    const due = dueForSummary(messages);
+    if (!due) return;
+    const controller = new AbortController();
+    summarizing.current = controller;
+    summarizeChat(summary, due.turns, controller.signal)
+      .then((next) => {
+        if (controller.signal.aborted) return;
+        setSummary(next);
+        setMessages((current) => markSummarized(current, due.throughId));
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) summaryRetryAt.current = Date.now() + SUMMARY_RETRY_MS;
+      })
+      .finally(() => {
+        if (summarizing.current === controller) summarizing.current = null;
+      });
+  }, [messages, summary]);
 
   function show() {
     setOpen(true);
@@ -77,25 +138,66 @@ export function ChatWidget() {
     launcherRef.current?.focus();
   }
 
-  function reset() {
+  /**
+   * Stops anything in flight (so a summary of this chat can't land on the next one) and starts
+   * over, empty or with `next` (a past chat being reopened).
+   */
+  function reset(next?: SavedChat) {
     request.current?.abort();
     request.current = null;
+    summarizing.current?.abort();
+    summarizing.current = null;
+    summaryRetryAt.current = 0;
     elections.current = null;
-    setMessages([]);
+    setMessages(next?.messages ?? []);
+    setSummary(next?.summary ?? "");
     setQuestion("");
     setBusy(false);
   }
 
-  /** Closes the panel and ends the conversation. */
+  /** Keeps the current conversation in History (only if it has finished messages). */
+  function archiveCurrent() {
+    archiveChat(adminId, { summary, messages });
+  }
+
+  /** Closes the panel and ends the conversation (it stays in History). */
   function close() {
+    archiveCurrent();
     reset();
+    setShowHistory(false);
     minimize();
   }
 
   function startNewChat() {
+    archiveCurrent();
     reset();
+    setShowHistory(false);
     void loadElections();
     inputRef.current?.focus();
+  }
+
+  function toggleHistory() {
+    if (!showHistory) setPastChats(listPastChats(adminId));
+    setShowHistory(!showHistory);
+  }
+
+  /** Puts the current chat in History and continues the chosen one. */
+  function reopen(id: string) {
+    archiveCurrent();
+    const chat = openPastChat(adminId, id);
+    if (!chat) {
+      setPastChats(listPastChats(adminId));
+      return;
+    }
+    reset(chat);
+    setShowHistory(false);
+    void loadElections();
+    inputRef.current?.focus();
+  }
+
+  function remove(id: string) {
+    deletePastChat(adminId, id);
+    setPastChats(listPastChats(adminId));
   }
 
   /** Adds the user's message and a pending reply, then fills the reply from `produce`. */
@@ -130,12 +232,13 @@ export function ChatWidget() {
     void exchange(label, async (signal) => answerQuickAction(id, id === "schedule" || id === "candidates" ? await loadElections() : null, signal));
   }
 
-  /** The backend answers each question on its own (it doesn't see earlier messages). */
+  /** Sends the question with the running summary and the latest messages not in it yet. */
   function ask(text: string) {
     const trimmed = text.trim();
     if (!trimmed || busy) return;
     setQuestion("");
-    void exchange(trimmed, async (signal) => ({ text: await askAssistant(trimmed, signal) }));
+    const context = contextFor(summary, messages);
+    void exchange(trimmed, async (signal) => ({ text: await askAssistant(trimmed, context, signal) }));
   }
 
   function retry(index: number) {
@@ -150,6 +253,7 @@ export function ChatWidget() {
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    setShowHistory(false);
     ask(question);
   }
 
@@ -173,16 +277,16 @@ export function ChatWidget() {
             "origin-bottom-right animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 duration-200 motion-reduce:animate-none",
           )}
         >
-          {/* Header */}
-          <header className="flex shrink-0 items-center gap-2.5 px-4 py-3.5">
+          {/* Header (brand gold in both themes, as in the design) */}
+          <header className="flex shrink-0 items-center gap-2.5 bg-brand-gold px-4 py-3.5">
             <Owl className="h-7 w-9" sizes="32px" />
-            <div className="min-w-0 flex-1">
-              <h2 id={titleId} className="truncate text-[0.875rem] font-semibold text-foreground">
-                STI Vote Buddy
+            <div className="min-w-0 flex-1 text-white">
+              <h2 id={titleId} className="truncate text-[0.875rem] font-semibold">
+                Owlie
               </h2>
-              <p className="truncate text-[0.6875rem] text-muted-foreground">Your friendly election assistant</p>
+              <p className="truncate text-[0.6875rem]">Your friendly election assistant</p>
             </div>
-            <div className="flex shrink-0 items-center gap-1 text-muted-foreground">
+            <div className="flex shrink-0 items-center gap-1 text-[#0f172a]">
               <WindowButton label="Minimize" onClick={minimize}>
                 <Minus aria-hidden className="size-4" strokeWidth={1.75} />
               </WindowButton>
@@ -204,6 +308,19 @@ export function ChatWidget() {
             </p>
             <button
               type="button"
+              onClick={toggleHistory}
+              aria-pressed={showHistory}
+              aria-label="Chat history"
+              title="Chat history"
+              className={cn(
+                "flex h-7 w-8.75 cursor-pointer items-center justify-center rounded-md border border-border bg-card text-muted-foreground outline-none transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-blue/30",
+                showHistory && "bg-muted text-foreground",
+              )}
+            >
+              <History aria-hidden className="size-4" strokeWidth={1.75} />
+            </button>
+            <button
+              type="button"
               onClick={startNewChat}
               disabled={!started && !question}
               className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[0.6875rem] font-medium text-foreground outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand-blue/30 disabled:cursor-default disabled:hover:bg-transparent"
@@ -213,37 +330,44 @@ export function ChatWidget() {
             </button>
           </div>
 
-          {/* Conversation */}
-          <div ref={logRef} role="log" aria-label="Conversation" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            {started ? (
-              <ol className="flex flex-col gap-3 px-4 py-4">
-                {messages.map((message, index) => (
-                  <MessageItem key={message.id} message={message} onRetry={() => retry(index)} retryDisabled={busy} />
-                ))}
-              </ol>
-            ) : (
-              <div className="flex flex-col items-center gap-2.5 px-7 pt-7 pb-6">
-                <Owl className="h-15.75 w-20" sizes="72px" />
-                <p className="text-center text-[1.0625rem] font-semibold text-foreground">Hi! Need help with the election?</p>
+          {/* Earlier conversations (History button), in place of the chat */}
+          {showHistory ? (
+            <HistoryList chats={pastChats} onOpen={reopen} onDelete={remove} />
+          ) : (
+            <>
+              {/* Conversation */}
+              <div ref={logRef} role="log" aria-label="Conversation" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                {started ? (
+                  <ol className="flex flex-col gap-3 px-4 py-4">
+                    {messages.map((message, index) => (
+                      <MessageItem key={message.id} message={message} onRetry={() => retry(index)} retryDisabled={busy} />
+                    ))}
+                  </ol>
+              ) : (
+                  <div className="flex flex-col items-center gap-2.5 px-7 pt-7 pb-6">
+                    <Owl className="h-15.75 w-20" sizes="72px" />
+                    <p className="text-center text-[1.0625rem] font-semibold text-foreground">Hi! Need help with the election?</p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Quick actions (until the conversation starts) */}
-          {started ? null : (
-            <div className="grid shrink-0 grid-cols-2 gap-x-2 gap-y-2.5 border-t border-border px-4 pt-4 pb-3">
-              {QUICK_ACTIONS.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => runQuickAction(id, label)}
-                  className="flex min-w-0 cursor-pointer items-center gap-2 rounded-[0.625rem] border border-border px-3 py-2.5 text-left text-[0.75rem] font-medium text-foreground outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand-blue/30"
-                >
-                  <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
-                  <span className="truncate">{label}</span>
-                </button>
-              ))}
-            </div>
+              {/* Quick actions (until the conversation starts) */}
+              {started ? null : (
+                <div className="grid shrink-0 grid-cols-2 gap-x-2 gap-y-2.5 border-t border-border px-4 pt-4 pb-3">
+                  {QUICK_ACTIONS.map(({ id, label, icon: Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => runQuickAction(id, label)}
+                      className="flex min-w-0 cursor-pointer items-center gap-2 rounded-[0.625rem] border border-border px-3 py-2.5 text-left text-[0.75rem] font-medium text-foreground outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+                    >
+                      <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                      <span className="truncate">{label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
           {/* Composer */}
@@ -298,8 +422,8 @@ export function ChatWidget() {
         type="button"
         onClick={() => (open ? minimize() : show())}
         aria-expanded={open}
-        aria-label={open ? "Hide STI Vote Buddy" : "Open STI Vote Buddy, the election assistant"}
-        title="STI Vote Buddy"
+        aria-label={open ? "Hide Owlie" : "Open Owlie, the election assistant"}
+        title="Owlie"
         className={cn(
           "group fixed right-4 bottom-10.5 z-40 h-13 w-17.25 cursor-pointer rounded-xl outline-none sm:right-11",
           "transition-transform duration-200 ease-out hover:-translate-y-0.5 focus-visible:ring-3 focus-visible:ring-brand-blue/40 active:translate-y-0 active:scale-95 motion-reduce:transition-none",
@@ -314,6 +438,56 @@ export function ChatWidget() {
   );
 }
 
+const historyTime = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+function formatHistoryTime(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "" : historyTime.format(date);
+}
+
+/** Earlier conversations in this tab, newest first: open one to continue it, or delete it. */
+function HistoryList({ chats, onOpen, onDelete }: { chats: readonly PastChat[]; onOpen: (id: string) => void; onDelete: (id: string) => void }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+      <p className="px-4 pt-3.5 pb-2 font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground uppercase">Earlier chats</p>
+      {chats.length === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-7 pt-6 pb-8 text-center">
+          <History aria-hidden className="size-5 text-muted-foreground" strokeWidth={1.75} />
+          <p className="text-[0.8125rem] font-medium text-foreground">No earlier chats yet</p>
+          <p className="text-[0.75rem] leading-[1.4] text-muted-foreground">When you start a new chat, the current one is kept here until you close this tab.</p>
+        </div>
+      ) : (
+        <ul className="flex flex-col pb-2">
+          {chats.map((chat) => (
+            <li key={chat.id} className="group/chat relative flex items-center border-t border-border first:border-t-0">
+              <button
+                type="button"
+                onClick={() => onOpen(chat.id)}
+                className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 px-4 py-2.5 pr-12 text-left outline-none transition-colors duration-150 hover:bg-muted focus-visible:bg-muted dark:hover:bg-white/4"
+              >
+                <span className="truncate text-[0.8125rem] font-medium text-foreground">{chat.title}</span>
+                <span className="text-[0.6875rem] text-muted-foreground">
+                  {chat.messageCount} {chat.messageCount === 1 ? "message" : "messages"}
+                  {formatHistoryTime(chat.updatedAt) ? ` · ${formatHistoryTime(chat.updatedAt)}` : ""}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(chat.id)}
+                aria-label={`Delete “${chat.title}”`}
+                title="Delete"
+                className="absolute right-3 flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground opacity-0 outline-none transition-[opacity,color,background-color] duration-150 group-hover/chat:opacity-100 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+              >
+                <Trash2 aria-hidden className="size-3.5" strokeWidth={1.75} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function WindowButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
     <button
@@ -321,7 +495,7 @@ function WindowButton({ label, onClick, children }: { label: string; onClick: ()
       onClick={onClick}
       aria-label={label}
       title={label}
-      className="flex size-7 cursor-pointer items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+      className="flex size-7 cursor-pointer items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-black/10 focus-visible:ring-2 focus-visible:ring-brand-navy/40"
     >
       {children}
     </button>
