@@ -4,9 +4,10 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Menu } from "@base-ui/react/menu";
-import { CalendarDays, ChevronRight, Ellipsis, Pencil, Trash2, Users } from "lucide-react";
+import { CalendarDays, ChevronRight, Ellipsis, Pencil, Settings2, Trash2, Users } from "lucide-react";
 
 import { menuItemClassName, popupClassName } from "@/components/dashboard/popup-styles";
+import { electionPageHref } from "@/config/navigation";
 import { AnimatedNumber } from "@/components/students/animated-number";
 import {
   canDeleteElection,
@@ -93,6 +94,10 @@ function CardMenu({ election, onDelete }: { election: Election; onDelete: (elect
               <Pencil aria-hidden />
               Edit election
             </Menu.Item>
+            <Menu.Item onClick={() => router.push(electionPageHref(election.id, "settings"))} className={menuItemClassName}>
+              <Settings2 aria-hidden />
+              Election settings
+            </Menu.Item>
             <Menu.Item
               disabled={!deletable}
               onClick={() => onDelete(election)}
@@ -128,12 +133,12 @@ interface ElectionCardProps {
   saved?: boolean;
 }
 
-/** The whole card opens the edit page (when editable); the "⋯" menu sits above that link. */
+/** The whole card opens the wizard (drafts) or the election's settings; the "⋯" menu sits above that link. */
 export function ElectionCard({ election, onDelete, voters, now, saved = false }: ElectionCardProps) {
   const styles = STATUS_STYLES[election.status];
   const cancelled = election.status === "Cancelled";
   const ongoing = election.status === "Ongoing";
-  const editable = canEditElection(election.status);
+  const href = canEditElection(election.status) ? electionEditHref(election.id) : electionPageHref(election.id, "settings");
   const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -146,8 +151,7 @@ export function ElectionCard({ election, onDelete, voters, now, saved = false }:
       className={cn(
         "group relative flex h-full flex-col overflow-hidden rounded-[0.375rem] border border-[#e2e8f0] bg-card shadow-[0_1px_2px_rgb(15_23_42/0.04)] dark:border-border",
         "transition-[translate,border-color,box-shadow] duration-300 ease-out motion-reduce:transition-none",
-        editable &&
-          "hover:-translate-y-1 hover:border-brand-blue/25 hover:shadow-[0_20px_36px_-22px_rgb(15_76_158/0.6)] motion-reduce:hover:translate-y-0",
+        "hover:-translate-y-1 hover:border-brand-blue/25 hover:shadow-[0_20px_36px_-22px_rgb(15_76_158/0.6)] motion-reduce:hover:translate-y-0",
         "has-[a:focus-visible]:border-brand-blue/50 has-[a:focus-visible]:shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-brand-blue)_22%,transparent)]",
         saved && cn(motion.saved, "border-brand-blue/45"),
       )}
@@ -196,14 +200,10 @@ export function ElectionCard({ election, onDelete, voters, now, saved = false }:
 
       <div className={cn("flex-1 px-4.5 pt-3.5 pb-4", cancelled && "opacity-55")}>
         <h3 className="truncate text-base leading-5.5 font-semibold text-brand-navy dark:text-foreground">
-          {editable ? (
-            // Stretched over the whole card (see `after:`), below the "⋯" menu.
-            <Link href={electionEditHref(election.id)} className="outline-none after:absolute after:inset-0 after:content-['']">
-              {election.title}
-            </Link>
-          ) : (
-            election.title
-          )}
+          {/* Stretched over the whole card (see `after:`), below the "⋯" menu. */}
+          <Link href={href} className="outline-none after:absolute after:inset-0 after:content-['']">
+            {election.title}
+          </Link>
         </h3>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
           <p className="font-mono text-[0.6875rem] text-muted-foreground">
@@ -242,7 +242,7 @@ export function ElectionCard({ election, onDelete, voters, now, saved = false }:
           aria-hidden
           className={cn(
             "size-4 shrink-0 text-muted-foreground transition-[translate,color] duration-300 ease-out",
-            editable ? "group-hover:translate-x-1 group-hover:text-brand-blue dark:group-hover:text-[#7aa7e6]" : "opacity-40",
+            "group-hover:translate-x-1 group-hover:text-brand-blue dark:group-hover:text-[#7aa7e6]",
           )}
           strokeWidth={1.75}
         />

@@ -7,12 +7,16 @@ import { Lock, SearchX } from "lucide-react";
 
 import { PageError, Toast, useNotice } from "@/components/shared/page-feedback";
 import { ElectionFormSkeleton } from "./election-form-skeleton";
-import { toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
+import { primaryButtonClassName, toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
+import { electionPageHref } from "@/config/navigation";
 import { todayIso } from "@/lib/dates";
 import {
   canEditElection,
   editBlockedReason,
   electionToForm,
+  formatDayTime,
+  instantToLocal,
+  leaveNotice,
   localToInstant,
   markElectionSaved,
   programsByCareer,
@@ -31,7 +35,7 @@ import { getTermStatus, sortTerms } from "@/lib/terms";
 import { cn } from "@/lib/utils";
 import { isApiError } from "@/services/api/client";
 import { getApiErrorMessage } from "@/services/api/error-message";
-import { createElection, fetchElection, fetchVoterEnrollments, updateElection } from "@/services/elections/elections.service";
+import { createElection, fetchElection, fetchVoterEnrollments, setElectionStatus, updateElection } from "@/services/elections/elections.service";
 import { fetchCareers, fetchPrograms } from "@/services/programs/programs.service";
 import { fetchTerms } from "@/services/terms/terms.service";
 import { DEFAULT_CANDIDACY, type Election, type ElectionInput, type VoterEnrollment } from "@/types/election.types";
@@ -130,7 +134,7 @@ type EditLoadState =
   | { status: "ready"; catalog: Catalog; election: Election };
 
 /** Centered notice with a way back to the list (missing or locked election). */
-function Notice({ icon, title, message }: { icon: ReactNode; title: string; message: string }) {
+function Notice({ icon, title, message, settingsHref }: { icon: ReactNode; title: string; message: string; settingsHref?: string }) {
   return (
     <div className="flex min-h-80 flex-col items-center justify-center gap-3 px-4 text-center">
       <span className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">{icon}</span>
@@ -138,9 +142,16 @@ function Notice({ icon, title, message }: { icon: ReactNode; title: string; mess
         <p className="text-[0.9375rem] font-semibold text-foreground">{title}</p>
         <p className="mt-1 max-w-md text-[0.8125rem] leading-5 text-muted-foreground">{message}</p>
       </div>
-      <Link href={ELECTIONS_HREF} className={cn(toolbarButtonClassName, "h-8 px-3.5 text-[0.8125rem]")}>
-        Back to elections
-      </Link>
+      <div className="flex flex-wrap justify-center gap-2.5">
+        <Link href={ELECTIONS_HREF} className={cn(toolbarButtonClassName, "h-8 px-3.5 text-[0.8125rem]")}>
+          Back to elections
+        </Link>
+        {settingsHref ? (
+          <Link href={settingsHref} className={cn(primaryButtonClassName, "h-8 px-3.5 text-[0.8125rem]")}>
+            Open election settings
+          </Link>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -199,6 +210,7 @@ export function EditElectionPage({ electionId }: { electionId: string }) {
         icon={<Lock aria-hidden className="size-4.5" strokeWidth={1.75} />}
         title={`${state.election.id} can't be edited`}
         message={editBlockedReason(state.election.status)}
+        settingsHref={electionPageHref(state.election.id, "settings")}
       />
     );
   }
@@ -311,9 +323,12 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
     topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  /** Validates the steps up to `upTo`; jumps to the first one with errors. */
-  function checkSteps(upTo: number): boolean {
+  /** Validates the steps up to `upTo`; jumps to the first one with errors. Scheduling also needs an opening time that hasn't passed. */
+  function checkSteps(upTo: number, scheduling = false): boolean {
     const details = validateDetails(form);
+    if (scheduling && !details.opensAt && form.opensAt && form.opensAt <= instantToLocal(new Date().toISOString())) {
+      details.opensAt = "This time has passed. Pick a later one to schedule the election.";
+    }
     setDetailsErrors(details);
     if (Object.keys(details).length) {
       goTo(0);
@@ -330,15 +345,38 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
     return true;
   }
 
-  /** Creates a new election or updates the one being edited, then goes back to the cards (where its card pulses). */
-  async function save(kind: Exclude<SummaryBusy, null>, upTo: number) {
-    if (!checkSteps(upTo)) return;
+  /**
+   * Creates a new election or updates the one being edited.
+   * - `list` (Save draft, Save changes): back to the cards, where its card pulses.
+   * - `schedule` (Finalize, Create election): also moves it from Draft to Upcoming, then opens its
+   *   Manage page. Once it's Upcoming it joins the sidebar with its group open, so Manage and
+   *   Settings are right there. If scheduling fails it stays a draft (drafts aren't in the sidebar),
+   *   and the Manage page says why (with a Schedule button to try again).
+   */
+  async function save(kind: Exclude<SummaryBusy, null>, upTo: number, then: "list" | "schedule" = "list") {
+    if (!checkSteps(upTo, then === "schedule")) return;
     setBusy(kind);
     setError(null);
     try {
       const input = toInput(form, catalog, !election);
       const photo = banner?.file ?? null;
-      const saved = election ? await updateElection(election.id, input, photo) : await createElection(input, photo);
+      let saved = election ? await updateElection(election.id, input, photo) : await createElection(input, photo);
+      if (then === "schedule") {
+        try {
+          saved = await setElectionStatus(saved.id, "Upcoming");
+          leaveNotice(
+            saved.id,
+            `${saved.title} is scheduled and opens ${formatDayTime(instantToLocal(saved.startsAt))}. Set up its ballot, voters and settings from the sidebar.`,
+            "success",
+          );
+        } catch (cause) {
+          leaveNotice(saved.id, `${saved.id} is saved as a draft, but it couldn't be scheduled: ${getApiErrorMessage(cause)}`);
+        }
+        onSaved(saved);
+        refreshElectionsNav();
+        router.push(electionPageHref(saved.id, "manage"));
+        return;
+      }
       onSaved(saved);
       refreshElectionsNav();
       markElectionSaved(saved.id);
@@ -365,6 +403,7 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
   }
 
   const atEnd = step === LAST_STEP;
+  // Creating schedules the election (Upcoming); editing a draft saves it as a draft (Finalize schedules it).
   const primaryLabel = atEnd ? (editing ? "Save changes" : "Create election") : `Next: ${STEPS[step + 1]}`;
   const secondaryLabel = step > 0 ? "Back" : editing ? "Cancel" : "Save draft";
   const onSecondary = step > 0 ? () => goTo(step - 1) : editing ? cancel : () => void save("secondary", 0);
@@ -426,11 +465,11 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
             secondaryLabel={secondaryLabel}
             onSecondary={onSecondary}
             primaryLabel={primaryLabel}
-            onPrimary={atEnd ? () => void save("primary", 1) : next}
+            onPrimary={atEnd ? () => void save("primary", 1, editing ? "list" : "schedule") : next}
             editing={editing}
-            finalizeLabel={editing ? "Save changes" : "Finalize election"}
+            finalizeLabel="Finalize election"
             canFinalize={reached === LAST_STEP}
-            onFinalize={() => void save("finalize", 1)}
+            onFinalize={() => void save("finalize", 1, "schedule")}
             busy={busy}
             error={error}
           />

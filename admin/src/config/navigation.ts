@@ -112,8 +112,9 @@ function electionGroups(elections: readonly Election[]): NavGroup[] {
 }
 
 /**
- * The sidebar's sections: the fixed ones, plus a group per ongoing or upcoming
- * election under MAIN. Drafts and finished elections are reached from the Elections page.
+ * The sidebar's sections: the fixed ones, plus a group per ongoing or upcoming election
+ * under MAIN (an election joins once it's scheduled). Drafts and finished elections are
+ * reached from the Elections page.
  */
 export function buildNavSections(elections: readonly Election[]): NavSection[] {
   const groups = electionGroups(elections);

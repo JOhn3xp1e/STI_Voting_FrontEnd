@@ -101,6 +101,37 @@ export function markElectionSaved(id: string): void {
   }
 }
 
+/* A message for an election's page to show once (e.g. "saved as a draft, couldn't schedule"). */
+
+const NOTICE_KEY = "slvp:election-notice";
+
+export interface ElectionNotice {
+  text: string;
+  tone: "success" | "warn";
+}
+
+export function leaveNotice(electionId: string, text: string, tone: ElectionNotice["tone"] = "warn"): void {
+  try {
+    sessionStorage.setItem(NOTICE_KEY, JSON.stringify({ electionId, text, tone }));
+  } catch {
+    // Storage blocked: the page just won't show the note.
+  }
+}
+
+/** The notice left for this election, once (it's cleared as it's read). */
+export function takeNotice(electionId: string): ElectionNotice | null {
+  try {
+    const raw = sessionStorage.getItem(NOTICE_KEY);
+    if (!raw) return null;
+    const notice = JSON.parse(raw) as { electionId?: string; text?: string; tone?: string };
+    if (notice.electionId !== electionId || typeof notice.text !== "string") return null;
+    sessionStorage.removeItem(NOTICE_KEY);
+    return { text: notice.text, tone: notice.tone === "success" ? "success" : "warn" };
+  } catch {
+    return null;
+  }
+}
+
 /** The id marked by `markElectionSaved`, once (it's cleared as it's read). */
 export function takeSavedElection(): string | null {
   try {
@@ -370,9 +401,12 @@ export function voterPool(
 
 export const electionEditHref = (id: string) => `/elections/${encodeURIComponent(id)}/edit`;
 
-/** Settings can change until voting starts. */
+/**
+ * The wizard edits drafts only. Once an election is scheduled its details and who
+ * can vote are fixed; only the schedule moves (Settings → Election details).
+ */
 export function canEditElection(status: ElectionStatus): boolean {
-  return status === "Draft" || status === "Upcoming";
+  return status === "Draft";
 }
 
 /** Only drafts can be deleted (nothing has been sent to voters yet). */
@@ -382,6 +416,7 @@ export function canDeleteElection(status: ElectionStatus): boolean {
 
 /** Why an election can't be edited, for menus and the edit page. */
 export function editBlockedReason(status: ElectionStatus): string {
+  if (status === "Upcoming") return "It's scheduled, so its details are locked. Move it back to draft from its Manage page to edit it, or move the schedule in its settings.";
   if (status === "Ongoing") return "Voting is ongoing, so its settings are locked.";
   if (status === "Completed") return "Voting has ended, so its settings are locked.";
   return "It was cancelled, so its settings are locked.";

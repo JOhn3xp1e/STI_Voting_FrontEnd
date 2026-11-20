@@ -1,4 +1,4 @@
-import { apiClient } from "@/services/api/client";
+import { apiClient, isApiError } from "@/services/api/client";
 import {
   DEFAULT_CANDIDACY,
   ELECTION_CATEGORIES,
@@ -148,6 +148,24 @@ export async function createElection(input: ElectionInput, photo?: File | null):
 /** Without a new `photo`, the election keeps its current banner. */
 export async function updateElection(id: string, input: ElectionInput, photo?: File | null): Promise<Election> {
   return toElection(await apiClient.put<ElectionDto, FormData>(electionPath(id), toFormData(input, photo)));
+}
+
+/**
+ * Moves an election to another status: schedule (Draft → Upcoming), back to draft,
+ * start now (Upcoming → Ongoing), close now (Ongoing → Completed) or cancel.
+ * The server refuses moves that aren't allowed (409, with the reason as the message).
+ * PATCH /api/admin/election/{id}/status — SLVP-BE branch feat/election-status.
+ */
+export async function setElectionStatus(id: string, status: ElectionStatus): Promise<Election> {
+  try {
+    return toElection(await apiClient.patch<ElectionDto, { status: ElectionStatus }>(`${electionPath(id)}/status`, { status }));
+  } catch (error) {
+    // An API without the status endpoint answers 404 / 405 for the route itself.
+    if (isApiError(error) && (error.status === 404 || error.status === 405) && !/election not found/i.test(error.message)) {
+      throw new Error("The server can't change election status yet. Deploy the backend update (SLVP-BE, branch feat/election-status) first.");
+    }
+    throw error;
+  }
 }
 
 /** Every enrollment with its level, to count who an election's filters let vote. */

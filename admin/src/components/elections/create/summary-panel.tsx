@@ -325,12 +325,13 @@ export function SummaryPanel({
           {!first
             ? "Voters, passcodes and OTP emails are generated after the election is created."
             : editing
-              ? "Save changes keeps every step as it is now. You can also go through the steps and save from Review."
+              ? "Finalize saves your changes and schedules the election: it turns Upcoming and its details lock. Save changes on Review keeps it a draft."
               : canFinalize
-                ? "All 4 steps are complete. Finalize creates the election with them as they are now."
+                ? "All 4 steps are complete. Finalize creates the election as Upcoming (it shows in the sidebar). Add its ballot before it opens."
                 : "Finalize unlocks after all 4 steps are complete. Finalizing locks the details and schedules the election."}
         </p>
       </div>
     </section>
   );
 }
+  
