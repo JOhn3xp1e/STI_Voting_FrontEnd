@@ -110,7 +110,7 @@ export function ElectionBreadcrumb({ route, elections, loaded, tail }: ElectionB
             ) : (
               <Skeleton className="h-5 w-52 rounded-md" />
             )}
-            <ElectionSwitcher current={route.electionId} elections={elections} route={route} />
+            <ElectionSwitcher current={route.electionId} elections={elections} hrefFor={(id) => electionPageHref(id, route.page)} />
           </span>
         </Crumb>
 
@@ -133,10 +133,78 @@ export function ElectionBreadcrumb({ route, elections, loaded, tail }: ElectionB
   );
 }
 
-/** ⇕ next to the election's name: jump to the same page of another election. */
-function ElectionSwitcher({ current, elections, route }: { current: string; elections: readonly Election[]; route: ElectionRoute }) {
+interface WizardBreadcrumbProps {
+  /** `/elections/new`, or `/elections/[id]/edit` for `electionId`. */
+  electionId: string | null;
+  elections: readonly Election[];
+  loaded: boolean;
+}
+
+/**
+ * Create / Edit election: "Elections / Create Election DRAFT ⇕" or
+ * "Elections / CSC Elections 2026–2027 UPCOMING ⇕". The switcher opens another election.
+ */
+export function WizardBreadcrumb({ electionId, elections, loaded }: WizardBreadcrumbProps) {
+  const election = electionId ? elections.find((e) => e.id === electionId) : undefined;
+  const pill = STATUS_PILL[election?.status ?? "Draft"];
+
+  return (
+    <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
+      <ol className="flex min-w-0 items-center gap-2.5">
+        <Crumb index={0} className="hidden shrink-0 sm:flex">
+          <Link href="/elections" className={cn(mutedCrumbClassName, "flex items-center gap-2.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/30")}>
+            <SquareCheck aria-hidden className="size-5 shrink-0" strokeWidth={1.75} />
+            Elections
+          </Link>
+        </Crumb>
+        <Crumb index={1} separatorClassName="hidden sm:inline" className="min-w-0">
+          <CalendarDays aria-hidden className="size-5 shrink-0 text-brand-navy dark:text-brand-white" strokeWidth={1.75} />
+          <h1 aria-current="page" className="min-w-0">
+            {electionId && !election ? (
+              loaded ? (
+                <span className={cn(crumbTextClassName, "truncate font-semibold text-brand-navy dark:text-brand-white")}>Edit Election</span>
+              ) : (
+                <Skeleton className="h-5 w-52 rounded-md" />
+              )
+            ) : (
+              <span title={election?.title} className={cn(crumbTextClassName, "block truncate font-semibold text-brand-navy dark:text-brand-white")}>
+                {election ? election.title : "Create Election"}
+              </span>
+            )}
+          </h1>
+          <span
+            key={pill.label}
+            className={cn(
+              "inline-flex h-5 shrink-0 items-center rounded-full border px-2 font-mono text-[0.625rem] leading-none font-semibold tracking-[0.12em] uppercase",
+              "animate-in fade-in zoom-in-90 duration-300 motion-reduce:animate-none",
+              pill.className,
+              !election && "border-brand-blue/45 text-brand-blue dark:border-[#7aa7e6]/50 dark:text-[#7aa7e6]",
+            )}
+          >
+            {pill.label}
+          </span>
+          <ElectionSwitcher current={electionId ?? ""} elections={elections} hrefFor={(id) => electionPageHref(id, "manage")} minimum={electionId ? 2 : 1} />
+        </Crumb>
+      </ol>
+    </nav>
+  );
+}
+
+/** ⇕ next to the election's name: jump to another election (`hrefFor` picks the page). */
+function ElectionSwitcher({
+  current,
+  elections,
+  hrefFor,
+  minimum = 2,
+}: {
+  current: string;
+  elections: readonly Election[];
+  hrefFor: (id: string) => string;
+  /** Hidden with fewer elections than this. */
+  minimum?: number;
+}) {
   const router = useRouter();
-  if (elections.length < 2) return null;
+  if (elections.length < minimum) return null;
 
   return (
     <Menu.Root modal={false}>
@@ -161,7 +229,7 @@ function ElectionSwitcher({ current, elections, route }: { current: string; elec
                 <Menu.Item
                   key={election.id}
                   onClick={() => {
-                    if (!active) router.push(electionPageHref(election.id, route.page));
+                    if (!active) router.push(hrefFor(election.id));
                   }}
                   className={cn(menuItemClassName, "relative h-auto gap-2.5 py-2 pr-8")}
                 >

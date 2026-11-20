@@ -13,7 +13,7 @@ import { AdminAvatar } from "./admin-avatar";
 import styles from "./dashboard-header.module.css";
 import { headerIconButtonClassName } from "./header-icon-button";
 import { NotificationMenu } from "./notification-menu";
-import { ElectionBreadcrumb } from "./election-breadcrumb";
+import { ElectionBreadcrumb, WizardBreadcrumb } from "./election-breadcrumb";
 import { usePageCrumbOverride, usePageDescriptionOverride } from "./page-description";
 import { ProfileMenu } from "./profile-menu";
 import { ThemeToggle } from "./theme-toggle";
@@ -41,6 +41,10 @@ export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, class
   const hero = headerTheme === "hero";
   const electionRoute = parseElectionRoute(pathname);
   const crumb = usePageCrumbOverride(pathname);
+  // Create / Edit election get their own breadcrumb ("Elections / Create Election DRAFT").
+  const editMatch = /^\/elections\/([^/]+)\/edit$/.exec(pathname);
+  const wizard = pathname === "/elections/new" || editMatch !== null;
+  const wizardElectionId = editMatch ? decodeURIComponent(editMatch[1]) : null;
 
   return (
     <header
@@ -84,7 +88,9 @@ export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, class
             <MenuIcon aria-hidden strokeWidth={1.75} />
           </button>
 
-          {electionRoute ? (
+          {wizard ? (
+            <WizardBreadcrumb electionId={wizardElectionId} elections={elections} loaded={loaded} />
+          ) : electionRoute ? (
             <ElectionBreadcrumb route={electionRoute} elections={elections} loaded={loaded} tail={crumb} />
           ) : (
             <div

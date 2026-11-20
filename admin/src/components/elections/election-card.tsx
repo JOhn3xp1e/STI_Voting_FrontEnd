@@ -1,11 +1,13 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Menu } from "@base-ui/react/menu";
 import { CalendarDays, ChevronRight, Ellipsis, Pencil, Trash2, Users } from "lucide-react";
 
 import { menuItemClassName, popupClassName } from "@/components/dashboard/popup-styles";
+import { AnimatedNumber } from "@/components/students/animated-number";
 import {
   canDeleteElection,
   canEditElection,
@@ -14,9 +16,12 @@ import {
   formatLevelScopeShort,
   formatProgramScope,
   formatVotingDates,
+  votingCountdown,
 } from "@/lib/elections";
 import { cn } from "@/lib/utils";
 import type { Election, ElectionStatus } from "@/types/election.types";
+
+import motion from "./elections.module.css";
 
 /** Banner fill when the election has no banner image yet, and the status pill colours. */
 const STATUS_STYLES: Record<ElectionStatus, { banner: string; pill: string }> = {
@@ -42,9 +47,25 @@ const STATUS_STYLES: Record<ElectionStatus, { banner: string; pill: string }> = 
   },
 };
 
-/** Footer note while voters aren't generated (turnout comes with the voters module). */
-function turnoutNote(status: ElectionStatus): string {
-  return status === "Cancelled" ? "cancelled before voting" : "voters not generated yet";
+/**
+ * Footer note under the turnout bar (turnout itself comes with the voters module):
+ * "312 voters · opens in 6 days", "voters not generated yet", "cancelled before voting".
+ */
+function FooterNote({ election, voters, now }: { election: Election; voters: number | null; now: Date }) {
+  if (election.status === "Draft") return <>voters not generated yet</>;
+  if (election.status === "Cancelled") return <>cancelled before voting</>;
+  const countdown = votingCountdown(election, now);
+  return (
+    <>
+      {voters !== null ? (
+        <span className="animate-in fade-in duration-500 motion-reduce:animate-none">
+          <AnimatedNumber value={voters} from={0} duration={900} /> {voters === 1 ? "voter" : "voters"}
+          {countdown ? <span aria-hidden> · </span> : null}
+        </span>
+      ) : null}
+      {countdown}
+    </>
+  );
 }
 
 /** "⋯" on the banner: Edit and Delete, each disabled with the reason when not allowed. */
@@ -99,37 +120,72 @@ function CardMenu({ election, onDelete }: { election: Election; onDelete: (elect
 interface ElectionCardProps {
   election: Election;
   onDelete: (election: Election) => void;
+  /** Students the election's filters let vote; `null` while enrollments load. */
+  voters: number | null;
+  /** For "opens in 6 days". */
+  now: Date;
+  /** Just created or saved: the card pulses and scrolls into view. */
+  saved?: boolean;
 }
 
 /** The whole card opens the edit page (when editable); the "⋯" menu sits above that link. */
-export function ElectionCard({ election, onDelete }: ElectionCardProps) {
+export function ElectionCard({ election, onDelete, voters, now, saved = false }: ElectionCardProps) {
   const styles = STATUS_STYLES[election.status];
   const cancelled = election.status === "Cancelled";
+  const ongoing = election.status === "Ongoing";
   const editable = canEditElection(election.status);
+  const ref = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (saved) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [saved]);
 
   return (
     <article
+      ref={ref}
       className={cn(
         "group relative flex h-full flex-col overflow-hidden rounded-[0.375rem] border border-[#e2e8f0] bg-card shadow-[0_1px_2px_rgb(15_23_42/0.04)] dark:border-border",
         "transition-[translate,border-color,box-shadow] duration-300 ease-out motion-reduce:transition-none",
         editable &&
-          "hover:-translate-y-0.5 hover:border-brand-blue/25 hover:shadow-[0_16px_32px_-22px_rgb(15_76_158/0.55)] motion-reduce:hover:translate-y-0",
+          "hover:-translate-y-1 hover:border-brand-blue/25 hover:shadow-[0_20px_36px_-22px_rgb(15_76_158/0.6)] motion-reduce:hover:translate-y-0",
         "has-[a:focus-visible]:border-brand-blue/50 has-[a:focus-visible]:shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-brand-blue)_22%,transparent)]",
+        saved && cn(motion.saved, "border-brand-blue/45"),
       )}
     >
-      {/* Banner (3:1 slot) */}
-      <div
-        className={cn("relative h-35 bg-cover bg-center", !election.photoUrl && styles.banner)}
-        style={election.photoUrl ? { backgroundImage: `url("${election.photoUrl}")` } : undefined}
-      >
+      {/* Banner (3:1 slot); the image eases in a little on hover. */}
+      <div className={cn("relative h-35 overflow-hidden", !election.photoUrl && styles.banner)}>
+        {election.photoUrl ? (
+          <span
+            aria-hidden
+            className="absolute inset-0 bg-cover bg-center transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.045] motion-reduce:transition-none"
+            style={{ backgroundImage: `url("${election.photoUrl}")` }}
+          />
+        ) : (
+          // Soft light that drifts across empty banners on hover.
+          <span
+            aria-hidden
+            className="absolute -inset-y-10 -left-1/2 w-1/2 -skew-x-12 bg-linear-to-r from-transparent via-white/10 to-transparent opacity-0 transition-[translate,opacity] duration-1000 ease-out group-hover:translate-x-[300%] group-hover:opacity-100 motion-reduce:hidden"
+          />
+        )}
         <span
           className={cn(
-            "absolute top-3.5 left-3.5 inline-flex h-5 items-center rounded-full px-3 font-mono text-[0.625rem] font-semibold tracking-[0.1em] uppercase",
+            "absolute top-3.5 left-3.5 inline-flex h-5 items-center gap-1.5 rounded-full px-3 font-mono text-[0.625rem] font-semibold tracking-[0.1em] uppercase",
             styles.pill,
           )}
         >
+          {ongoing ? (
+            <span aria-hidden className="relative flex size-1.5">
+              <span className={cn("absolute inset-0 rounded-full bg-current", motion.liveDot)} />
+              <span className="relative size-1.5 rounded-full bg-current" />
+            </span>
+          ) : null}
           {election.status}
         </span>
+        {saved ? (
+          <span className={cn("absolute top-3.5 right-12 inline-flex h-5 items-center rounded-full bg-white px-2.5 font-mono text-[0.625rem] font-semibold tracking-[0.08em] text-brand-blue uppercase shadow-sm", motion.savedTag)}>
+            Saved
+          </span>
+        ) : null}
         {!election.photoUrl ? (
           <span className="absolute right-3 bottom-2.5 font-mono text-[0.625rem] tracking-[0.08em] text-white/55 uppercase">
             Banner <span aria-hidden>·</span> 3:1
@@ -178,11 +234,16 @@ export function ElectionCard({ election, onDelete }: ElectionCardProps) {
             <span className="font-mono text-foreground">—</span>
           </div>
           <div className="mt-1.5 h-1.5 rounded-full bg-[#e8edf3] dark:bg-white/8" />
-          <p className="mt-2 font-mono text-[0.65625rem] text-muted-foreground">{turnoutNote(election.status)}</p>
+          <p className="mt-2 truncate font-mono text-[0.65625rem] text-muted-foreground">
+            <FooterNote election={election} voters={voters} now={now} />
+          </p>
         </div>
         <ChevronRight
           aria-hidden
-          className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-300", editable ? "group-hover:translate-x-0.5" : "opacity-40")}
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-[translate,color] duration-300 ease-out",
+            editable ? "group-hover:translate-x-1 group-hover:text-brand-blue dark:group-hover:text-[#7aa7e6]" : "opacity-40",
+          )}
           strokeWidth={1.75}
         />
       </div>

@@ -14,6 +14,7 @@ import {
   editBlockedReason,
   electionToForm,
   localToInstant,
+  markElectionSaved,
   programsByCareer,
   sortProgramsByCode,
   validateDetails,
@@ -40,7 +41,7 @@ import type { Term } from "@/types/term.types";
 import { useElectionsNav } from "../elections-nav";
 import { Stepper } from "./create-election-ui";
 import { DetailsStep, ReviewStep, RulesStep } from "./create-election-steps";
-import { SummaryPanel } from "./summary-panel";
+import { SummaryPanel, type SummaryBusy } from "./summary-panel";
 import { VotersStep } from "./voters-step";
 import styles from "./wizard.module.css";
 
@@ -280,7 +281,7 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
   const [reached, setReached] = useState(editing ? LAST_STEP : 0);
   const [detailsErrors, setDetailsErrors] = useState<DetailsErrors>({});
   const [votersErrors, setVotersErrors] = useState<VotersErrors>({});
-  const [busy, setBusy] = useState<"secondary" | "primary" | null>(null);
+  const [busy, setBusy] = useState<SummaryBusy>(null);
   const [error, setError] = useState<string | null>(null);
   /** A newly picked banner: the file to upload on save, plus its preview URL. */
   const [banner, setBanner] = useState<{ file: File; url: string } | null>(null);
@@ -329,8 +330,8 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
     return true;
   }
 
-  /** Creates a new election or updates the one being edited, then goes back to the cards. */
-  async function save(kind: "secondary" | "primary", upTo: number) {
+  /** Creates a new election or updates the one being edited, then goes back to the cards (where its card pulses). */
+  async function save(kind: Exclude<SummaryBusy, null>, upTo: number) {
     if (!checkSteps(upTo)) return;
     setBusy(kind);
     setError(null);
@@ -340,6 +341,7 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
       const saved = election ? await updateElection(election.id, input, photo) : await createElection(input, photo);
       onSaved(saved);
       refreshElectionsNav();
+      markElectionSaved(saved.id);
       router.push(ELECTIONS_HREF);
     } catch (cause) {
       const message = getApiErrorMessage(cause);
@@ -398,7 +400,15 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
             ) : step === 2 ? (
               <RulesStep form={form} update={update} locked={editing} />
             ) : (
-              <ReviewStep form={form} terms={catalog.terms} pool={pool} programs={catalog.careerPrograms} editing={editing} onEdit={goTo} />
+              <ReviewStep
+                form={form}
+                terms={catalog.terms}
+                pool={pool}
+                programs={catalog.careerPrograms}
+                colors={catalog.careerColors}
+                editing={editing}
+                onEdit={goTo}
+              />
             )}
           </div>
         </div>
@@ -417,6 +427,10 @@ function ElectionWizard({ catalog, election, onSaved }: ElectionWizardProps) {
             onSecondary={onSecondary}
             primaryLabel={primaryLabel}
             onPrimary={atEnd ? () => void save("primary", 1) : next}
+            editing={editing}
+            finalizeLabel={editing ? "Save changes" : "Finalize election"}
+            canFinalize={reached === LAST_STEP}
+            onFinalize={() => void save("finalize", 1)}
             busy={busy}
             error={error}
           />

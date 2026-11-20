@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Check, LoaderCircle } from "lucide-react";
+import { ArrowRight, Check, LoaderCircle, Lock } from "lucide-react";
 
 import { AnimatedNumber } from "@/components/students/animated-number";
 import {
@@ -38,10 +38,19 @@ interface SummaryPanelProps {
   onSecondary: () => void;
   primaryLabel: string;
   onPrimary: () => void;
+  /** Editing an existing election (changes step 1's notes). */
+  editing: boolean;
+  /** Step 1's gold button: "Finalize election" (or "Save changes" when editing). */
+  finalizeLabel: string;
+  /** Finalize saves the whole election, so it unlocks once every step has been reached. */
+  canFinalize: boolean;
+  onFinalize: () => void;
   /** Which button is waiting for the API, if any. */
-  busy: "secondary" | "primary" | null;
+  busy: SummaryBusy;
   error: string | null;
 }
+
+export type SummaryBusy = "secondary" | "primary" | "finalize" | null;
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -87,9 +96,29 @@ export function SummaryPanel({
   onSecondary,
   primaryLabel,
   onPrimary,
+  editing,
+  finalizeLabel,
+  canFinalize,
+  onFinalize,
   busy,
   error,
 }: SummaryPanelProps) {
+  const first = step === 0;
+  const spinner = <LoaderCircle aria-hidden className="mr-2 size-3.5 animate-spin" />;
+  const primaryButton = (
+    <button type="button" onClick={onPrimary} disabled={busy !== null} className={cn(ctaButtonClassName, "group/next min-w-0", first && "w-full justify-between")}>
+      <span className="flex min-w-0 items-center">
+        {busy === "primary" ? spinner : null}
+        <span key={primaryLabel} className={cn("truncate", styles.fadeUp)}>
+          {primaryLabel}
+        </span>
+      </span>
+      {first ? (
+        <ArrowRight aria-hidden className="ml-2 size-4 shrink-0 transition-transform duration-300 ease-out group-hover/next:translate-x-1 motion-reduce:transition-none" strokeWidth={2} />
+      ) : null}
+    </button>
+  );
+
   return (
     <section aria-labelledby="summary-heading" className={cn(cardClassName, "shadow-[0_18px_40px_-30px_rgb(15_23_42/0.35)]")}>
       <header className="flex h-13.75 items-center justify-between gap-3 border-b border-[#e2e8f0] px-5 dark:border-border">
@@ -110,8 +139,14 @@ export function SummaryPanel({
               <span aria-hidden className="absolute inset-0 bg-linear-to-t from-brand-navy/85 via-brand-navy/30 to-transparent" />
             </>
           ) : (
-            <span aria-hidden className="absolute -top-10 -right-8 size-36 rounded-full bg-white/6" />
+            <>
+              {/* Two soft lights drifting slowly across the empty banner. */}
+              <span aria-hidden className={cn("absolute -top-12 -right-10 size-40 rounded-full bg-white/8 blur-xl", styles.drift)} />
+              <span aria-hidden className={cn("absolute -bottom-16 left-6 size-32 rounded-full bg-[#3b82f6]/30 blur-2xl", styles.driftSlow)} />
+            </>
           )}
+          {/* A light sweeps across when the category changes. */}
+          <span key={`sheen-${form.category}`} aria-hidden className={cn("absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-linear-to-r from-transparent via-white/18 to-transparent", styles.sheen)} />
           <p key={form.category} className={cn("relative font-mono text-[0.625rem] tracking-[0.06em] text-brand-gold uppercase", styles.fadeUp)}>
             {form.category}
           </p>
@@ -192,7 +227,7 @@ export function SummaryPanel({
                         <span className="w-18 shrink-0 text-[0.75rem] text-muted-foreground">{levelLabel(level, career)}</span>
                         <span className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-[#e3e8ef] dark:bg-white/10">
                           <span
-                            className="absolute inset-y-0 left-0 rounded-full bg-(--career) transition-[width] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+                            className={cn("absolute inset-y-0 left-0 rounded-full bg-(--career) transition-[width] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none", styles.barGrow)}
                             style={{ width: `${(count / scale) * 100}%` }}
                           />
                         </span>
@@ -206,13 +241,13 @@ export function SummaryPanel({
           </div>
         </Collapse>
 
-        {/* Voting rules (from step 3 on) */}
-        <Collapse open={step >= 2}>
+        {/* Voting rules (step 3) */}
+        <Collapse open={step === 2}>
           <div className={cn("mt-3.5 pt-3.5", divider)}>
             <SubHeading>Voting rules</SubHeading>
             <dl>
               <div className="flex items-start justify-between gap-4 py-1">
-                <dt className="shrink-0 text-[0.8125rem] text-muted-foreground">Rules</dt>
+                <dt className="shrink-0 text-[0.8125rem] text-muted-foreground">Ballot</dt>
                 <dd className="min-w-0 text-right text-[0.75rem] leading-5 break-words text-foreground">{form.rules.trim() || "—"}</dd>
               </div>
               {CANDIDACY_OPTIONS.map((option) => {
@@ -229,28 +264,72 @@ export function SummaryPanel({
           </div>
         </Collapse>
 
-        <div className={cn("mt-4 flex gap-2.5", step >= 1 && cn("pt-4", divider))}>
-          <button type="button" onClick={onSecondary} disabled={busy !== null} className={cn(outlineButtonClassName, "justify-start")}>
-            {busy === "secondary" ? <LoaderCircle aria-hidden className="mr-2 size-3.5 animate-spin" /> : null}
-            {secondaryLabel}
-          </button>
-          <button type="button" onClick={onPrimary} disabled={busy !== null} className={cn(ctaButtonClassName, "min-w-0")}>
-            {busy === "primary" ? <LoaderCircle aria-hidden className="mr-2 size-3.5 animate-spin" /> : null}
-            <span key={primaryLabel} className={cn("truncate", styles.fadeUp)}>
-              {primaryLabel}
-            </span>
-          </button>
-        </div>
+        {/* Admins (review) */}
+        <Collapse open={step === 3}>
+          <dl className={cn("mt-3.5 pt-2.5", divider)}>
+            <Row label="Admins">
+              <span className="text-muted-foreground">Add after creating</span>
+            </Row>
+          </dl>
+        </Collapse>
+
+        {first ? (
+          // Step 1: Next on its own row, then Save draft | Finalize.
+          <div key="buttons-first" className={cn("mt-4 space-y-2.5", styles.fadeUp)}>
+            {primaryButton}
+            <div className="grid grid-cols-2 gap-2.5">
+              <button type="button" onClick={onSecondary} disabled={busy !== null} className={cn(outlineButtonClassName, "min-w-0 justify-start")}>
+                {busy === "secondary" ? spinner : null}
+                <span className="truncate">{secondaryLabel}</span>
+              </button>
+              <button
+                type="button"
+                onClick={onFinalize}
+                disabled={!canFinalize || busy !== null}
+                aria-describedby="summary-finalize-hint"
+                className={cn(
+                  "relative inline-flex h-8.5 min-w-0 cursor-pointer items-center justify-start overflow-hidden rounded-[0.25rem] px-4 text-[0.875rem] font-semibold outline-none",
+                  "transition-[background-color,color,box-shadow,translate] duration-300 ease-out focus-visible:ring-3 focus-visible:ring-brand-gold/40",
+                  canFinalize
+                    ? "bg-brand-gold text-brand-navy shadow-[0_8px_18px_-12px_color-mix(in_oklab,var(--color-brand-gold)_90%,black)] hover:-translate-y-px hover:bg-[#ffcd33] active:translate-y-0 motion-reduce:hover:translate-y-0"
+                    : "cursor-not-allowed bg-brand-gold/35 text-brand-navy/40 dark:bg-brand-gold/15 dark:text-brand-gold/45",
+                  "disabled:pointer-events-none",
+                )}
+              >
+                {busy === "finalize" ? spinner : !canFinalize ? <Lock aria-hidden className="mr-1.5 size-3.5 shrink-0" strokeWidth={2} /> : null}
+                <span className="truncate">{finalizeLabel}</span>
+                {/* A light runs across once when it unlocks. */}
+                {canFinalize ? (
+                  <span aria-hidden className={cn("pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-linear-to-r from-transparent via-white/55 to-transparent", styles.sheen)} />
+                ) : null}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div key="buttons-later" className={cn("mt-4 flex gap-2.5 pt-4", divider, styles.fadeUp)}>
+            <button type="button" onClick={onSecondary} disabled={busy !== null} className={cn(outlineButtonClassName, "justify-start")}>
+              {busy === "secondary" ? spinner : null}
+              {secondaryLabel}
+            </button>
+            {primaryButton}
+          </div>
+        )}
 
         {error ? (
-          <p role="alert" className="mt-3 rounded-[0.25rem] border border-destructive/30 bg-destructive/5 px-3 py-2 text-[0.75rem] leading-4.5 text-destructive">
+          <p role="alert" className="mt-3 rounded-[0.25rem] border border-destructive/30 bg-destructive/5 px-3 py-2 text-[0.75rem] leading-4.5 text-destructive animate-in fade-in slide-in-from-top-1 duration-300 motion-reduce:animate-none">
             {error}
           </p>
         ) : null}
 
-        <Collapse open={step >= 1}>
-          <p className="mt-4 text-[0.75rem] leading-4 text-muted-foreground">Voters, passcodes and OTP emails are generated after the election is created.</p>
-        </Collapse>
+        <p key={first ? "note-first" : "note-later"} id="summary-finalize-hint" className={cn("mt-3 text-[0.75rem] leading-4 text-muted-foreground", styles.fadeUp)}>
+          {!first
+            ? "Voters, passcodes and OTP emails are generated after the election is created."
+            : editing
+              ? "Save changes keeps every step as it is now. You can also go through the steps and save from Review."
+              : canFinalize
+                ? "All 4 steps are complete. Finalize creates the election with them as they are now."
+                : "Finalize unlocks after all 4 steps are complete. Finalizing locks the details and schedules the election."}
+        </p>
       </div>
     </section>
   );

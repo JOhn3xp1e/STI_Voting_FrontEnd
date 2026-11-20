@@ -60,6 +60,58 @@ export function formatVotingDates(startsAt: string, endsAt: string): string {
   return `${formatDay(start, { year: !sameYear })} – ${formatDay(end, { year: true })}`;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Whole calendar days from `from` to `to` (local time). */
+function daysBetween(from: Date, to: Date): number {
+  const a = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
+  const b = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
+  return Math.round((b - a) / DAY_MS);
+}
+
+/** "today", "tomorrow" or "in 6 days" (non-negative day counts). */
+function inDays(days: number): string {
+  return days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
+}
+
+/** Card footer timing: "opens in 6 days", "closes today", "ended Mar 4". `null` for drafts and cancelled elections. */
+export function votingCountdown(election: Pick<Election, "status" | "startsAt" | "endsAt">, now: Date): string | null {
+  // The status can lag behind the dates (the backend moves it on); then just name the date.
+  if (election.status === "Upcoming") {
+    const days = daysBetween(now, new Date(election.startsAt));
+    return days < 0 ? `scheduled ${formatDay(instantToLocal(election.startsAt))}` : `opens ${inDays(days)}`;
+  }
+  if (election.status === "Ongoing") {
+    const days = daysBetween(now, new Date(election.endsAt));
+    return days < 0 ? `ended ${formatDay(instantToLocal(election.endsAt))}` : `closes ${inDays(days)}`;
+  }
+  if (election.status === "Completed") return `ended ${formatDay(instantToLocal(election.endsAt))}`;
+  return null;
+}
+
+/* The elections list flashes the card of an election that was just created or saved. */
+
+const SAVED_KEY = "slvp:election-saved";
+
+export function markElectionSaved(id: string): void {
+  try {
+    sessionStorage.setItem(SAVED_KEY, id);
+  } catch {
+    // Storage blocked: the list just won't flash the card.
+  }
+}
+
+/** The id marked by `markElectionSaved`, once (it's cleared as it's read). */
+export function takeSavedElection(): string | null {
+  try {
+    const id = sessionStorage.getItem(SAVED_KEY);
+    sessionStorage.removeItem(SAVED_KEY);
+    return id;
+  } catch {
+    return null;
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                Voter filters                               */
 /* -------------------------------------------------------------------------- */
@@ -235,6 +287,13 @@ export interface LevelCount {
   included: boolean;
 }
 
+export interface ProgramCount {
+  code: string;
+  count: number;
+  /** False when the program is filtered out (its count is then 0). */
+  included: boolean;
+}
+
 export interface CareerPool {
   career: Career;
   /** Students of this career who can vote. */
@@ -242,6 +301,10 @@ export interface CareerPool {
   levels: LevelCount[];
   /** Largest level count before the level filter, so bars keep their scale while levels are toggled. */
   scale: number;
+  /** Who can vote per program (level filter applied); empty for careers without programs. */
+  programs: ProgramCount[];
+  /** Largest program count before the program filter, so program bars keep their scale too. */
+  programScale: number;
 }
 
 export interface VoterPool {
@@ -268,21 +331,33 @@ export function voterPool(
   const levelSet = new Set(scope.levelScope);
   const levelOk = (level: number) => levelSet.size === 0 || levelSet.has(level);
 
+  const programOk = (code: string | null) => programSet.size === 0 || (code !== null && programSet.has(code));
+
   const pools = careers
     .filter((c) => scope.careerScope.includes(c.code))
     .map((career): CareerPool => {
-      const rows = inTerm.filter((e) => e.careerCode === career.code && (programSet.size === 0 || (e.programCode !== null && programSet.has(e.programCode))));
+      const ofCareer = inTerm.filter((e) => e.careerCode === career.code);
+      const rows = ofCareer.filter((e) => programOk(e.programCode));
       const byLevel = new Map<number, number>();
       for (const e of rows) byLevel.set(e.level, (byLevel.get(e.level) ?? 0) + 1);
       const levels = careerLevels(career).map((level) => {
         const included = levelOk(level);
         return { level, count: included ? (byLevel.get(level) ?? 0) : 0, included };
       });
+
+      const byProgram = new Map<string, number>();
+      for (const e of ofCareer) if (e.programCode && levelOk(e.level)) byProgram.set(e.programCode, (byProgram.get(e.programCode) ?? 0) + 1);
+      const own = programs.get(career.code) ?? [];
       return {
         career,
         total: rows.filter((e) => levelOk(e.level)).length,
         levels,
         scale: Math.max(1, ...careerLevels(career).map((l) => byLevel.get(l) ?? 0)),
+        programs: own.map((code) => {
+          const included = programOk(code);
+          return { code, count: included ? (byProgram.get(code) ?? 0) : 0, included };
+        }),
+        programScale: Math.max(1, ...own.map((code) => byProgram.get(code) ?? 0)),
       };
     });
 

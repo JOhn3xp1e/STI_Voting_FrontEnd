@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, RotateCw } from "lucide-react";
 
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { PageError, Toast, useNotice } from "@/components/shared/page-feedback";
@@ -10,16 +10,18 @@ import { ElectionsGridSkeleton } from "./elections-skeleton";
 import { UnderlineTabs, type UnderlineTab } from "@/components/shared/underline-tabs";
 import { OptionMenu } from "@/components/students/option-menu";
 import { primaryButtonClassName } from "@/components/students/student-toolbar-styles";
+import { countEligibleVoters, takeSavedElection } from "@/lib/elections";
 import { formatTermTitle, sortTerms } from "@/lib/terms";
 import { cn } from "@/lib/utils";
 import { getApiErrorMessage } from "@/services/api/error-message";
-import { deleteElection, fetchElections } from "@/services/elections/elections.service";
+import { deleteElection, fetchElections, fetchVoterEnrollments } from "@/services/elections/elections.service";
 import { fetchTerms } from "@/services/terms/terms.service";
-import type { Election, ElectionStatus } from "@/types/election.types";
+import type { Election, ElectionStatus, VoterEnrollment } from "@/types/election.types";
 import type { Term } from "@/types/term.types";
 
 import { ElectionCard } from "./election-card";
 import { useElectionsNav } from "./elections-nav";
+import motion from "./elections.module.css";
 
 type ElectionTab = "all" | Lowercase<ElectionStatus>;
 
@@ -37,7 +39,8 @@ export const NEW_ELECTION_HREF = "/elections/new";
 type LoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; elections: Election[]; terms: Term[] };
+  /** `now`: when the list loaded, for "opens in 6 days". */
+  | { status: "ready"; elections: Election[]; terms: Term[]; now: Date };
 
 /** Dashed "Create election" tile shown at the end of the election grid. */
 function CreateElectionCard() {
@@ -60,7 +63,10 @@ function CreateElectionCard() {
           "motion-reduce:transition-none motion-reduce:group-hover/create:translate-y-0",
         )}
       >
-        <Plus className="size-4.5" strokeWidth={1.75} />
+        <Plus
+          className="size-4.5 transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover/create:rotate-90 motion-reduce:transition-none"
+          strokeWidth={1.75}
+        />
       </span>
       <span className="mt-2 text-[0.9375rem] leading-5 font-semibold text-brand-navy dark:text-foreground">Create election</span>
       <span className="mt-1.5 font-mono text-[0.6875rem] leading-3.5 text-muted-foreground">
@@ -77,6 +83,11 @@ export function ElectionsPage() {
   const [tab, setTab] = useState<ElectionTab>("all");
   const [termId, setTermId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Election | null>(null);
+  /** Enrollments for the voter counts on the cards; they load after the list (`null` until then). */
+  const [enrollments, setEnrollments] = useState<VoterEnrollment[] | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  /** The election that was just created or saved: its card pulses once. */
+  const [savedId, setSavedId] = useState<string | null>(null);
   const { notice, say } = useNotice();
   const { refresh: refreshElectionsNav } = useElectionsNav();
 
@@ -94,19 +105,44 @@ export function ElectionsPage() {
     say(`Deleted ${election.id} · ${election.title}.`);
   }
 
+  // Also runs again when this page is shown after the wizard (Next keeps it alive, hidden), so the list is fresh.
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
     Promise.all([fetchElections({ signal }), fetchTerms({ signal })])
-      .then(([elections, terms]) => setState({ status: "ready", elections, terms: sortTerms(terms) }))
+      .then(([elections, terms]) => {
+        setState({ status: "ready", elections, terms: sortTerms(terms), now: new Date() });
+        const saved = takeSavedElection();
+        if (saved) setSavedId(saved);
+      })
       .catch((error: unknown) => {
         if (!signal.aborted) setState({ status: "error", message: getApiErrorMessage(error) });
+      })
+      .finally(() => {
+        if (!signal.aborted) setRefreshing(false);
       });
+    // Voter counts are extra: the cards show without them, and a failure only hides them.
+    fetchVoterEnrollments({ signal })
+      .then(setEnrollments)
+      .catch(() => undefined);
     return () => controller.abort();
   }, [attempt]);
 
+  // The pulse plays once; clear it so a later visit doesn't replay it.
+  useEffect(() => {
+    if (!savedId) return;
+    const timer = setTimeout(() => setSavedId(null), 4000);
+    return () => clearTimeout(timer);
+  }, [savedId]);
+
   const elections = useMemo(() => (state.status === "ready" ? state.elections : []), [state]);
   const terms = state.status === "ready" ? state.terms : [];
+  const now = state.status === "ready" ? state.now : null;
+
+  const voterCounts = useMemo(() => {
+    if (!enrollments) return null;
+    return new Map(elections.map((e) => [e.id, countEligibleVoters(enrollments, e)]));
+  }, [elections, enrollments]);
 
   const tabs = useMemo<UnderlineTab<ElectionTab>[]>(
     () =>
@@ -150,8 +186,31 @@ export function ElectionsPage() {
             <span className="truncate">Term: {selectedTerm ? formatTermTitle(selectedTerm) : "All terms"}</span>
           </OptionMenu>
 
-          <Link href={NEW_ELECTION_HREF} className={cn(primaryButtonClassName, "rounded-[0.25rem] px-4 text-[0.875rem]")}>
-            + New election
+          <button
+            type="button"
+            aria-label="Refresh elections"
+            title="Refresh"
+            disabled={refreshing || state.status === "loading"}
+            onClick={() => {
+              setRefreshing(true);
+              setAttempt((n) => n + 1);
+            }}
+            className={cn(
+              "group/refresh inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-[0.25rem] border border-[#e2e8f0] bg-background text-foreground/80 outline-none dark:border-border",
+              "transition-[border-color,background-color,color,scale] duration-200 hover:border-[color-mix(in_oklab,var(--color-brand-muted)_38%,transparent)] hover:bg-muted/60 hover:text-foreground active:scale-95",
+              "focus-visible:border-brand-blue/60 focus-visible:ring-3 focus-visible:ring-brand-blue/15 disabled:cursor-wait motion-reduce:active:scale-100",
+            )}
+          >
+            <RotateCw
+              aria-hidden
+              className={cn("size-4 transition-transform duration-500", refreshing ? "animate-spin motion-reduce:animate-none" : "group-hover/refresh:rotate-45")}
+              strokeWidth={1.75}
+            />
+          </button>
+
+          <Link href={NEW_ELECTION_HREF} className={cn(primaryButtonClassName, "group/new gap-1.5 rounded-[0.25rem] px-4 text-[0.875rem]")}>
+            <Plus aria-hidden className="size-4 transition-transform duration-300 group-hover/new:rotate-90 motion-reduce:transition-none" strokeWidth={2} />
+            New election
           </Link>
         </div>
       </div>
@@ -170,16 +229,31 @@ export function ElectionsPage() {
             }}
           />
         ) : (
-          <ul className="grid grid-cols-1 gap-x-5 gap-y-5.5 md:grid-cols-2 xl:grid-cols-3">
-            {visible.map((election) => (
-              <li key={election.id}>
-                <ElectionCard election={election} onDelete={setDeleting} />
+          <>
+            {visible.length === 0 && (tab !== "all" || termId) ? (
+              <p className="mb-4 text-[0.875rem] text-muted-foreground animate-in fade-in duration-300 motion-reduce:animate-none">
+                No {tab === "all" ? "" : `${TAB_LABELS.find(([value]) => value === tab)?.[1].toLowerCase()} `}elections
+                {selectedTerm ? ` in ${formatTermTitle(selectedTerm)}` : ""}.
+              </p>
+            ) : null}
+            {/* Keyed by the filters, so switching tabs or terms deals the cards in again. */}
+            <ul key={`${tab}|${termId ?? ""}`} className="grid grid-cols-1 gap-x-5 gap-y-5.5 md:grid-cols-2 xl:grid-cols-3">
+              {visible.map((election, index) => (
+                <li key={election.id} className={motion.cardIn} style={{ animationDelay: `${Math.min(index, 8) * 65}ms` }}>
+                  <ElectionCard
+                    election={election}
+                    onDelete={setDeleting}
+                    voters={voterCounts?.get(election.id) ?? null}
+                    now={now!}
+                    saved={election.id === savedId}
+                  />
+                </li>
+              ))}
+              <li className={motion.cardIn} style={{ animationDelay: `${Math.min(visible.length, 8) * 65}ms` }}>
+                <CreateElectionCard />
               </li>
-            ))}
-            <li>
-              <CreateElectionCard />
-            </li>
-          </ul>
+            </ul>
+          </>
         )}
       </div>
 

@@ -6,13 +6,16 @@ import { ImageUp, Lock, RefreshCw, X } from "lucide-react";
 import { errorClassName, fieldClassName, labelClassName } from "@/components/shared/form-styles";
 import { Switch } from "@/components/settings/settings-ui";
 import { Caret, OptionMenu } from "@/components/students/option-menu";
+import { AnimatedNumber } from "@/components/students/animated-number";
 import {
   formatDayTime,
   formatLevelScope,
-  formatProgramScope,
+  levelGroupLabel,
+  levelLabel,
   levelPicks,
   programGroupLabel,
   programPicks,
+  type CareerPool,
   type DetailsErrors,
   type ElectionForm,
   type ProgramsByCareer,
@@ -24,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { ELECTION_CATEGORIES, type CandidacySettings } from "@/types/election.types";
 import type { Term } from "@/types/term.types";
 
-import { DateTimePicker, ReviewRow, SectionCard, cardClassName } from "./create-election-ui";
+import { CareerBadge, DateTimePicker, ReviewRow, SectionCard, cardClassName, careerStyle } from "./create-election-ui";
 import styles from "./wizard.module.css";
 
 const inputClassName = cn(fieldClassName, "rounded-[0.25rem] border-[#e2e8f0] dark:border-border");
@@ -401,11 +404,12 @@ interface ReviewStepProps {
   terms: readonly Term[];
   pool: VoterPool;
   programs: ProgramsByCareer;
+  colors: ReadonlyMap<string, string>;
   editing: boolean;
   onEdit: (step: number) => void;
 }
 
-function ReviewCard({ title, onEdit, children }: { title: string; onEdit: () => void; children: ReactNode }) {
+function ReviewCard({ title, onEdit, children, after }: { title: string; onEdit: () => void; children: ReactNode; after?: ReactNode }) {
   return (
     <SectionCard
       title={title}
@@ -421,14 +425,85 @@ function ReviewCard({ title, onEdit, children }: { title: string; onEdit: () => 
       bodyClassName="px-5 pt-4 pb-3.5"
     >
       <dl>{children}</dl>
+      {after}
     </SectionCard>
   );
 }
 
-const onOff = (on: boolean) => <span className={on ? "font-medium text-brand-blue dark:text-[#7aa7e6]" : "text-muted-foreground"}>{on ? "On" : "Off"}</span>;
+const switchText = (on: boolean, yes = "On", no = "Off") => (
+  <span className={on ? "font-medium text-brand-blue dark:text-[#7aa7e6]" : "text-muted-foreground"}>{on ? yes : no}</span>
+);
 
-export function ReviewStep({ form, terms, pool, programs, editing, onEdit }: ReviewStepProps) {
+/** Rows of the review's Rules card (labels as on the printed election summary). */
+const RULE_ROWS: { key: keyof CandidacySettings; label: string; on: string; off: string }[] = [
+  { key: "openCandidacy", label: "Open candidacy", on: "On", off: "Off" },
+  { key: "crossPositionCandidacy", label: "Run for more than one position", on: "On", off: "Off" },
+  { key: "requireActiveEnrollment", label: "Active enrollment", on: "Required", off: "Not required" },
+];
+
+const percent = (part: number, whole: number) => (whole ? Math.round((part / whole) * 100) : 0);
+
+/** One labelled bar list ("By program", "By year level") inside a career's breakdown. */
+function BreakdownBars({ title, rows, total, scale }: { title: string; rows: { key: string; label: string; count: number; included: boolean }[]; total: number; scale: number }) {
+  return (
+    <div className="mt-3 first:mt-2">
+      <p className="mb-1.5 font-mono text-[0.625rem] tracking-[0.1em] text-muted-foreground uppercase">{title}</p>
+      <ul className="space-y-1.5">
+        {rows.map((row, index) => (
+          <li key={row.key} className={cn("grid grid-cols-[4.75rem_minmax(0,1fr)_2.75rem_2.25rem] items-center gap-2.5 transition-opacity duration-300", !row.included && "opacity-40")}>
+            <span className="truncate text-[0.75rem] text-foreground/85">{row.label}</span>
+            <span className="relative h-1.5 overflow-hidden rounded-full bg-[#e3e8ef] dark:bg-white/10">
+              <span
+                className={cn("absolute inset-y-0 left-0 rounded-full bg-(--career)", styles.barGrow)}
+                style={{ width: `${(row.count / scale) * 100}%`, animationDelay: `${150 + index * 45}ms` }}
+              />
+            </span>
+            <AnimatedNumber value={row.count} from={0} duration={900} delay={150 + index * 45} className="text-right font-mono text-[0.6875rem] text-foreground tabular-nums" />
+            <span className="text-right font-mono text-[0.625rem] text-muted-foreground tabular-nums">{row.included ? `${percent(row.count, total)}%` : "—"}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** A career's box in the voter pool breakdown: by program (or strand), then by level. */
+function CareerBreakdown({ pool, poolTotal, color }: { pool: CareerPool; poolTotal: number; color: string }) {
+  const { career, total, programs, programScale, levels, scale } = pool;
+  const programWord = programGroupLabel(career) === "Strands" ? "strand" : "program";
+  return (
+    <div style={careerStyle(color)} className="rounded-[0.375rem] bg-[#f5f7fa] px-3.5 pt-3 pb-3.5 dark:bg-white/4">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-[0.875rem] font-semibold text-foreground">{career.name}</p>
+        <p className="font-mono text-[0.75rem] text-foreground tabular-nums">
+          <AnimatedNumber value={total} from={0} duration={900} /> · {percent(total, poolTotal)}%
+        </p>
+      </div>
+      {programs.length ? (
+        <BreakdownBars
+          title={`By ${programWord}`}
+          rows={programs.map((p) => ({ key: p.code, label: p.code, count: p.count, included: p.included }))}
+          total={total}
+          scale={programScale}
+        />
+      ) : null}
+      {levels.length ? (
+        <BreakdownBars
+          title={`By ${levelGroupLabel(career).toLowerCase()}`}
+          rows={levels.map((l) => ({ key: String(l.level), label: levelLabel(l.level, career), count: l.count, included: l.included }))}
+          total={total}
+          scale={scale}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+export function ReviewStep({ form, terms, pool, programs, colors, editing, onEdit }: ReviewStepProps) {
   const term = terms.find((t) => t.id === form.termId);
+  const withPrograms = pool.careers.filter(({ career }) => (programs.get(career.code)?.length ?? 0) > 0);
+  const groupWords = [...new Set(withPrograms.map(({ career }) => programGroupLabel(career)))];
+  const programsLabel = groupWords.length > 1 ? "Programs & strands" : (groupWords[0] ?? "Programs");
 
   return (
     <>
@@ -447,37 +522,75 @@ export function ReviewStep({ form, terms, pool, programs, editing, onEdit }: Rev
         </ReviewRow>
       </ReviewCard>
 
-      <ReviewCard title="Who can vote" onEdit={() => onEdit(1)}>
-        {pool.careers.map(({ career, total }) => {
-          const picks = programPicks(form, career, programs);
-          const levels = levelPicks(form, career);
-          return (
-            <ReviewRow key={career.code} label={`${career.code} · ${career.name}`}>
-              {picks.length ? formatProgramScope(picks, 4) : `All ${programGroupLabel(career).toLowerCase()}`}
-              <span aria-hidden> · </span>
-              {levels.length ? formatLevelScope(levels, [career]) : "all levels"}
-              <span className="ml-2 font-mono text-[0.75rem] text-muted-foreground">{total.toLocaleString()}</span>
-            </ReviewRow>
-          );
-        })}
+      <ReviewCard
+        title="Who can vote"
+        onEdit={() => onEdit(1)}
+        after={
+          pool.careers.length ? (
+            <div className="mt-3 border-t border-[#e2e8f0] pt-3 dark:border-border">
+              <div className="mb-2.5 flex items-baseline justify-between gap-3">
+                <p className="text-[0.8125rem] text-muted-foreground">Voter pool breakdown</p>
+                <p className="text-[0.8125rem] text-foreground">
+                  <AnimatedNumber value={pool.total} from={0} duration={900} className="tabular-nums" /> total
+                </p>
+              </div>
+              <div className={cn("grid grid-cols-1 gap-3", pool.careers.length > 1 && "md:grid-cols-2")}>
+                {pool.careers.map((careerPool) => (
+                  <CareerBreakdown key={careerPool.career.code} pool={careerPool} poolTotal={pool.total} color={colors.get(careerPool.career.code)!} />
+                ))}
+              </div>
+            </div>
+          ) : null
+        }
+      >
+        <ReviewRow label="Careers">
+          <span className="inline-flex flex-wrap justify-end gap-x-3 gap-y-1.5">
+            {pool.careers.length
+              ? pool.careers.map(({ career }) => (
+                  <span key={career.code} style={careerStyle(colors.get(career.code)!)} className="inline-flex items-center gap-1.5">
+                    <CareerBadge code={career.code} />
+                    {career.name}
+                  </span>
+                ))
+              : "—"}
+          </span>
+        </ReviewRow>
+        {withPrograms.length ? (
+          <ReviewRow label={programsLabel}>
+            {withPrograms
+              .map(({ career }) => {
+                const picks = programPicks(form, career, programs);
+                return picks.length ? picks.join(" · ") : `All ${programGroupLabel(career).toLowerCase()}`;
+              })
+              .join(" · ")}
+          </ReviewRow>
+        ) : null}
+        <ReviewRow label="Levels">
+          {pool.careers
+            .map(({ career }) => {
+              const levels = levelPicks(form, career);
+              return levels.length ? formatLevelScope(levels, [career]) : `All ${levelGroupLabel(career).toLowerCase()}s`;
+            })
+            .join(" · ") || "—"}
+        </ReviewRow>
         <ReviewRow label="Eligible voters">
-          {pool.total.toLocaleString()} {pool.total === 1 ? "student" : "students"}
+          <AnimatedNumber value={pool.total} from={0} duration={900} className="tabular-nums" /> {pool.total === 1 ? "student" : "students"}
         </ReviewRow>
       </ReviewCard>
 
       <ReviewCard title="Rules" onEdit={() => onEdit(2)}>
         <ReviewRow label="Voting rules">{form.rules.trim() || "—"}</ReviewRow>
-        {CANDIDACY_OPTIONS.map((option) => (
-          <ReviewRow key={option.key} label={option.short}>
-            {onOff(form[option.key])}
+        {RULE_ROWS.map((row) => (
+          <ReviewRow key={row.key} label={row.label}>
+            {switchText(form[row.key], row.on, row.off)}
           </ReviewRow>
         ))}
       </ReviewCard>
 
       {editing ? null : (
         <p className={cn(cardClassName, "border-[#f3d26b] bg-[#fff8db] px-3.5 py-3 text-[0.8125rem] leading-5 text-brand-navy dark:border-brand-gold/30 dark:bg-brand-gold/10 dark:text-foreground")}>
-          <strong className="font-semibold">The candidacy settings can’t be changed after you create the election.</strong> After you create it, voters and
-          passcodes are generated. Add election admins and send OTP emails from the election&apos;s Admins and Voters &amp; passcodes tabs.
+          After you create the election, an admin will add voters and create their passcodes. Add election admins and send OTP emails from the election&apos;s
+          Admins and Voters &amp; passcodes tabs.
         </p>
       )}
     </>
