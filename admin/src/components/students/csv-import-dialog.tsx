@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { ArrowRight, Check, Link2, LoaderCircle, Paperclip, TriangleAlert, Upload, X } from "lucide-react";
+import { ArrowRight, Check, Link2, LoaderCircle, Paperclip, Sparkles, TriangleAlert, Upload, X } from "lucide-react";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -19,7 +19,7 @@ import {
   type ImportRow,
 } from "@/lib/student-import";
 import { cn } from "@/lib/utils";
-import type { Student } from "@/types/student.types";
+import type { Student, StudentCatalog } from "@/types/student.types";
 
 import { AnimatedNumber } from "./animated-number";
 import { useStudentCatalog } from "./student-catalog";
@@ -44,6 +44,10 @@ interface CsvImportDialogProps {
   students: readonly Student[];
   /** Saves the plan through the Web API, reporting progress (done / total) as it goes. */
   onApply: (plan: { added: Student[]; updated: Student[] }, onProgress: (done: number, total: number) => void) => Promise<ImportOutcome>;
+  /** Opens straight on the review of this file (e.g. one converted with AI). Read on mount, so remount (`key`) to change it. */
+  initialFile?: { name: string; text: string } | null;
+  /** Shows "Convert it with AI" on the upload step. */
+  onConvertWithAi?: () => void;
 }
 
 interface LoadedFile {
@@ -70,9 +74,9 @@ const WIDTHS = {
 /** Rows drawn in the review table (the counts above cover the rest). */
 const TABLE_LIMIT = 100;
 
-const settle = "animate-in fade-in duration-300 ease-out motion-reduce:animate-none";
-const secondaryButtonClassName = cn(toolbarButtonClassName, "h-9.5 px-4 text-[0.875rem] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50");
-const ctaClassName = cn(primaryButtonClassName, "h-9.5 gap-2 px-4.5 text-[0.875rem] disabled:pointer-events-none disabled:opacity-45");
+export const settle = "animate-in fade-in duration-300 ease-out motion-reduce:animate-none";
+export const secondaryButtonClassName = cn(toolbarButtonClassName, "h-9.5 px-4 text-[0.875rem] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50");
+export const ctaClassName = cn(primaryButtonClassName, "h-9.5 gap-2 px-4.5 text-[0.875rem] disabled:pointer-events-none disabled:opacity-45");
 
 const sizeFormat = (bytes: number) => (bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`);
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
@@ -85,15 +89,16 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString
  * Import students: upload a CSV → review every row (new, already enrolled,
  * changed, errors) → done. Nothing is saved before "Import".
  */
-export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvImportDialogProps) {
+export function CsvImportDialog({ open, onOpenChange, students, onApply, initialFile, onConvertWithAi }: CsvImportDialogProps) {
   const catalog = useStudentCatalog();
-  const [step, setStep] = useState<Step>({ name: "upload", error: null });
+  const [initial] = useState(() => (initialFile ? openFile(initialFile, students, catalog) : null));
+  const [step, setStep] = useState<Step>(initial?.step ?? { name: "upload", error: null });
   /** +1 moving forward, -1 going back (sets the slide direction). */
   const [direction, setDirection] = useState<1 | -1>(1);
   const [reading, setReading] = useState(false);
   const [choices, setChoices] = useState<Record<number, ChangeChoice>>({});
   const [skipErrors, setSkipErrors] = useState(false);
-  const [tab, setTab] = useState<Tab>("new");
+  const [tab, setTab] = useState<Tab>(initial?.tab ?? "new");
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const saving = progress !== null;
 
@@ -119,17 +124,16 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
     setReading(true);
     try {
       const text = isFile ? await file.text() : file.text;
-      const analysis = analyzeCsvImport(text, students, catalog);
-      if (analysis.error) {
-        setStep({ name: "upload", error: analysis.error });
+      const next = openFile({ name: file.name, text, size: isFile ? file.size : undefined }, students, catalog);
+      if (next.step.name === "upload") {
+        setStep(next.step);
         return;
       }
-      const counts = countKinds(analysis.rows);
       setChoices({});
       setSkipErrors(false);
-      setTab(counts.error ? "error" : counts.new ? "new" : "all");
+      setTab(next.tab);
       setDirection(1);
-      setStep({ name: "review", file: { name: file.name, size: isFile ? file.size : new Blob([text]).size }, analysis });
+      setStep(next.step);
     } catch {
       setStep({ name: "upload", error: "That file couldn't be read. Try saving it again as CSV." });
     } finally {
@@ -191,6 +195,7 @@ export function CsvImportDialog({ open, onOpenChange, students, onApply }: CsvIm
                 onSample={(withErrors) =>
                   void load({ name: withErrors ? "students-sample-with-errors.csv" : "students-sample.csv", text: buildSampleCsv(catalog, students, withErrors) })
                 }
+                onConvertWithAi={onConvertWithAi}
               />
             ) : step.name === "review" ? (
               <ReviewStep
@@ -228,6 +233,17 @@ function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
   Object.assign(document.createElement("a"), { href: url, download: name }).click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Checks CSV text: the review step (and the tab to open on) when it has rows, else the upload step with the problem. */
+function openFile(file: { name: string; text: string; size?: number }, students: readonly Student[], catalog: StudentCatalog): { step: Step; tab: Tab } {
+  const analysis = analyzeCsvImport(file.text, students, catalog);
+  if (analysis.error) return { step: { name: "upload", error: analysis.error }, tab: "new" };
+  const counts = countKinds(analysis.rows);
+  return {
+    step: { name: "review", file: { name: file.name, size: file.size ?? new Blob([file.text]).size }, analysis },
+    tab: counts.error ? "error" : counts.new ? "new" : "all",
+  };
 }
 
 function countKinds(rows: readonly ImportRow[]): Record<ImportKind, number> {
@@ -283,12 +299,15 @@ function Header({ step, closeDisabled }: { step: Step; closeDisabled: boolean })
   );
 }
 
-/** Upload file — Review rows — Done; done steps turn green and the line between fills in. */
-function Stepper({ current }: { current: number }) {
-  const allDone = current === STEPS.length - 1;
+/**
+ * Upload file — Review rows — Done; done steps turn green and the line between fills in.
+ * `lastIsDone`: reaching the last step marks every step done (a "Done" step).
+ */
+export function Stepper({ current, steps = STEPS, lastIsDone = true }: { current: number; steps?: readonly string[]; lastIsDone?: boolean }) {
+  const allDone = lastIsDone && current === steps.length - 1;
   return (
-    <ol aria-label="Import steps" className="flex shrink-0 items-center gap-3 border-y border-border px-6 py-3.5">
-      {STEPS.map((label, index) => {
+    <ol aria-label="Import steps" className="flex shrink-0 items-center gap-3 overflow-x-auto border-y border-border px-6 py-3.5 [scrollbar-width:none]">
+      {steps.map((label, index) => {
         const done = index < current || allDone;
         const active = index === current && !allDone;
         return (
@@ -343,9 +362,10 @@ interface UploadStepProps {
   onFile: (file: File) => void;
   onTemplate: () => void;
   onSample: (withErrors: boolean) => void;
+  onConvertWithAi?: () => void;
 }
 
-function UploadStep({ error, reading, onFile, onTemplate, onSample }: UploadStepProps) {
+function UploadStep({ error, reading, onFile, onTemplate, onSample, onConvertWithAi }: UploadStepProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const linkClassName = "cursor-pointer rounded-sm font-medium text-brand-blue outline-none hover:underline hover:underline-offset-2 focus-visible:ring-2 focus-visible:ring-brand-blue/30 disabled:opacity-50 dark:text-[#7aa7e6]";
@@ -429,6 +449,16 @@ function UploadStep({ error, reading, onFile, onTemplate, onSample }: UploadStep
         </button>
         .
       </p>
+
+      {onConvertWithAi ? (
+        <p className="mt-2 flex items-center gap-1.5 text-[0.875rem] text-muted-foreground">
+          <Sparkles aria-hidden className="size-3.5 text-brand-blue dark:text-[#7aa7e6]" strokeWidth={1.75} />
+          Class list in another layout (.xls, .xlsx)?{" "}
+          <button type="button" onClick={onConvertWithAi} disabled={reading} className={linkClassName}>
+            Convert it with AI
+          </button>
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -17,6 +17,7 @@ import type { EnrollmentStatus, FacetFilters, Student, StudentCatalog, YearLevel
 
 import { AddStudentDialog } from "./add-student-dialog";
 import { BulkActionBar } from "./bulk-action-bar";
+import { AiConvertDialog } from "./ai-convert-dialog";
 import { CsvImportDialog, type ImportOutcome } from "./csv-import-dialog";
 import { StudentCatalogProvider, useStudentCatalog } from "./student-catalog";
 import { StudentStats, type StudentStat } from "./student-stats";
@@ -156,6 +157,10 @@ function StudentsRoster({ initialStudents, loadedAt, onCatalog }: RosterProps) {
   /** Bumped when rows are added or reloaded, so the table replays its entrance from the top. */
   const [revision, setRevision] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
+  /** A file the import dialog opens on (from Convert with AI); `importKey` remounts the dialog to read it. */
+  const [importFile, setImportFile] = useState<{ name: string; text: string } | null>(null);
+  const [importKey, setImportKey] = useState(0);
+  const [convertOpen, setConvertOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -392,7 +397,14 @@ function StudentsRoster({ initialStudents, loadedAt, onCatalog }: RosterProps) {
         onCareerChange={setCareer}
         refreshing={refreshing}
         onRefresh={() => void refresh()}
-        onImport={() => setImportOpen(true)}
+        onImport={() => {
+          if (importFile) {
+            setImportFile(null);
+            setImportKey((k) => k + 1);
+          }
+          setImportOpen(true);
+        }}
+        onConvertWithAi={() => setConvertOpen(true)}
         onAddStudent={() => setAddOpen(true)}
         className="mt-5"
       />
@@ -444,7 +456,30 @@ function StudentsRoster({ initialStudents, loadedAt, onCatalog }: RosterProps) {
       />
 
       <AddStudentDialog open={addOpen} onOpenChange={setAddOpen} existingStudentNos={existingStudentNos} existingEmails={existingEmails} onAdd={addStudent} />
-      <CsvImportDialog open={importOpen} onOpenChange={setImportOpen} students={students} onApply={applyImport} />
+      <CsvImportDialog
+        key={importKey}
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        students={students}
+        onApply={applyImport}
+        initialFile={importFile}
+        onConvertWithAi={() => {
+          setImportOpen(false);
+          setConvertOpen(true);
+        }}
+      />
+      <AiConvertDialog
+        open={convertOpen}
+        onOpenChange={setConvertOpen}
+        students={students}
+        onImport={(file) => {
+          // The converted rows go through the usual import review (new / enrolled / changed / errors).
+          setImportFile(file);
+          setImportKey((k) => k + 1);
+          setConvertOpen(false);
+          setImportOpen(true);
+        }}
+      />
 
       {/* Feedback toast */}
       <div aria-live="polite" className="pointer-events-none fixed right-4 bottom-20 z-50 sm:right-6 sm:bottom-6">

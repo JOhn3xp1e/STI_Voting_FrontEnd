@@ -198,3 +198,101 @@
     transform: scale(2.1);
   }
 }
+
+/*
+ * "Convert with AI" (Students page). Pair the utilities with
+ * `motion-safe:animate-[ai-turn_…]` / `animate-[ai-sweep_…]` so they hold still
+ * under reduced motion.
+ */
+@property --ai-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* Brand gradient that turns (border ring, glow) while Groq works. */
+@utility ai-gradient {
+  background-image: conic-gradient(
+    from var(--ai-angle),
+    var(--color-brand-blue),
+    #7c6cf2,
+    var(--color-brand-gold),
+    #22c55e,
+    var(--color-brand-blue)
+  );
+}
+
+@keyframes ai-turn {
+  to {
+    --ai-angle: 360deg;
+  }
+}
+
+/* A light that sweeps across text ("Converting BSIT_4_1.xls"). */
+@utility ai-text-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-foreground) 38%,
+    color-mix(in oklab, var(--color-brand-blue) 70%, white) 50%,
+    var(--color-foreground) 62%
+  );
+  background-size: 300% 100%;
+  background-position: 0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@keyframes ai-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+/* Text that sharpens into place (Groq's "after" values). */
+@keyframes ai-blur-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(3px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+}
+
+@keyframes ai-twinkle {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(0.84) rotate(16deg);
+  }
+}
+
+/* Sheen that runs along a progress bar. */
+@keyframes ai-sheen {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+/* Arrow that nudges toward the template. */
+@keyframes ai-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+}

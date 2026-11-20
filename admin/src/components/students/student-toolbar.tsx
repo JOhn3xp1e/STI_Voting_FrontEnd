@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
-import { Plus, RotateCw, Search, X } from "lucide-react";
+import { Plus, RotateCw, Search, Sparkles, X } from "lucide-react";
 
 import { textOn } from "@/lib/programs";
 import { cn } from "@/lib/utils";
@@ -25,11 +25,12 @@ interface StudentToolbarProps {
   refreshing: boolean;
   onRefresh: () => void;
   onImport: () => void;
+  onConvertWithAi: () => void;
   onAddStudent: () => void;
   className?: string;
 }
 
-/** Search, Filters, the career switch, Import CSV, Refresh and Add student. */
+/** Search, Filters, the career switch, Convert with AI, Import CSV, Refresh and Add student. */
 export function StudentToolbar({
   query,
   onQueryChange,
@@ -43,6 +44,7 @@ export function StudentToolbar({
   refreshing,
   onRefresh,
   onImport,
+  onConvertWithAi,
   onAddStudent,
   className,
 }: StudentToolbarProps) {
@@ -89,7 +91,15 @@ export function StudentToolbar({
 
       {careers.length > 1 ? <CareerSwitch careers={careers} counts={careerCounts} value={career} onChange={onCareerChange} /> : null}
 
-      <div className="flex w-full items-center gap-2.5 sm:ml-auto sm:w-auto">
+      <div className="flex w-full flex-wrap items-center gap-2.5 sm:ml-auto sm:w-auto">
+        <button type="button" onClick={onConvertWithAi} className={cn(toolbarButtonClassName, "group/ai gap-2 px-3.5")}>
+          <Sparkles
+            aria-hidden
+            className="size-4 text-brand-blue transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover/ai:scale-115 group-hover/ai:rotate-12 motion-reduce:transition-none dark:text-[#7aa7e6]"
+            strokeWidth={1.75}
+          />
+          Convert with AI
+        </button>
         <button type="button" onClick={onImport} className={cn(toolbarButtonClassName, "gap-2 px-3.5")}>
           <Plus aria-hidden className="size-4" strokeWidth={1.75} />
           Import CSV (upsert)
