@@ -7,10 +7,9 @@ import { toolbarButtonClassName } from "@/components/students/student-toolbar-st
 import { cn } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
-/*                              Loading / error                               */
+/*                                    Error                                   */
 /* -------------------------------------------------------------------------- */
 
-export { PageLoading } from "./page-loader";
 
 export function PageError({ title, message, onRetry }: { title: string; message: string; onRetry: () => void }) {
   return (

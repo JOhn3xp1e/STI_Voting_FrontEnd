@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { useAdminSession } from "@/components/auth/admin-session";
 import { AdminAvatar } from "@/components/dashboard/admin-avatar";
 import styles from "@/components/shared/motion.module.css";
-import { PageError, PageLoading, Toast, useNotice } from "@/components/shared/page-feedback";
+import { PageError, Toast, useNotice } from "@/components/shared/page-feedback";
+import { AdminsSkeleton } from "./admins-skeleton";
 import { cn } from "@/lib/utils";
 import { getApiErrorMessage } from "@/services/api/error-message";
 import {
@@ -58,7 +59,7 @@ export function AdminsSettings() {
       />
 
       {state.status === "loading" ? (
-        <PageLoading label="Loading admins…" />
+        <AdminsSkeleton />
       ) : state.status === "error" ? (
         <PageError
           title="Couldn't load the admins"

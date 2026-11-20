@@ -5,7 +5,8 @@ import { Check, ChevronDown, Pencil, Plus, Trash2, X } from "lucide-react";
 
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import styles from "@/components/shared/motion.module.css";
-import { PageError, PageLoading, SearchInput, Toast, useNotice } from "@/components/shared/page-feedback";
+import { PageError, SearchInput, Toast, useNotice } from "@/components/shared/page-feedback";
+import { BallotSkeleton } from "./ballot-skeleton";
 import { SelectionBar } from "@/components/shared/selection-bar";
 import { Caret, OptionMenu } from "@/components/students/option-menu";
 import { checkboxClassName } from "@/components/students/student-table";
@@ -78,7 +79,7 @@ export function BallotPage({ electionId }: { electionId: string }) {
     return () => controller.abort();
   }, [electionId, attempt]);
 
-  if (state.status === "loading") return <PageLoading label="Loading the ballot…" />;
+  if (state.status === "loading") return <BallotSkeleton />;
   if (state.status === "error") {
     return (
       <PageError

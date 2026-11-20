@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Lock, SearchX } from "lucide-react";
 
-import { PageError, PageLoading, Toast, useNotice } from "@/components/shared/page-feedback";
+import { PageError, Toast, useNotice } from "@/components/shared/page-feedback";
+import { ElectionFormSkeleton } from "./election-form-skeleton";
 import { toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
 import { todayIso } from "@/lib/dates";
 import {
@@ -101,7 +102,7 @@ export function CreateElectionPage() {
     return () => controller.abort();
   }, [attempt]);
 
-  if (state.status === "loading") return <PageLoading label="Loading terms, careers and programs…" />;
+  if (state.status === "loading") return <ElectionFormSkeleton label="Loading terms, careers and programs…" />;
   if (state.status === "error") {
     return (
       <PageError
@@ -169,7 +170,7 @@ export function EditElectionPage({ electionId }: { electionId: string }) {
     return () => controller.abort();
   }, [electionId, attempt]);
 
-  if (state.status === "loading") return <PageLoading label="Loading the election…" />;
+  if (state.status === "loading") return <ElectionFormSkeleton label="Loading the election…" />;
   if (state.status === "not-found") {
     return (
       <Notice

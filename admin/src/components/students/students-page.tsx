@@ -3,7 +3,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { CircleAlert, CircleCheck } from "lucide-react";
 
-import { PageLoading } from "@/components/shared/page-loader";
+import { StudentsSkeleton } from "./students-skeleton";
 
 import { NO_FACETS, countByStatus, countFacets, formatStudentName, formatYear, matchesFilters } from "@/lib/students";
 import { cn } from "@/lib/utils";
@@ -61,7 +61,7 @@ export function StudentsPage() {
     setAttempt((n) => n + 1);
   }
 
-  if (state.status === "loading") return <PageLoading label="Loading students…" />;
+  if (state.status === "loading") return <StudentsSkeleton />;
 
   if (state.status === "error") {
     return (

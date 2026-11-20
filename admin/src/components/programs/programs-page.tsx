@@ -4,7 +4,8 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useState, type React
 import { Plus, RotateCw } from "lucide-react";
 
 import styles from "@/components/shared/motion.module.css";
-import { PageError, PageLoading, SearchInput, Toast, useNotice } from "@/components/shared/page-feedback";
+import { PageError, SearchInput, Toast, useNotice } from "@/components/shared/page-feedback";
+import { ProgramsSkeleton } from "./programs-skeleton";
 import { SelectionBar } from "@/components/shared/selection-bar";
 import { UnderlineTabs } from "@/components/shared/underline-tabs";
 import { Caret, OptionMenu } from "@/components/students/option-menu";
@@ -75,7 +76,7 @@ export function ProgramsPage() {
     return () => controller.abort();
   }, [attempt]);
 
-  if (state.status === "loading") return <PageLoading label="Loading programs & careers…" />;
+  if (state.status === "loading") return <ProgramsSkeleton />;
   if (state.status === "error") {
     return (
       <PageError

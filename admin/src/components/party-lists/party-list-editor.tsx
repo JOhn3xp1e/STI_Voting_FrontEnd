@@ -8,7 +8,8 @@ import { ArrowLeft, LoaderCircle, SearchX } from "lucide-react";
 import { useElectionsNav } from "@/components/elections/elections-nav";
 import { errorClassName, fieldClassName, labelClassName } from "@/components/shared/form-styles";
 import { IMAGE_TYPES, checkImage } from "@/components/shared/image-dropzone";
-import { PageError, PageLoading, Toast, useNotice } from "@/components/shared/page-feedback";
+import { PageError, Toast, useNotice } from "@/components/shared/page-feedback";
+import { PartyListEditorSkeleton } from "./party-lists-skeleton";
 import { SectionCard } from "@/components/shared/section-card";
 import { primaryButtonClassName, toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
 import { sortPositions } from "@/lib/ballot";
@@ -80,7 +81,7 @@ export function PartyListEditorPage({ electionId, partylistId }: PartyListEditor
     return () => controller.abort();
   }, [electionId, partylistId, attempt]);
 
-  if (state.status === "loading") return <PageLoading label="Loading the party list…" />;
+  if (state.status === "loading") return <PartyListEditorSkeleton isNew={partylistId === null} />;
   if (state.status === "not-found") {
     return (
       <div className="flex min-h-80 flex-col items-center justify-center gap-3 px-4 text-center">

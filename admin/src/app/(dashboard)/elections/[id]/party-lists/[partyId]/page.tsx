@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 
 import { PartyListEditorPage } from "@/components/party-lists/party-list-editor";
-import { PageLoading } from "@/components/shared/page-feedback";
+import { PartyListEditorSkeleton } from "@/components/party-lists/party-lists-skeleton";
 
 export const metadata: Metadata = {
   title: "Edit party list",
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 /** With Cache Components the ids are request-time data, so they're read inside Suspense. */
 export default function EditPartyListRoute({ params }: PageProps<"/elections/[id]/party-lists/[partyId]">) {
   return (
-    <Suspense fallback={<PageLoading label="Loading the party list…" />}>
+    <Suspense fallback={<PartyListEditorSkeleton />}>
       {params.then(({ id, partyId }) => (
         <PartyListEditorPage electionId={decodeURIComponent(id)} partylistId={decodeURIComponent(partyId)} />
       ))}

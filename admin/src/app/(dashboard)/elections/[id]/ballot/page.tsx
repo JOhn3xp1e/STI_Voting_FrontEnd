@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 
 import { BallotPage } from "@/components/ballot/ballot-page";
-import { PageLoading } from "@/components/shared/page-feedback";
+import { BallotSkeleton } from "@/components/ballot/ballot-skeleton";
 
 export const metadata: Metadata = {
   title: "Ballot",
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 /** With Cache Components the id is request-time data, so it's read inside Suspense. */
 export default function ElectionBallotRoute({ params }: PageProps<"/elections/[id]/ballot">) {
   return (
-    <Suspense fallback={<PageLoading label="Loading the ballot…" />}>
+    <Suspense fallback={<BallotSkeleton />}>
       {params.then(({ id }) => (
         <BallotPage electionId={decodeURIComponent(id)} />
       ))}

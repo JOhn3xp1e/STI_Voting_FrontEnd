@@ -1,0 +1,103 @@
+/*
+ * Skeleton loading states.
+ *
+ * A "bone" is a soft placeholder shape. A light band sweeps across every bone
+ * (transform only, so it stays on the compositor and never janks), and rows set
+ * `--skeleton-delay` so the sweep rolls down the page as one wave instead of
+ * every bone blinking at once.
+ */
+
+.bone {
+  --skeleton-bone: color-mix(in oklab, var(--color-brand-muted) 12%, transparent);
+  --skeleton-shine: rgb(255 255 255 / 0.78);
+
+  /* Position, display and radius come from utility classes (see Skeleton) so pages can override them. */
+  overflow: hidden;
+  isolation: isolate;
+  background-color: var(--skeleton-bone);
+}
+
+/* Dark mode is scoped to `[data-themed]` (see globals.css). */
+.bone:is([data-theme="dark"] [data-themed] *) {
+  --skeleton-bone: rgb(255 255 255 / 0.065);
+  --skeleton-shine: rgb(255 255 255 / 0.075);
+}
+
+.bone::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translate3d(-100%, 0, 0);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--skeleton-shine) 45%, transparent) 30%,
+    var(--skeleton-shine) 50%,
+    color-mix(in oklab, var(--skeleton-shine) 45%, transparent) 70%,
+    transparent 100%
+  );
+  animation: skeleton-sweep 1.9s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  /* Row offset (the wave) + phase lock to the page clock (set by SkeletonRegion). */
+  animation-delay: calc(var(--skeleton-delay, 0ms) + var(--skeleton-phase, 0ms));
+  will-change: transform;
+}
+
+/* The sweep crosses in ~60% of the cycle, then rests before the next pass. */
+@keyframes skeleton-sweep {
+  0% {
+    transform: translate3d(-100%, 0, 0);
+  }
+  62%,
+  100% {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+/*
+ * The whole placeholder fades in after a short beat, so fast responses go
+ * straight to the content without a flash of grey.
+ */
+.region {
+  animation: skeleton-in 420ms cubic-bezier(0.22, 1, 0.36, 1) 90ms both;
+}
+
+@keyframes skeleton-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Sparkline placeholder: a faint line with a highlight that travels along it. */
+.sparkBase {
+  opacity: 0.22;
+}
+
+.sparkGlint {
+  stroke-dasharray: 0.22 1;
+  stroke-dashoffset: 1.22;
+  opacity: 0.55;
+  animation: spark-glint 1.9s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  animation-delay: calc(var(--skeleton-delay, 0ms) + var(--skeleton-phase, 0ms));
+}
+
+@keyframes spark-glint {
+  0% {
+    stroke-dashoffset: 1.22;
+  }
+  62%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bone::after,
+  .sparkGlint {
+    animation: none;
+    display: none;
+  }
+
+  .region {
+    animation-duration: 1ms;
+  }
+}

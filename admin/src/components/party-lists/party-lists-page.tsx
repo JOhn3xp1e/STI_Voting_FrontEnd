@@ -7,7 +7,8 @@ import { Flag, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import styles from "@/components/shared/motion.module.css";
-import { PageError, PageLoading, SearchInput, Toast, useNotice } from "@/components/shared/page-feedback";
+import { PageError, SearchInput, Toast, useNotice } from "@/components/shared/page-feedback";
+import { PartyListsSkeleton } from "./party-lists-skeleton";
 import { SelectionBar } from "@/components/shared/selection-bar";
 import { checkboxClassName } from "@/components/students/student-table";
 import { primaryButtonClassName } from "@/components/students/student-toolbar-styles";
@@ -133,7 +134,7 @@ export function PartyListsPage({ electionId }: { electionId: string }) {
     });
   }
 
-  if (state.status === "loading") return <PageLoading label="Loading party lists…" />;
+  if (state.status === "loading") return <PartyListsSkeleton />;
   if (state.status === "error") {
     return (
       <PageError

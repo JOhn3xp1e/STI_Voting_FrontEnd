@@ -5,7 +5,8 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
-import { PageError, PageLoading, Toast, useNotice } from "@/components/shared/page-feedback";
+import { PageError, Toast, useNotice } from "@/components/shared/page-feedback";
+import { ElectionsGridSkeleton } from "./elections-skeleton";
 import { UnderlineTabs, type UnderlineTab } from "@/components/shared/underline-tabs";
 import { OptionMenu } from "@/components/students/option-menu";
 import { primaryButtonClassName } from "@/components/students/student-toolbar-styles";
@@ -158,7 +159,7 @@ export function ElectionsPage() {
       {/* Election grid */}
       <div className="mt-6">
         {state.status === "loading" ? (
-          <PageLoading label="Loading elections…" />
+          <ElectionsGridSkeleton />
         ) : state.status === "error" ? (
           <PageError
             title="Couldn't load elections"

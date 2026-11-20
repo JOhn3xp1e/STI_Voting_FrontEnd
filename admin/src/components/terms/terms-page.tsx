@@ -5,7 +5,8 @@ import { Plus } from "lucide-react";
 
 import { usePageDescription } from "@/components/dashboard/page-description";
 import styles from "@/components/shared/motion.module.css";
-import { PageError, PageLoading, SearchInput, Toast, useNotice } from "@/components/shared/page-feedback";
+import { PageError, SearchInput, Toast, useNotice } from "@/components/shared/page-feedback";
+import { TermsSkeleton } from "./terms-skeleton";
 import { SelectionBar } from "@/components/shared/selection-bar";
 import { Caret, OptionMenu } from "@/components/students/option-menu";
 import { primaryButtonClassName, toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
@@ -70,7 +71,7 @@ export function TermsPage() {
     return () => controller.abort();
   }, [attempt]);
 
-  if (state.status === "loading") return <PageLoading label="Loading terms…" />;
+  if (state.status === "loading") return <TermsSkeleton />;
 
   if (state.status === "error") {
     return (
