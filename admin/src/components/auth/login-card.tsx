@@ -8,6 +8,7 @@ import { DASHBOARD_HOME } from "@/config/navigation";
 import { useAdminSignIn } from "@/hooks/use-admin-sign-in";
 import { useLoginTransition } from "@/hooks/use-login-transition";
 import { AUTH_ROUTES, decideFromMe, LOGIN_NOTICES, readLoginNotice, safeNext } from "@/lib/auth-routing";
+import { DEV_SKIP_AUTH } from "@/lib/dev-auth";
 import { cn } from "@/lib/utils";
 import { getMe, getSession } from "@/services/auth/admin-auth.service";
 
@@ -51,6 +52,13 @@ export function LoginCard({ className }: { className?: string }) {
   useEffect(() => {
     const url = new URL(window.location.href);
     const requested = safeNext(url.searchParams.get("next"));
+
+    // Local DEV_SKIP_AUTH shortcut: there's no sign-in to do, so go straight to the dashboard.
+    if (DEV_SKIP_AUTH) {
+      router.replace(requested ?? DASHBOARD_HOME);
+      return;
+    }
+
     const notice = readLoginNotice(url.searchParams);
     /* eslint-disable react-hooks/set-state-in-effect */
     setNext(requested);
