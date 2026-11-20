@@ -1,0 +1,40 @@
+name: Deploy AI worker to Cloudflare
+
+# The slvp-ai worker in ./ai. The admin worker binds to it (SLVP_AI service binding),
+# so it has to exist before the admin is deployed. Secrets (AI_API_TOKEN, GROQ_API_KEY)
+# are set once with `npx wrangler secret put` and kept across deploys.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/**"
+      - ".github/workflows/deploy-ai.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ai
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ai/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
