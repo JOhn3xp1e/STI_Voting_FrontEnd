@@ -413,7 +413,8 @@ function Alert({ children, tone = "error" }: { children: ReactNode; tone?: "erro
 function SetupWarning() {
   return (
     <Alert tone="warning">
-      Groq isn&apos;t set up yet. Add <code className="font-mono text-[0.75rem]">GROQ_API_KEY</code> as a Worker secret (or to <code className="font-mono text-[0.75rem]">.env.local</code> for local dev), then reopen this dialog.
+      The AI service isn&apos;t set up yet. Deploy the <code className="font-mono text-[0.75rem]">slvp-ai</code> worker and give it and this app the same{" "}
+      <code className="font-mono text-[0.75rem]">AI_API_TOKEN</code> (locally: run <code className="font-mono text-[0.75rem]">npm run dev</code> in the ai folder), then reopen this dialog.
     </Alert>
   );
 }

@@ -14,6 +14,12 @@
 			// see https://opennext.js.org/cloudflare/caching
 			"binding": "WORKER_SELF_REFERENCE",
 			"service": "slvp-admin"
+		},
+		{
+			// AI for "Convert with AI" (../ai, the slvp-ai worker). Deploy slvp-ai before this worker.
+			// Calls carry the AI_API_TOKEN secret (same value as on slvp-ai).
+			"binding": "SLVP_AI",
+			"service": "slvp-ai"
 		}
 	],
 	"images": {
@@ -34,7 +40,11 @@
 		// Used only by `next dev` (see next.config.ts), never deployed: background
 		// removal needs the real Images service, the local stand-in returns the photo unchanged.
 		"dev": {
-			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "slvp-admin" }],
+			// SLVP_AI reaches `npm run dev` in ../ai through wrangler's local dev registry.
+			"services": [
+				{ "binding": "WORKER_SELF_REFERENCE", "service": "slvp-admin" },
+				{ "binding": "SLVP_AI", "service": "slvp-ai" }
+			],
 			"images": {
 				"binding": "IMAGES",
 				"remote": true
