@@ -9,6 +9,14 @@ import { programInitials } from "@/lib/programs";
 import { cn } from "@/lib/utils";
 import type { Program } from "@/types/program.types";
 
+import { CareerCode } from "./careers-table";
+
+/** The career a program is listed under, with its display color. */
+export interface ProgramCareer {
+  code: string;
+  color: string;
+}
+
 const INTRO_ROWS = 12;
 
 const createdFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -17,6 +25,7 @@ interface RowProps {
   program: Program;
   /** Active students this term, or `null` when unknown. */
   students: number | null;
+  career: ProgramCareer | null;
   checked: boolean;
   flash: boolean;
   introIndex: number;
@@ -24,7 +33,7 @@ interface RowProps {
   onOpen: (program: Program) => void;
 }
 
-const ProgramRow = memo(function ProgramRow({ program, students, checked, flash, introIndex, onToggle, onOpen }: RowProps) {
+const ProgramRow = memo(function ProgramRow({ program, students, career, checked, flash, introIndex, onToggle, onOpen }: RowProps) {
   return (
     <tr
       data-selected={checked || undefined}
@@ -71,6 +80,9 @@ const ProgramRow = memo(function ProgramRow({ program, students, checked, flash,
       <td className="border-b border-border text-[0.8125rem] text-muted-foreground tabular-nums">
         {students === null ? "—" : students.toLocaleString("en-US")}
       </td>
+      <td className="border-b border-border">
+        {career ? <CareerCode code={career.code} color={career.color} /> : <span className="text-[0.8125rem] text-muted-foreground">—</span>}
+      </td>
       <td className="border-b border-border font-mono text-[0.75rem] text-muted-foreground">
         {program.createdAt ? createdFormat.format(new Date(program.createdAt)) : "—"}
       </td>
@@ -81,6 +93,7 @@ const ProgramRow = memo(function ProgramRow({ program, students, checked, flash,
 interface ProgramsTableProps {
   programs: readonly Program[];
   studentsOf: (code: string) => number | null;
+  careerOf: (code: string) => ProgramCareer | null;
   selected: ReadonlySet<string>;
   onToggle: (code: string, checked: boolean) => void;
   onToggleAll: (checked: boolean) => void;
@@ -90,7 +103,7 @@ interface ProgramsTableProps {
   empty: ReactNode;
 }
 
-export function ProgramsTable({ programs, studentsOf, selected, onToggle, onToggleAll, onOpen, flashed, resultKey, empty }: ProgramsTableProps) {
+export function ProgramsTable({ programs, studentsOf, careerOf, selected, onToggle, onToggleAll, onOpen, flashed, resultKey, empty }: ProgramsTableProps) {
   const selectedVisible = programs.reduce((n, p) => n + (selected.has(p.code) ? 1 : 0), 0);
   const allChecked = programs.length > 0 && selectedVisible === programs.length;
 
@@ -103,7 +116,8 @@ export function ProgramsTable({ programs, studentsOf, selected, onToggle, onTogg
         <colgroup>
           <col className="w-9.5" />
           <col />
-          <col className="w-27.5" />
+          <col className="w-24" />
+          <col className="w-20" />
           <col className="w-25 min-[90rem]:w-28" />
         </colgroup>
         <thead>
@@ -120,13 +134,14 @@ export function ProgramsTable({ programs, studentsOf, selected, onToggle, onTogg
             </th>
             <th scope="col" className="border-b border-border font-normal">Program</th>
             <th scope="col" className="border-b border-border font-normal">Students</th>
+            <th scope="col" className="border-b border-border font-normal">Career</th>
             <th scope="col" className="border-b border-border font-normal">Created</th>
           </tr>
         </thead>
         <tbody key={resultKey}>
           {programs.length === 0 ? (
             <tr className={styles.rowIn}>
-              <td colSpan={4} className="h-40 border-b border-border text-center">
+              <td colSpan={5} className="h-40 border-b border-border text-center">
                 {empty}
               </td>
             </tr>
@@ -136,6 +151,7 @@ export function ProgramsTable({ programs, studentsOf, selected, onToggle, onTogg
                 key={program.code}
                 program={program}
                 students={studentsOf(program.code)}
+                career={careerOf(program.code)}
                 checked={selected.has(program.code)}
                 flash={flashed.has(program.code)}
                 introIndex={index < INTRO_ROWS ? index : -1}

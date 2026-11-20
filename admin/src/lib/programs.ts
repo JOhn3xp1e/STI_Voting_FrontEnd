@@ -37,10 +37,15 @@ const CAREER_FALLBACK_COLORS = ["#ffc200", "#0f4c9e", "#0f766e", "#7c3aed", "#be
 
 /** The career's own color, else a stable fallback by its position in the (sorted) career list. */
 export function careerColor(career: Pick<Career, "code" | "color">, careers: readonly Pick<Career, "code">[]): string {
-  if (career.color && /^#[0-9a-f]{6}$/i.test(career.color)) return career.color;
+  if (career.color && isHexColor(career.color)) return career.color;
   const index = Math.max(0, careers.findIndex((c) => c.code === career.code));
   return CAREER_FALLBACK_COLORS[index % CAREER_FALLBACK_COLORS.length];
 }
+
+/** Swatches offered in the career dialog. */
+export const CAREER_COLOR_PRESETS = ["#E11D48", "#F97316", "#FFC200", "#10B981", "#0891B2", "#2563EB", "#7C3AED", "#DB2777"] as const;
+
+export const isHexColor = (value: string) => /^#[0-9a-f]{6}$/i.test(value);
 
 /** Navy or white, whichever reads better on `hex` (navy on gold, white on blue). */
 export function textOn(hex: string): string {
@@ -55,7 +60,7 @@ export function textOn(hex: string): string {
 /*                                 Validation                                 */
 /* -------------------------------------------------------------------------- */
 
-export type CareerErrors = Partial<Record<"code" | "name" | "levels", string>>;
+export type CareerErrors = Partial<Record<"code" | "name" | "levels" | "color", string>>;
 export type ProgramErrors = Partial<Record<"code" | "name", string>>;
 
 /** Same rules as the backend: code format, levels 0–12 in order, no overlap with another career. */
@@ -74,6 +79,7 @@ export function validateCareer(input: CareerInput, careers: readonly Career[], e
     );
     if (overlap) errors.levels = `Overlaps ${overlap.code} (${formatLevels(overlap)}).`;
   }
+  if (!isHexColor(input.color)) errors.color = "Use a hex color, e.g. #FFC200.";
   return errors;
 }
 

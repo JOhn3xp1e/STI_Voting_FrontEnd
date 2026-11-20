@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Plus } from "lucide-react";
+import { Plus, RotateCw } from "lucide-react";
 
 import styles from "@/components/shared/motion.module.css";
 import { PageError, PageLoading, SearchInput, Toast, useNotice } from "@/components/shared/page-feedback";
@@ -10,7 +10,7 @@ import { UnderlineTabs } from "@/components/shared/underline-tabs";
 import { Caret, OptionMenu } from "@/components/students/option-menu";
 import { toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
 import { todayIso } from "@/lib/dates";
-import { careerTabLabel, sortCareers, sortPrograms, type ProgramImportRow } from "@/lib/programs";
+import { careerColor, careerTabLabel, sortCareers, sortPrograms, type ProgramImportRow } from "@/lib/programs";
 import { getTermStatus, sortTerms } from "@/lib/terms";
 import { cn } from "@/lib/utils";
 import { getApiErrorMessage } from "@/services/api/error-message";
@@ -32,20 +32,30 @@ import type { EnrollmentSummary, Term } from "@/types/term.types";
 import { CareersTable } from "./careers-table";
 import { ImportProgramsDialog } from "./import-programs-dialog";
 import { CareerDialog, DeleteCareerDialog, DeleteProgramDialog, ProgramDialog, type EditorState, type Usage } from "./program-dialogs";
-import { ProgramsTable } from "./programs-table";
+import { ProgramsTable, type ProgramCareer } from "./programs-table";
 
-type LoadState =
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | {
-      status: "ready";
-      careers: Career[];
-      programs: Program[];
-      /** Optional data (`null` when it couldn't be loaded). */
-      enrollments: EnrollmentSummary[] | null;
-      terms: Term[] | null;
-      elections: ElectionScope[] | null;
-    };
+interface PageData {
+  careers: Career[];
+  programs: Program[];
+  /** Optional data (`null` when it couldn't be loaded). */
+  enrollments: EnrollmentSummary[] | null;
+  terms: Term[] | null;
+  elections: ElectionScope[] | null;
+}
+
+type LoadState = { status: "loading" } | { status: "error"; message: string } | ({ status: "ready" } & PageData);
+
+/** Careers and programs are required; the rest only adds counts and delete warnings. */
+async function loadPageData(signal?: AbortSignal): Promise<PageData> {
+  const [careers, programs, enrollments, terms, elections] = await Promise.all([
+    fetchCareers({ signal }),
+    fetchPrograms({ signal }),
+    fetchEnrollmentSummaries({ signal }).catch(() => null),
+    fetchTerms({ signal }).catch(() => null),
+    fetchElectionScopes({ signal }).catch(() => null),
+  ]);
+  return { careers, programs, enrollments, terms, elections };
+}
 
 /** Programs & careers: loads both lists (plus enrollments, terms and elections for counts) from the Web API. */
 export function ProgramsPage() {
@@ -56,16 +66,8 @@ export function ProgramsPage() {
     const controller = new AbortController();
     const { signal } = controller;
 
-    Promise.all([
-      fetchCareers({ signal }),
-      fetchPrograms({ signal }),
-      fetchEnrollmentSummaries({ signal }).catch(() => null),
-      fetchTerms({ signal }).catch(() => null),
-      fetchElectionScopes({ signal }).catch(() => null),
-    ])
-      .then(([careers, programs, enrollments, terms, elections]) =>
-        setState({ status: "ready", careers, programs, enrollments, terms, elections }),
-      )
+    loadPageData(signal)
+      .then((data) => setState({ status: "ready", ...data }))
       .catch((error: unknown) => {
         if (!signal.aborted) setState({ status: "error", message: getApiErrorMessage(error) });
       });
@@ -88,14 +90,7 @@ export function ProgramsPage() {
   }
 
   return (
-    <ProgramsWorkspace
-      key={attempt}
-      initialCareers={state.careers}
-      initialPrograms={state.programs}
-      enrollments={state.enrollments}
-      terms={state.terms}
-      elections={state.elections}
-    />
+    <ProgramsWorkspace key={attempt} initial={state} />
   );
 }
 
@@ -103,7 +98,7 @@ export function ProgramsPage() {
 /*                                  Workspace                                 */
 /* -------------------------------------------------------------------------- */
 
-/** Yellow square "+" at the right of a section heading. */
+/** Dark square "+" at the right of a section heading. */
 function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
@@ -112,10 +107,10 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
       title={label}
       onClick={onClick}
       className={cn(
-        "flex size-6.5 cursor-pointer items-center justify-center rounded-md bg-brand-gold text-brand-navy outline-none",
-        "shadow-[0_4px_10px_-6px_rgb(180_130_0/0.8)] transition-[background-color,translate,box-shadow,scale] duration-200 ease-out",
-        "hover:-translate-y-px hover:bg-[color-mix(in_oklab,var(--color-brand-gold)_88%,white)] hover:shadow-[0_8px_16px_-8px_rgb(180_130_0/0.9)]",
-        "focus-visible:ring-3 focus-visible:ring-brand-gold/40 active:translate-y-0 active:scale-95 motion-reduce:hover:translate-y-0",
+        "flex size-6 cursor-pointer items-center justify-center rounded-md bg-brand-background text-white outline-none dark:bg-white dark:text-brand-background",
+        "transition-[background-color,translate,box-shadow,scale] duration-200 ease-out",
+        "hover:-translate-y-px hover:bg-[color-mix(in_oklab,var(--color-brand-background)_84%,var(--color-brand-blue))] hover:shadow-[0_8px_16px_-8px_var(--color-brand-blue)]",
+        "focus-visible:ring-3 focus-visible:ring-brand-blue/30 active:translate-y-0 active:scale-95 motion-reduce:hover:translate-y-0 dark:hover:bg-white/90",
       )}
     >
       <Plus aria-hidden className="size-4" strokeWidth={2.4} />
@@ -135,17 +130,11 @@ function SectionHeading({ title, hint, action }: { title: string; hint: string; 
   );
 }
 
-interface WorkspaceProps {
-  initialCareers: Career[];
-  initialPrograms: Program[];
-  enrollments: EnrollmentSummary[] | null;
-  terms: Term[] | null;
-  elections: ElectionScope[] | null;
-}
-
-function ProgramsWorkspace({ initialCareers, initialPrograms, enrollments, terms, elections }: WorkspaceProps) {
-  const [careers, setCareers] = useState(() => sortCareers(initialCareers));
-  const [programs, setPrograms] = useState(() => sortPrograms(initialPrograms));
+function ProgramsWorkspace({ initial }: { initial: PageData }) {
+  const [careers, setCareers] = useState(() => sortCareers(initial.careers));
+  const [programs, setPrograms] = useState(() => sortPrograms(initial.programs));
+  const [{ enrollments, terms, elections }, setExtras] = useState(() => ({ enrollments: initial.enrollments, terms: initial.terms, elections: initial.elections }));
+  const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState("all");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -203,11 +192,26 @@ function ProgramsWorkspace({ initialCareers, initialPrograms, enrollments, terms
     [enrollments, elections],
   );
 
+  const colorOf = useCallback((career: Career) => careerColor(career, careers), [careers]);
+
+  /** Program code -> the career that lists it (a program belongs to one career). */
+  const careerByProgram = useMemo(() => {
+    const map = new Map<string, ProgramCareer>();
+    for (const career of careers) {
+      const entry = { code: career.code, color: careerColor(career, careers) };
+      for (const code of career.programScope) if (!map.has(code.toUpperCase())) map.set(code.toUpperCase(), entry);
+    }
+    return map;
+  }, [careers]);
+
+  const careerOf = useCallback((code: string) => careerByProgram.get(code.toUpperCase()) ?? null, [careerByProgram]);
+
   const needle = deferredQuery.trim().toLowerCase();
   const matches = (item: { code: string; name: string }) => !needle || `${item.code} ${item.name}`.toLowerCase().includes(needle);
 
+  // The career tabs narrow both lists: the career itself, and the programs it lists.
   const visibleCareers = careers.filter((c) => (tab === "all" || c.code === tab) && matches(c));
-  const visiblePrograms = programs.filter(matches);
+  const visiblePrograms = programs.filter((p) => (tab === "all" || careerOf(p.code)?.code === tab) && matches(p));
 
   const tabs = useMemo(() => [{ value: "all", label: "All" }, ...careers.map((c) => ({ value: c.code, label: careerTabLabel(c) }))], [careers]);
   const resultKey = `${tab}|${needle}`;
@@ -239,6 +243,24 @@ function ProgramsWorkspace({ initialCareers, initialPrograms, enrollments, terms
     setFlashed(new Set([code]));
   }
 
+  /** Reloads every list in place, keeping the tab, search and selection. */
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      const data = await loadPageData();
+      setCareers(sortCareers(data.careers));
+      setPrograms(sortPrograms(data.programs));
+      setExtras({ enrollments: data.enrollments, terms: data.terms, elections: data.elections });
+      const known = new Set(data.programs.map((p) => p.code));
+      setSelected((current) => new Set([...current].filter((code) => known.has(code))));
+      if (tab !== "all" && !data.careers.some((c) => c.code === tab)) setTab("all");
+    } catch (error) {
+      say(`Couldn't refresh. ${getApiErrorMessage(error)}`, "error");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   /** Runs an API call; rethrows its failure as a user-facing message. */
   async function call<T>(request: Promise<T>): Promise<T> {
     try {
@@ -250,7 +272,7 @@ function ProgramsWorkspace({ initialCareers, initialPrograms, enrollments, terms
 
   async function saveCareer(input: CareerInput, editingCode?: string) {
     if (editingCode) {
-      const saved = await call(updateCareer(editingCode, { name: input.name, minLevel: input.minLevel, maxLevel: input.maxLevel }));
+      const saved = await call(updateCareer(editingCode, { name: input.name, minLevel: input.minLevel, maxLevel: input.maxLevel, color: input.color, programScope: input.programScope }));
       setCareers((list) => sortCareers(list.map((c) => (c.code === editingCode ? saved : c))));
       flash(saved.code);
       say(`Saved ${saved.code} · ${saved.name}.`);
@@ -360,6 +382,16 @@ function ProgramsWorkspace({ initialCareers, initialPrograms, enrollments, terms
           <Plus aria-hidden className="size-4" strokeWidth={1.75} />
           Import CSV
         </button>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          disabled={refreshing}
+          aria-label="Refresh"
+          title="Refresh"
+          className={cn(toolbarButtonClassName, "w-8.5 justify-center px-0 disabled:cursor-wait")}
+        >
+          <RotateCw aria-hidden className={cn("size-4", refreshing && "animate-spin motion-reduce:animate-none")} strokeWidth={1.75} />
+        </button>
       </div>
 
       {/* Careers */}
@@ -370,6 +402,7 @@ function ProgramsWorkspace({ initialCareers, initialPrograms, enrollments, terms
           flashed={flashed}
           resultKey={resultKey}
           onEdit={(career) => setCareerEditor({ mode: "edit", item: career })}
+          colorOf={colorOf}
           emptyText={careers.length === 0 ? "No careers yet. Add one with the + button." : "No careers match."}
         />
       </section>
@@ -378,12 +411,13 @@ function ProgramsWorkspace({ initialCareers, initialPrograms, enrollments, terms
       <section aria-label="Programs" className={cn("mt-6", styles.riseIn)} style={{ animationDelay: "120ms" }}>
         <SectionHeading
           title="Programs"
-          hint={`code · name · students${countTerm ? ` in ${countTerm.id}` : ""}`}
+          hint="filter by career with the tabs above"
           action={<AddButton label="New program" onClick={() => setProgramEditor({ mode: "new" })} />}
         />
         <ProgramsTable
           programs={visiblePrograms}
           studentsOf={studentsOf}
+          careerOf={careerOf}
           selected={selected}
           onToggle={toggle}
           onToggleAll={toggleAll}
@@ -394,12 +428,17 @@ function ProgramsWorkspace({ initialCareers, initialPrograms, enrollments, terms
             <>
               <p className="text-[0.875rem] font-medium text-foreground">{programs.length === 0 ? "No programs yet" : "No programs match"}</p>
               <p className="mt-1 text-[0.8125rem] text-muted-foreground">
-                {programs.length === 0 ? "Add one with the + button, or import a CSV." : "Try another search."}
+                {programs.length === 0
+                  ? "Add one with the + button, or import a CSV."
+                  : tab !== "all" && !needle
+                    ? `No programs are listed under ${tab} yet. Add them from Edit career.`
+                    : "Try another search."}
               </p>
             </>
           }
         />
         <p className="px-2 pt-4 font-mono text-[0.6875rem] text-muted-foreground">
+          Each program belongs to a career.{" "}
           {countTerm ? `Student counts come from active ${countTerm.id} enrollment.` : "Student counts appear once a term has enrollments."}
         </p>
       </section>
@@ -409,6 +448,7 @@ function ProgramsWorkspace({ initialCareers, initialPrograms, enrollments, terms
       <CareerDialog
         state={careerEditor}
         careers={careers}
+        programs={programs}
         onClose={() => setCareerEditor(null)}
         onSave={saveCareer}
         onRequestDelete={(career) => {

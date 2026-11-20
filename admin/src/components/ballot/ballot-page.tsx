@@ -10,17 +10,21 @@ import { SelectionBar } from "@/components/shared/selection-bar";
 import { Caret, OptionMenu } from "@/components/students/option-menu";
 import { checkboxClassName } from "@/components/students/student-table";
 import { primaryButtonClassName, toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
+import { CareerCode } from "@/components/programs/careers-table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { positionSummary, sortPositions, toCandidateRow, type CandidateRow } from "@/lib/ballot";
 import { normalizeHex, sortPartylists } from "@/lib/partylists";
+import { careerColor, sortCareers } from "@/lib/programs";
 import { formatYear } from "@/lib/students";
 import { cn } from "@/lib/utils";
 import { getApiErrorMessage } from "@/services/api/error-message";
 import { deleteCandidate, deletePosition, fetchCandidates, fetchPositions } from "@/services/ballot/ballot.service";
 import { fetchPartylists } from "@/services/partylists/partylists.service";
+import { fetchCareers } from "@/services/programs/programs.service";
 import { fetchStudents } from "@/services/students/students.service";
 import type { Candidate, Position } from "@/types/ballot.types";
 import type { Partylist } from "@/types/partylist.types";
+import type { Career } from "@/types/program.types";
 import type { Student } from "@/types/student.types";
 
 import { CandidateDialog, type CandidateDialogTarget } from "./candidate-dialog";
@@ -36,6 +40,8 @@ type LoadState =
       parties: Partylist[];
       /** For candidates' names (`null` when the list couldn't be loaded; ids are shown instead). */
       students: Student[] | null;
+      /** For the career tags' colors (`null` when the list couldn't be loaded; plain codes are shown instead). */
+      careers: Career[] | null;
     };
 
 /** Party filter value for candidates without a party. */
@@ -61,9 +67,10 @@ export function BallotPage({ electionId }: { electionId: string }) {
       fetchCandidates(electionId, { signal }),
       fetchPartylists(electionId, { signal }),
       fetchStudents({ signal }).catch(() => null),
+      fetchCareers({ signal }).catch(() => null),
     ])
-      .then(([positions, candidates, parties, students]) =>
-        setState({ status: "ready", positions: sortPositions(positions), candidates, parties: sortPartylists(parties), students }),
+      .then(([positions, candidates, parties, students, careers]) =>
+        setState({ status: "ready", positions: sortPositions(positions), candidates, parties: sortPartylists(parties), students, careers }),
       )
       .catch((error: unknown) => {
         if (!signal.aborted) setState({ status: "error", message: getApiErrorMessage(error) });
@@ -92,6 +99,7 @@ export function BallotPage({ electionId }: { electionId: string }) {
       initialCandidates={state.candidates}
       parties={state.parties}
       students={state.students}
+      careers={state.careers}
     />
   );
 }
@@ -106,9 +114,10 @@ interface WorkspaceProps {
   initialCandidates: Candidate[];
   parties: Partylist[];
   students: Student[] | null;
+  careers: Career[] | null;
 }
 
-function BallotWorkspace({ electionId, initialPositions, initialCandidates, parties, students }: WorkspaceProps) {
+function BallotWorkspace({ electionId, initialPositions, initialCandidates, parties, students, careers }: WorkspaceProps) {
   const [positions, setPositions] = useState(initialPositions);
   const [candidates, setCandidates] = useState(initialCandidates);
   const [query, setQuery] = useState("");
@@ -125,6 +134,13 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
 
   const partyById = useMemo(() => new Map(parties.map((p) => [p.id, p])), [parties]);
   const studentById = useMemo(() => new Map((students ?? []).map((s) => [s.studentNo, s])), [students]);
+
+  /** Career code -> its color, matching the Programs & careers page. */
+  const careerColorByCode = useMemo(() => {
+    const sorted = sortCareers(careers ?? []);
+    return new Map(sorted.map((c) => [c.code.toUpperCase(), careerColor(c, sorted)]));
+  }, [careers]);
+  const colorOfCareer = (code: string | null | undefined) => (code ? careerColorByCode.get(code.toUpperCase()) : undefined);
 
   const rows = useMemo(
     () =>
@@ -309,13 +325,13 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
                   ) : showPhotos ? (
                     <div className="flex flex-wrap gap-3 border-b border-border py-3 pl-15.5 pr-2">
                       {shown.map((row) => (
-                        <CandidateCard key={row.candidate.id} row={row} party={partyById.get(row.candidate.partylistId ?? "")} checked={selected.has(row.candidate.id)} onCheck={(checked) => setChecked([row.candidate.id], checked)} onEdit={() => setCandidateTarget({ mode: "edit", candidate: row.candidate })} />
+                        <CandidateCard key={row.candidate.id} row={row} party={partyById.get(row.candidate.partylistId ?? "")} careerColor={colorOfCareer(row.student?.careerCode)} checked={selected.has(row.candidate.id)} onCheck={(checked) => setChecked([row.candidate.id], checked)} onEdit={() => setCandidateTarget({ mode: "edit", candidate: row.candidate })} />
                       ))}
                     </div>
                   ) : (
                     <ul>
                       {shown.map((row) => (
-                        <CandidateListRow key={row.candidate.id} row={row} party={partyById.get(row.candidate.partylistId ?? "")} checked={selected.has(row.candidate.id)} onCheck={(checked) => setChecked([row.candidate.id], checked)} onEdit={() => setCandidateTarget({ mode: "edit", candidate: row.candidate })} />
+                        <CandidateListRow key={row.candidate.id} row={row} party={partyById.get(row.candidate.partylistId ?? "")} careerColor={colorOfCareer(row.student?.careerCode)} checked={selected.has(row.candidate.id)} onCheck={(checked) => setChecked([row.candidate.id], checked)} onEdit={() => setCandidateTarget({ mode: "edit", candidate: row.candidate })} />
                       ))}
                     </ul>
                   )
@@ -442,6 +458,8 @@ function PartyTag({ party }: { party: Partylist | undefined }) {
 interface CandidateItemProps {
   row: CandidateRow;
   party: Partylist | undefined;
+  /** Color of the candidate's career; `undefined` when unknown (the code is shown as plain text). */
+  careerColor: string | undefined;
   checked: boolean;
   onCheck: (checked: boolean) => void;
   onEdit: () => void;
@@ -455,7 +473,7 @@ function Initials({ row, className }: { row: CandidateRow; className?: string })
   );
 }
 
-function CandidateListRow({ row, party, checked, onCheck, onEdit }: CandidateItemProps) {
+function CandidateListRow({ row, party, careerColor, checked, onCheck, onEdit }: CandidateItemProps) {
   const hasPhoto = row.candidate.portraitUrl !== null;
   return (
     <li
@@ -483,7 +501,7 @@ function CandidateListRow({ row, party, checked, onCheck, onEdit }: CandidateIte
           <p className="truncate font-mono text-[0.65625rem] leading-4 text-muted-foreground">{row.candidate.studentId}</p>
         </div>
       </div>
-      <StudentCell value={row.student?.careerCode} />
+      <CareerCell code={row.student?.careerCode} color={careerColor} />
       <StudentCell value={row.student?.program} />
       <StudentCell value={row.student ? formatYear(row.student.year) : null} />
       <span className="hidden min-w-0 pr-3 sm:block">
@@ -507,6 +525,16 @@ function CandidateListRow({ row, party, checked, onCheck, onEdit }: CandidateIte
   );
 }
 
+/** The career's colored code tag, as on the Programs & careers page; plain text when its color is unknown. */
+function CareerCell({ code, color }: { code: string | null | undefined; color: string | undefined }) {
+  if (!code || code === "—" || !color) return <StudentCell value={code} />;
+  return (
+    <span className="hidden min-w-0 pr-3 xl:block">
+      <CareerCode code={code} color={color} />
+    </span>
+  );
+}
+
 /** Career, program or level of the candidate's enrollment; "—" when the student has none. */
 function StudentCell({ value }: { value: string | null | undefined }) {
   const text = value && value !== "—" ? value : null;
@@ -517,7 +545,7 @@ function StudentCell({ value }: { value: string | null | undefined }) {
   );
 }
 
-function CandidateCard({ row, party, checked, onCheck, onEdit }: CandidateItemProps) {
+function CandidateCard({ row, party, careerColor, checked, onCheck, onEdit }: CandidateItemProps) {
   const portrait = row.candidate.portraitUrl;
   return (
     <div
@@ -556,8 +584,9 @@ function CandidateCard({ row, party, checked, onCheck, onEdit }: CandidateItemPr
           {row.name}
         </button>
         <p className="truncate font-mono text-[0.6875rem] text-muted-foreground">{row.candidate.studentId}</p>
-        <div className="mt-2">
+        <div className="mt-2 flex items-center justify-between gap-2">
           <PartyTag party={party} />
+          {careerColor && row.student?.careerCode ? <CareerCode code={row.student.careerCode} color={careerColor} /> : null}
         </div>
       </div>
     </div>
