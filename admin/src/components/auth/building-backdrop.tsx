@@ -22,7 +22,17 @@ const PAUSE_AFTER_MS = 1000;
  * Loaded with the page and kept mounted, so it's ready the moment the user
  * starts typing; its render loop only runs while it's visible.
  */
-export function BuildingBackdrop({ className }: { className?: string }) {
+export function BuildingBackdrop({
+  className,
+  distanceScale = 0.656,
+  opacityClassName = "opacity-40 lg:opacity-50",
+}: {
+  className?: string;
+  /** Camera distance (on-screen size goes with 1 / distance); the sign-in screen's by default. */
+  distanceScale?: number;
+  /** Opacity while shown (it fades to 0 in the other composition). */
+  opacityClassName?: string;
+}) {
   const { variant } = useLoginLayout();
   const visible = variant === 1;
   const [paused, setPaused] = useState(!visible);
@@ -50,12 +60,12 @@ export function BuildingBackdrop({ className }: { className?: string }) {
 
   return (
     // Opacity is keyed off the composition in CSS, so it cross-fades in step with the morph.
-    <div className={cn("opacity-40 transition-opacity lg:opacity-50 login-alt:opacity-0", className)}>
+    <div className={cn("transition-opacity login-alt:opacity-0", opacityClassName, className)}>
       <AsciiBuilding
         fit
         elevation={18}
-        // On-screen size goes with 1 / distance: 0.82 / 1.25 = 25% larger than before.
-        distanceScale={0.656}
+        // On-screen size goes with 1 / distance: the default 0.656 = 0.82 / 1.25, 25% larger than before.
+        distanceScale={distanceScale}
         autoRotate={!reducedMotion}
         paused={paused}
         className={cn("size-full", styles.artFadeIn)}

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import Image from "next/image";
 import { LoaderCircle, Lock } from "lucide-react";
 
-import { LoginBackdrop } from "@/components/auth/login-backdrop";
 import { LoginStage } from "@/components/auth/login-stage";
 import { CareerBadge, careerStyle } from "@/components/elections/create/create-election-ui";
 import { enrollmentsByStudent, percent, timeLeft } from "@/lib/election-live";
@@ -21,6 +20,7 @@ import { fetchVoterRows, type VoterRow } from "@/services/voters/voters.service"
 import type { Election, VoterEnrollment } from "@/types/election.types";
 import type { Career } from "@/types/program.types";
 
+import { QrBackdrop } from "./qr-backdrop";
 import { QrCode } from "./qr-code";
 
 /** Turnout refresh while the page is visible. */
@@ -105,9 +105,9 @@ export function QrViewer({ electionId }: { electionId: string }) {
   }, [ready, electionId]);
 
   return (
-    // The sign-in screen's background: the rotating 3D building on the left, the fluid glow behind the card.
+    // The sign-in screen's composition with the 3D building (LoginStage provides it), on a calmer, still background.
     <LoginStage initialVariant={1} className="relative isolate flex min-h-dvh flex-1 flex-col overflow-hidden bg-login-background">
-      <LoginBackdrop />
+      <QrBackdrop />
       <div className="relative mx-auto grid w-full max-w-360 flex-1 content-center items-center gap-10 px-4 py-8 sm:px-8 sm:py-12 lg:grid-cols-[minmax(0,1fr)_30rem] lg:gap-14 lg:px-14 lg:py-10 xl:px-18">
         <BrandPanel election={state.status === "ready" ? state.data.election : null} voters={state.status === "ready" ? state.data.voters : null} now={now} />
         <section
