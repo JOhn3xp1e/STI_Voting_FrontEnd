@@ -26,25 +26,35 @@ import type { Election } from "@/types/election.types";
 
 import { ChatMarkdown } from "./chat-markdown";
 import { LAUNCHER_HEIGHT, LAUNCHER_WIDTH, clampPosition, saveLauncherPosition, useLauncherPosition, type LauncherPosition } from "./launcher-position";
+import { DEFAULT_PANEL_WIDTH, clampPanelSize, loadPanelSize, savePanelSize, type PanelSize } from "./panel-size";
 
 /** Pointer travel (px) before a press on the launcher counts as a drag instead of a click. */
 const DRAG_THRESHOLD = 5;
-/** Alt + arrow keys move the launcher by this much. */
+/** Alt + arrow keys move the launcher by this much; arrow keys on the resize grip resize by this much. */
 const KEY_STEP = 24;
+/** The resize grip is shown from this viewport width up (below it the panel spans the screen). */
+const RESIZE_MIN_VIEWPORT = 640;
+
+/** Which edge of the panel stays put: the one next to the launcher. The grip is on the opposite corner. */
+type PanelAnchor = "bottom" | "top";
 
 /**
  * Where the panel goes for a moved launcher: 24 px above it (as in the design) when there's
  * room, otherwise below it; lined up with its right edge and kept 16 px inside the viewport.
+ * A resized panel keeps its size, up to the room there is.
  */
-function panelPlacement(launcher: LauncherPosition, viewport: { width: number; height: number }): CSSProperties {
-  const width = Math.min(360, viewport.width - 32);
+function panelPlacement(launcher: LauncherPosition, viewport: { width: number; height: number }, size: PanelSize | null): { style: CSSProperties; anchor: PanelAnchor } {
+  const width = Math.min(size?.width ?? DEFAULT_PANEL_WIDTH, viewport.width - 32);
   const left = Math.min(Math.max(launcher.x + LAUNCHER_WIDTH + 20 - width, 16), viewport.width - width - 16);
   const roomAbove = launcher.y - 24 - 16;
   const roomBelow = viewport.height - (launcher.y + LAUNCHER_HEIGHT + 16) - 16;
   const originX = launcher.x + LAUNCHER_WIDTH / 2 > viewport.width / 2 ? "right" : "left";
-  return roomAbove >= 420 || roomAbove >= roomBelow
-    ? { left, width, bottom: viewport.height - launcher.y + 24, maxHeight: roomAbove, transformOrigin: `${originX} bottom` }
-    : { left, width, top: launcher.y + LAUNCHER_HEIGHT + 16, maxHeight: roomBelow, transformOrigin: `${originX} top` };
+  const above = roomAbove >= (size?.height ?? 420) || roomAbove >= roomBelow;
+  const maxHeight = above ? roomAbove : roomBelow;
+  const height = size ? Math.min(size.height, maxHeight) : undefined;
+  return above
+    ? { anchor: "bottom", style: { left, width, height, bottom: viewport.height - launcher.y + 24, maxHeight, transformOrigin: `${originX} bottom` } }
+    : { anchor: "top", style: { left, width, height, top: launcher.y + LAUNCHER_HEIGHT + 16, maxHeight, transformOrigin: `${originX} top` } };
 }
 
 /*
@@ -96,6 +106,7 @@ export function ChatWidget({ adminId }: { adminId: string }) {
   const summarizing = useRef<AbortController | null>(null);
   const summaryRetryAt = useRef(0);
   const launcherRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -105,8 +116,80 @@ export function ChatWidget({ adminId }: { adminId: string }) {
   const [dragPosition, setDragPosition] = useState<LauncherPosition | null>(null);
   const drag = useRef<{ startX: number; startY: number; origin: LauncherPosition; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
+  /** The panel was open when a drag started: it's hidden while dragging and comes back on drop. */
+  const reopenAfterDrag = useRef(false);
   const launcherPosition = dragPosition ?? savedPosition;
-  const panelStyle = launcherPosition && viewport ? panelPlacement(launcherPosition, viewport) : undefined;
+
+  // Resizable panel: the saved size (null = the design's default), kept inside the viewport.
+  // Read on the client only; the panel starts closed, so the server markup doesn't depend on it.
+  const [savedSize, setSavedSize] = useState<PanelSize | null>(() => loadPanelSize());
+  const resize = useRef<{ startX: number; startY: number; start: PanelSize; anchor: PanelAnchor } | null>(null);
+  const canResize = viewport !== null && viewport.width >= RESIZE_MIN_VIEWPORT;
+  const panelSize = savedSize && viewport && canResize ? clampPanelSize(savedSize, viewport) : null;
+  const placement = launcherPosition && viewport ? panelPlacement(launcherPosition, viewport, panelSize) : null;
+  const panelAnchor: PanelAnchor = placement?.anchor ?? "bottom";
+  // Default spot: CSS places the panel; a resized one only needs its size.
+  const panelStyle: CSSProperties | undefined = placement?.style ?? (panelSize ? { width: panelSize.width, height: panelSize.height } : undefined);
+
+  function startResize(event: PointerEvent<HTMLButtonElement>) {
+    const panel = panelRef.current;
+    if (event.button !== 0 || !panel) return;
+    event.preventDefault();
+    const box = panel.getBoundingClientRect();
+    resize.current = { startX: event.clientX, startY: event.clientY, start: { width: box.width, height: box.height }, anchor: panelAnchor };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  /** The grip is on the panel's left corner, so dragging left widens it; up or down moves the free edge. */
+  function sizeFromPointer(event: PointerEvent<HTMLButtonElement>): PanelSize | null {
+    const current = resize.current;
+    if (!current) return null;
+    const dy = event.clientY - current.startY;
+    return clampPanelSize({
+      width: current.start.width - (event.clientX - current.startX),
+      height: current.anchor === "bottom" ? current.start.height - dy : current.start.height + dy,
+    });
+  }
+
+  function moveResize(event: PointerEvent<HTMLButtonElement>) {
+    const next = sizeFromPointer(event);
+    if (next) setSavedSize(next);
+  }
+
+  function endResize(event: PointerEvent<HTMLButtonElement>) {
+    const next = sizeFromPointer(event);
+    resize.current = null;
+    if (!next) return;
+    setSavedSize(next);
+    savePanelSize(next);
+  }
+
+  /** Arrow keys move the grip's corner; Home (or a double-click) goes back to the default size. */
+  function resizeWithKeys(event: KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "Home") {
+      event.preventDefault();
+      resetSize();
+      return;
+    }
+    const panel = panelRef.current;
+    const steps: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const step = steps[event.key];
+    if (!step || !panel) return;
+    event.preventDefault();
+    const box = panel.getBoundingClientRect();
+    const dy = step[1] * KEY_STEP;
+    const next = clampPanelSize({
+      width: box.width - step[0] * KEY_STEP,
+      height: panelAnchor === "bottom" ? box.height - dy : box.height + dy,
+    });
+    setSavedSize(next);
+    savePanelSize(next);
+  }
+
+  function resetSize() {
+    setSavedSize(null);
+    savePanelSize(null);
+  }
 
   function startDrag(event: PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
@@ -121,6 +204,11 @@ export function ChatWidget({ adminId }: { adminId: string }) {
     const dx = event.clientX - current.startX;
     const dy = event.clientY - current.startY;
     if (!current.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    if (!current.moved && open) {
+      // Get the panel out of the way while the owl moves; it reopens next to the new spot.
+      reopenAfterDrag.current = true;
+      setOpen(false);
+    }
     current.moved = true;
     setDragPosition(clampPosition({ x: current.origin.x + dx, y: current.origin.y + dy }));
   }
@@ -133,11 +221,19 @@ export function ChatWidget({ adminId }: { adminId: string }) {
     suppressClick.current = true;
     saveLauncherPosition(clampPosition({ x: current.origin.x + event.clientX - current.startX, y: current.origin.y + event.clientY - current.startY }));
     setDragPosition(null);
+    reopenIfHiddenByDrag();
   }
 
   function cancelDrag() {
     drag.current = null;
     setDragPosition(null);
+    reopenIfHiddenByDrag();
+  }
+
+  function reopenIfHiddenByDrag() {
+    if (!reopenAfterDrag.current) return;
+    reopenAfterDrag.current = false;
+    setOpen(true);
   }
 
   /** Alt + arrows move the launcher; Alt + Home puts it back in its default spot. */
@@ -342,6 +438,7 @@ export function ChatWidget({ adminId }: { adminId: string }) {
     <>
       {open ? (
         <section
+          ref={panelRef}
           role="dialog"
           aria-labelledby={titleId}
           onKeyDown={(event) => {
@@ -354,11 +451,36 @@ export function ChatWidget({ adminId }: { adminId: string }) {
           className={cn(
             "fixed z-40 flex flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground",
             // Default spot (launcher not moved): 24 px above the launcher at the bottom-right, as in the design.
-            !panelStyle && "right-4 bottom-29.5 left-4 max-h-[calc(100dvh-8.5rem)] origin-bottom-right sm:left-auto sm:right-6 sm:w-90",
+            !placement && "right-4 bottom-29.5 left-4 max-h-[calc(100dvh-8.5rem)] origin-bottom-right sm:left-auto sm:right-6 sm:w-90",
             "shadow-[0_12px_32px_0_rgb(15_23_41/0.18)] dark:shadow-[0_12px_32px_0_rgb(0_0_0/0.5)]",
             "animate-in fade-in-0 zoom-in-95 duration-200 motion-reduce:animate-none",
           )}
         >
+          {/* Resize grip: on the left corner away from the launcher (the panel grows away from the owl) */}
+          {canResize ? (
+            <button
+              type="button"
+              onPointerDown={startResize}
+              onPointerMove={moveResize}
+              onPointerUp={endResize}
+              onPointerCancel={() => {
+                resize.current = null;
+              }}
+              onDoubleClick={resetSize}
+              onKeyDown={resizeWithKeys}
+              aria-label="Resize chat. Arrow keys resize, Home resets."
+              title="Drag to resize · double-click to reset"
+              className={cn(
+                "absolute left-0 z-10 flex size-5 touch-none items-center justify-center outline-none select-none focus-visible:ring-2 focus-visible:ring-brand-blue/40",
+                panelAnchor === "bottom" ? "top-0 cursor-nwse-resize rounded-tl-2xl text-[#0f172a]/45" : "bottom-0 cursor-nesw-resize rounded-bl-2xl text-muted-foreground",
+              )}
+            >
+              <svg aria-hidden viewBox="0 0 10 10" className={cn("size-2.5", panelAnchor === "top" && "-scale-y-100")} fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round">
+                <path d="M1 9 9 1M1 5 5 1" />
+              </svg>
+            </button>
+          ) : null}
+
           {/* Header (brand gold in both themes, as in the design) */}
           <header className="flex shrink-0 items-center gap-2.5 bg-brand-gold px-4 py-3.5">
             <Owl className="h-7 w-9" sizes="32px" />
