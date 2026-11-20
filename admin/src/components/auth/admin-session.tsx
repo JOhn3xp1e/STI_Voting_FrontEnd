@@ -1,9 +1,10 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { canOpenPortal, homeFor, mayOpen } from "@/lib/admin-access";
 import { AUTH_ROUTES, decideFromMe, loginHref } from "@/lib/auth-routing";
 import { DEV_ME, DEV_SKIP_AUTH } from "@/lib/dev-auth";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
@@ -42,13 +43,16 @@ function currentPath(): string {
 }
 
 function activeOrNull(me: MeResponse | null): MeResponse | null {
-  return me?.status === "active" && me.admin ? me : null;
+  return canOpenPortal(me) ? me : null;
 }
 
 /**
  * Protects the dashboard: no session → sign-in screen; a session that isn't an
  * active admin → wherever `/me` says (account setup, or signed out with the
  * reason). Only then is the shell rendered, with the real admin.
+ *
+ * Election admins only get their elections' pages (and their account): any
+ * other page sends them to the Elections list.
  *
  * Hiding pages is only for the user experience: the backend checks the token
  * on every request anyway. Also registers the app-wide reaction to 401 / 403
@@ -68,6 +72,7 @@ export function AdminSessionGate({
   bare?: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [me, setMe] = useState<MeResponse | null>(() => (DEV_SKIP_AUTH ? DEV_ME : activeOrNull(peekCachedMe())));
   /** Why the session couldn't be checked; only shown while the dashboard isn't open yet. */
   const [error, setError] = useState<string | null>(null);
@@ -129,10 +134,11 @@ export function AdminSessionGate({
   }, [router]);
 
   const session = useMemo<AdminSession | null>(() => {
-    if (!me?.admin) return null;
+    const admin = me ? toAdminProfile(me) : null;
+    if (!me || !admin) return null;
     return {
       me,
-      admin: toAdminProfile(me.admin, me.email),
+      admin,
       signOut: () => leave(AUTH_ROUTES.login, true),
       refresh: async () => {
         if (DEV_SKIP_AUTH) return;
@@ -141,8 +147,14 @@ export function AdminSessionGate({
     };
   }, [me, apply, leave]);
 
-  if (!session) {
-    if (!error) return fallback;
+  // A page this admin can't open (an election admin on a super admin page): go to their home.
+  const blocked = Boolean(session && pathname && !mayOpen(session.me, pathname));
+  useEffect(() => {
+    if (blocked && session) router.replace(homeFor(session.me));
+  }, [blocked, session, router]);
+
+  if (!session || blocked) {
+    if (!error || blocked) return fallback;
     return (
       <div role="alert" data-themed className="flex min-h-dvh flex-1 flex-col items-center justify-center gap-4 bg-background px-4 text-center">
         <p className="max-w-md text-sm text-foreground/80">{error}</p>

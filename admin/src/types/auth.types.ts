@@ -28,11 +28,33 @@ export interface AdminAccount {
  */
 export type MeStatus = "active" | "invited" | "deactivated" | "not_invited";
 
+/**
+ * - `super_admin`: has an admin account (`admin`); full access.
+ * - `election_admin`: only `electionAdmins`; manages just those elections.
+ */
+export type AdminRole = "super_admin" | "election_admin";
+
+/** One election the login is an election admin of (`electionAdmins` in `/me`). */
+export interface MeElectionAdmin {
+  /** e.g. "EAD-00001" */
+  id: string;
+  electionId: string;
+  electionTitle: string | null;
+  fullName: string;
+  avatarUrl: string | null;
+  /** `false` until the invitation for this election is accepted. */
+  isVerified: boolean;
+}
+
 export interface MeResponse {
   authUserId: string;
   email: string | null;
   status: MeStatus;
   admin: AdminAccount | null;
+  /** `null` when the login isn't an admin of any kind. */
+  role?: AdminRole | null;
+  /** Elections this login runs as an election admin (a super admin can also run some). */
+  electionAdmins?: MeElectionAdmin[] | null;
 }
 
 /** The signed-in administrator, as shown in the dashboard shell. */
@@ -44,6 +66,10 @@ export interface AdminProfile {
   avatarUrl: string | null;
   /** Display label of the admin's role, e.g. "super admin". */
   role: string;
+  /** `false` for election admins: they only see and manage `electionIds`. */
+  isSuperAdmin: boolean;
+  /** Elections an election admin may open (empty for super admins, who may open all). */
+  electionIds: string[];
 }
 
 /** Values collected by the admin sign-in form. */

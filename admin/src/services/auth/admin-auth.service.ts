@@ -4,7 +4,7 @@ import { clearSavedChats } from "@/lib/chat-memory";
 import { getSupabase, SupabaseConfigError, setRememberSession } from "@/lib/supabase/client";
 import { getApiErrorMessage } from "@/services/api/error-message";
 import { apiClient, isApiError } from "@/services/api/client";
-import type { AdminAccount, AdminProfile, AdminSignInRequest, MeResponse } from "@/types/auth.types";
+import type { AdminProfile, AdminSignInRequest, MeResponse } from "@/types/auth.types";
 
 /*
  * Admin authentication.
@@ -216,17 +216,42 @@ export async function signOut(): Promise<void> {
 /*                                  Helpers                                   */
 /* -------------------------------------------------------------------------- */
 
-/** The admin as the dashboard shell shows them. */
-export function toAdminProfile(admin: AdminAccount, fallbackEmail: string | null): AdminProfile {
-  const email = admin.email || fallbackEmail || "";
-  const fullName = admin.fullName?.trim() || email.split("@")[0] || "Admin";
+/**
+ * The admin as the dashboard shell shows them: from the admin account (super admin), or from
+ * their election admin assignments (election admin). `null` when `/me` has neither.
+ */
+export function toAdminProfile(me: MeResponse): AdminProfile | null {
+  const { admin } = me;
+  if (admin) {
+    const email = admin.email || me.email || "";
+    const fullName = admin.fullName?.trim() || email.split("@")[0] || "Admin";
+    return {
+      id: admin.id,
+      fullName,
+      firstName: fullName.split(/\s+/)[0] ?? fullName,
+      email,
+      avatarUrl: admin.avatarUrl,
+      role: "super admin",
+      isSuperAdmin: true,
+      electionIds: [],
+    };
+  }
+
+  const assignments = (me.electionAdmins ?? []).filter((e) => e.isVerified);
+  const first = assignments[0];
+  if (me.role !== "election_admin" || !first) return null;
+  const email = me.email ?? "";
+  const fullName = first.fullName.trim() || email.split("@")[0] || "Admin";
   return {
-    id: admin.id,
+    // Stable per login (keys saved chats), whichever elections they're assigned to.
+    id: me.authUserId,
     fullName,
     firstName: fullName.split(/\s+/)[0] ?? fullName,
     email,
-    avatarUrl: admin.avatarUrl,
-    role: "super admin",
+    avatarUrl: assignments.find((e) => e.avatarUrl)?.avatarUrl ?? null,
+    role: "election admin",
+    isSuperAdmin: false,
+    electionIds: assignments.map((e) => e.electionId),
   };
 }
 

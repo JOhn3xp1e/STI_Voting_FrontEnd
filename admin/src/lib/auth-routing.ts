@@ -1,4 +1,5 @@
 import { DASHBOARD_HOME } from "@/config/navigation";
+import { canOpenPortal, homeFor, mayOpen } from "@/lib/admin-access";
 import type { MeResponse } from "@/types/auth.types";
 
 /** Auth screens and the messages the sign-in screen can show. */
@@ -55,8 +56,13 @@ export type MeDecision = { kind: "go"; href: string } | { kind: "deny"; notice: 
 
 export function decideFromMe(me: MeResponse, next?: string | null): MeDecision {
   switch (me.status) {
-    case "active":
-      return { kind: "go", href: safeNext(next) ?? DASHBOARD_HOME };
+    case "active": {
+      if (!canOpenPortal(me)) return { kind: "deny", notice: "not_invited" };
+      // Election admins only go back to a page they may open; otherwise to their home.
+      const target = safeNext(next);
+      const path = target?.split(/[?#]/)[0];
+      return { kind: "go", href: target && path && mayOpen(me, path) ? target : homeFor(me) };
+    }
     case "invited":
       return { kind: "go", href: AUTH_ROUTES.acceptInvite };
     case "deactivated":

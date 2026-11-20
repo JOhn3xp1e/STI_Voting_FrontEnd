@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, LoaderCircle, Lock, Mail, SearchX } from "lucide-react";
 
+import { useAdminSession } from "@/components/auth/admin-session";
 import { usePageCrumb } from "@/components/dashboard/page-description";
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { labelClassName } from "@/components/shared/form-styles";
@@ -562,8 +563,11 @@ function DangerZone({ election, onElection, say }: { election: Election; onElect
   const router = useRouter();
   const { refresh: refreshElectionsNav } = useElectionsNav();
   const [deleting, setDeleting] = useState<Election | null>(null);
+  // Election admins can cancel their election, but only super admins delete drafts.
+  const { admin } = useAdminSession();
   if (election.status === "Completed" || election.status === "Cancelled") return null;
   const draft = election.status === "Draft";
+  if (draft && !admin.isSuperAdmin) return null;
 
   return (
     <SectionCard title="Danger zone" className="border-destructive/25 dark:border-destructive/30">

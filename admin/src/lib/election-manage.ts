@@ -57,7 +57,7 @@ export type ChecklistKey = "parties" | "ballot" | "voters" | "passcodes" | "emai
 
 export interface ChecklistItem {
   key: ChecklistKey;
-  /** 1 Ballot (election admin) · 2 Voters (super admin). */
+  /** 1 Ballot · 2 Voters. */
   group: 1 | 2;
   title: string;
   detail: string;

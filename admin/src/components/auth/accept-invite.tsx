@@ -8,6 +8,7 @@ import { CircleCheck, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DASHBOARD_HOME } from "@/config/navigation";
+import { homeFor, isElectionAdminOnly } from "@/lib/admin-access";
 import { decideFromMe, loginHref } from "@/lib/auth-routing";
 import { beginDashboardEntrance } from "@/lib/dashboard-entrance";
 import { cn } from "@/lib/utils";
@@ -80,6 +81,10 @@ export function AcceptInvite() {
   const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState<"finish" | "google" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** What they were invited as: an election admin of these elections, or a super admin (`null`). */
+  const [electionTitles, setElectionTitles] = useState<string[] | null>(null);
+  /** Where "Go to …" leads once accepted (election admins have no dashboard). */
+  const [home, setHome] = useState(DASHBOARD_HOME);
 
   const nameRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -120,7 +125,9 @@ export function AcceptInvite() {
         const linked = await hasGoogleIdentity().catch(() => false);
         if (cancelled) return;
         setEmail(me.email ?? me.admin?.email ?? "");
-        setFullName(readDraft() ?? me.admin?.fullName ?? "");
+        const assignments = me.electionAdmins ?? [];
+        setFullName(readDraft() ?? me.admin?.fullName ?? assignments[0]?.fullName ?? "");
+        setElectionTitles(isElectionAdminOnly(me) ? assignments.map((e) => e.electionTitle ?? e.electionId) : null);
         setGoogleLinked(linked);
         if (googleFailed) {
           setError("Google couldn't be linked. It may already belong to another login. You can set a password instead.");
@@ -182,7 +189,7 @@ export function AcceptInvite() {
     }
 
     try {
-      await acceptInvite(fullName.trim());
+      setHome(homeFor(await acceptInvite(fullName.trim())));
       writeDraft(null);
       setBusy(null);
       setPhase({ kind: "done" });
@@ -229,17 +236,21 @@ export function AcceptInvite() {
       <AuthScreen
         illustration={<ApprovedOwl />}
         title="You’re in"
-        description="Your admin account is ready. You can now manage terms, elections and voters in the SLVP admin portal."
+        description={
+          electionTitles
+            ? `Your account is ready. You can now run ${electionTitles.join(", ")} in the SLVP admin portal: party lists, the ballot, voters and their logins.`
+            : "Your admin account is ready. You can now manage terms, elections and voters in the SLVP admin portal."
+        }
       >
         <Button
           type="button"
           className={authPrimaryButtonClassName}
           onClick={() => {
             beginDashboardEntrance();
-            router.replace(DASHBOARD_HOME);
+            router.replace(home);
           }}
         >
-          Go to dashboard
+          {electionTitles ? "Go to my elections" : "Go to dashboard"}
         </Button>
       </AuthScreen>
     );
@@ -255,11 +266,13 @@ export function AcceptInvite() {
             aria-hidden
             className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-background text-xs font-semibold text-brand-white"
           >
-            SA
+            {electionTitles ? "EA" : "SA"}
           </span>
           <span className="flex min-w-0 flex-col gap-0.5">
             <span className="text-[0.8125rem] font-semibold text-brand-navy">You’ve been invited</span>
-            <span className="text-xs text-brand-muted">Super administrator</span>
+            <span className="truncate text-xs text-brand-muted">
+              {electionTitles ? `Election administrator · ${electionTitles.join(", ")}` : "Super administrator"}
+            </span>
           </span>
         </div>
 

@@ -124,7 +124,8 @@ function CardMenu({ election, onDelete }: { election: Election; onDelete: (elect
 
 interface ElectionCardProps {
   election: Election;
-  onDelete: (election: Election) => void;
+  /** Left out for election admins: no Edit / Delete menu, and the card opens the election's Manage page. */
+  onDelete?: (election: Election) => void;
   /** Students the election's filters let vote; `null` while enrollments load. */
   voters: number | null;
   /** For "opens in 6 days". */
@@ -138,7 +139,11 @@ export function ElectionCard({ election, onDelete, voters, now, saved = false }:
   const styles = STATUS_STYLES[election.status];
   const cancelled = election.status === "Cancelled";
   const ongoing = election.status === "Ongoing";
-  const href = canEditElection(election.status) ? electionEditHref(election.id) : electionPageHref(election.id, "settings");
+  const href = !onDelete
+    ? electionPageHref(election.id, "manage")
+    : canEditElection(election.status)
+      ? electionEditHref(election.id)
+      : electionPageHref(election.id, "settings");
   const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -195,7 +200,7 @@ export function ElectionCard({ election, onDelete, voters, now, saved = false }:
             Banner <span aria-hidden>·</span> 3:1
           </span>
         ) : null}
-        <CardMenu election={election} onDelete={onDelete} />
+        {onDelete ? <CardMenu election={election} onDelete={onDelete} /> : null}
       </div>
 
       <div className={cn("flex-1 px-4.5 pt-3.5 pb-4", cancelled && "opacity-55")}>

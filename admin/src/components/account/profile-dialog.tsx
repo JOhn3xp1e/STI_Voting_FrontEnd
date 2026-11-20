@@ -108,6 +108,7 @@ const MAX_NAME_LENGTH = 100;
 
 const ROLE_DESCRIPTIONS: Record<string, string> = {
   "super admin": "Full access to terms, programs, students, every election and settings",
+  "election admin": "Only the elections you're assigned to: party lists, the ballot, voters and their logins",
 };
 
 const SIGN_IN_METHOD_LABELS: Record<SignInMethod, string> = {
@@ -446,6 +447,12 @@ function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogPr
     const { signal } = controller;
     Promise.all([fetchElections({ signal }), fetchTerms({ signal })])
       .then(([list, terms]) => {
+        if (!admin.isSuperAdmin) {
+          // Election admins: their own elections, by name.
+          const own = list.filter((e) => admin.electionIds.includes(e.id)).map((e) => e.title);
+          setElections({ status: "ready", value: own.length ? own.join(" · ") : "None yet" });
+          return;
+        }
         const currentTerm = terms.find((t) => getTermStatus(t, todayIso()) === "current");
         const value = currentTerm
           ? `All elections · ${list.filter((e) => e.termId === currentTerm.id).length} in ${currentTerm.id}`
@@ -473,7 +480,7 @@ function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogPr
         if (!signal.aborted) setGoogleLinked({ status: "error" });
       });
     return () => controller.abort();
-  }, [open]);
+  }, [open, admin.isSuperAdmin, admin.electionIds]);
 
   const fullName = joinName(firstName, lastName);
   const nameDirty = fullName !== joinName(...splitName(admin.fullName));
@@ -776,17 +783,20 @@ function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogPr
                           aria-hidden
                           className={cn(
                             "pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-brand-navy/55 text-white transition-opacity duration-300",
-                            photoBusy ? "opacity-100" : "opacity-0 group-hover/avatar:opacity-100",
+                            photoBusy ? "opacity-100" : admin.isSuperAdmin ? "opacity-0 group-hover/avatar:opacity-100" : "opacity-0",
                           )}
                         >
                           {photoBusy ? <LoaderCircle className="size-4.5 animate-spin" /> : <Camera className="size-4.5" />}
                         </span>
-                        <PhotoButton
-                          hasPhoto={Boolean(admin.avatarUrl)}
-                          disabled={busy}
-                          onPick={() => fileRef.current?.click()}
-                          onRemove={() => void removePhoto()}
-                        />
+                        {/* Election admins' name and photo are set by a super admin (Settings → Admins). */}
+                        {admin.isSuperAdmin ? (
+                          <PhotoButton
+                            hasPhoto={Boolean(admin.avatarUrl)}
+                            disabled={busy}
+                            onPick={() => fileRef.current?.click()}
+                            onRemove={() => void removePhoto()}
+                          />
+                        ) : null}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[1.125rem] leading-6 font-semibold text-foreground">{previewName}</p>
@@ -824,7 +834,7 @@ function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogPr
                             setSaveError(null);
                             setConfirmClose(false);
                           }}
-                          disabled={saving}
+                          disabled={saving || !admin.isSuperAdmin}
                           autoComplete="given-name"
                           maxLength={MAX_NAME_LENGTH}
                           aria-invalid={!!nameError || undefined}
@@ -845,7 +855,7 @@ function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogPr
                             setSaveError(null);
                             setConfirmClose(false);
                           }}
-                          disabled={saving}
+                          disabled={saving || !admin.isSuperAdmin}
                           autoComplete="family-name"
                           maxLength={MAX_NAME_LENGTH}
                           className={fieldClassName}
@@ -872,7 +882,9 @@ function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogPr
                           <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 font-mono text-[0.65625rem] text-muted-foreground">read-only</span>
                         </div>
                         <p id="profile-email-hint" className="mt-1.5 text-[0.75rem] leading-4 text-muted-foreground">
-                          Your sign-in email. Another Super Admin can change it from the Admins list.
+                          {admin.isSuperAdmin
+                            ? "Your sign-in email. Another Super Admin can change it from the Admins list."
+                            : "Your sign-in email. A Super Admin can change it, and your name and photo, from the Admins list."}
                         </p>
                       </div>
                     </form>
@@ -890,8 +902,10 @@ function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogPr
                           <span className="animate-in fade-in duration-300">{elections.value}</span>
                         ) : elections.status === "loading" ? (
                           <span className="inline-block h-3 w-40 animate-pulse rounded-sm bg-muted align-middle" />
-                        ) : (
+                        ) : admin.isSuperAdmin ? (
                           "All elections"
+                        ) : (
+                          "Your assigned elections"
                         )
                       }
                     >

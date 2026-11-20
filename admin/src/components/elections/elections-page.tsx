@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, RotateCw } from "lucide-react";
 
+import { useAdminSession } from "@/components/auth/admin-session";
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { PageError, Toast, useNotice } from "@/components/shared/page-feedback";
 import { ElectionsGridSkeleton } from "./elections-skeleton";
@@ -90,6 +91,10 @@ export function ElectionsPage() {
   const [savedId, setSavedId] = useState<string | null>(null);
   const { notice, say } = useNotice();
   const { refresh: refreshElectionsNav } = useElectionsNav();
+  // Election admins see only their elections, and can't create or delete any.
+  const { admin } = useAdminSession();
+  const superAdmin = admin.isSuperAdmin;
+  const ownIds = admin.electionIds.join(",");
 
   async function confirmDelete(election: Election) {
     try {
@@ -110,7 +115,9 @@ export function ElectionsPage() {
     const controller = new AbortController();
     const { signal } = controller;
     Promise.all([fetchElections({ signal }), fetchTerms({ signal })])
-      .then(([elections, terms]) => {
+      .then(([all, terms]) => {
+        const own = ownIds.split(",");
+        const elections = superAdmin ? all : all.filter((e) => own.includes(e.id));
         setState({ status: "ready", elections, terms: sortTerms(terms), now: new Date() });
         const saved = takeSavedElection();
         if (saved) setSavedId(saved);
@@ -126,7 +133,7 @@ export function ElectionsPage() {
       .then(setEnrollments)
       .catch(() => undefined);
     return () => controller.abort();
-  }, [attempt]);
+  }, [attempt, superAdmin, ownIds]);
 
   // The pulse plays once; clear it so a later visit doesn't replay it.
   useEffect(() => {
@@ -208,10 +215,12 @@ export function ElectionsPage() {
             />
           </button>
 
-          <Link href={NEW_ELECTION_HREF} className={cn(primaryButtonClassName, "group/new gap-1.5 rounded-[0.25rem] px-4 text-[0.875rem]")}>
-            <Plus aria-hidden className="size-4 transition-transform duration-300 group-hover/new:rotate-90 motion-reduce:transition-none" strokeWidth={2} />
-            New election
-          </Link>
+          {superAdmin ? (
+            <Link href={NEW_ELECTION_HREF} className={cn(primaryButtonClassName, "group/new gap-1.5 rounded-[0.25rem] px-4 text-[0.875rem]")}>
+              <Plus aria-hidden className="size-4 transition-transform duration-300 group-hover/new:rotate-90 motion-reduce:transition-none" strokeWidth={2} />
+              New election
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -242,16 +251,18 @@ export function ElectionsPage() {
                 <li key={election.id} className={motion.cardIn} style={{ animationDelay: `${Math.min(index, 8) * 65}ms` }}>
                   <ElectionCard
                     election={election}
-                    onDelete={setDeleting}
+                    onDelete={superAdmin ? setDeleting : undefined}
                     voters={voterCounts?.get(election.id) ?? null}
                     now={now!}
                     saved={election.id === savedId}
                   />
                 </li>
               ))}
-              <li className={motion.cardIn} style={{ animationDelay: `${Math.min(visible.length, 8) * 65}ms` }}>
-                <CreateElectionCard />
-              </li>
+              {superAdmin ? (
+                <li className={motion.cardIn} style={{ animationDelay: `${Math.min(visible.length, 8) * 65}ms` }}>
+                  <CreateElectionCard />
+                </li>
+              ) : null}
             </ul>
           </>
         )}

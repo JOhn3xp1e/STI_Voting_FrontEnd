@@ -34,7 +34,7 @@ const itemClassName = cn(menuItemClassName, "h-11 gap-3.5 px-3 text-[0.9375rem] 
 export function ProfileMenu({ admin, label, children, triggerClassName, side = "bottom", align = "end", showIdentity = false }: ProfileMenuProps) {
   const { signOut } = useAdminSession();
   const { openProfile } = useProfileDialog();
-  const isSuperAdmin = admin.role.toLowerCase() === "super admin";
+  const { isSuperAdmin } = admin;
 
   return (
     <Menu.Root modal={false}>

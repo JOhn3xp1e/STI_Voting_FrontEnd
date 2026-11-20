@@ -64,6 +64,10 @@ function electionLinks(electionId: string): NavLink[] {
 }
 
 export const DASHBOARD_HOME = "/dashboard";
+/** The elections list; also the home page of election admins (who have no dashboard). */
+export const ELECTIONS_HOME = "/elections";
+
+const ELECTIONS_LINK: NavLink = { type: "link", id: "elections", label: "Elections", href: ELECTIONS_HOME, icon: SquareCheck };
 
 /** The fixed sections. The elections' groups are added by `buildNavSections`. */
 const BASE_SECTIONS: NavSection[] = [
@@ -72,7 +76,7 @@ const BASE_SECTIONS: NavSection[] = [
     label: "Main",
     items: [
       { type: "link", id: "dashboard", label: "Dashboard", href: DASHBOARD_HOME, icon: LayoutDashboard },
-      { type: "link", id: "elections", label: "Elections", href: "/elections", icon: SquareCheck },
+      ELECTIONS_LINK,
     ],
   },
   {
@@ -115,8 +119,21 @@ function electionGroups(elections: readonly Election[]): NavGroup[] {
  * The sidebar's sections: the fixed ones, plus a group per ongoing or upcoming election
  * under MAIN (an election joins once it's scheduled). Drafts and finished elections are
  * reached from the Elections page.
+ *
+ * Election admins (`superAdmin: false`) get only the Elections page and a group for each of
+ * their elections (`elections` is already just theirs), whatever its status.
  */
-export function buildNavSections(elections: readonly Election[]): NavSection[] {
+export function buildNavSections(elections: readonly Election[], { superAdmin = true }: { superAdmin?: boolean } = {}): NavSection[] {
+  if (!superAdmin) {
+    const live = electionGroups(elections);
+    const others: NavGroup[] = elections
+      .filter((e) => e.status !== "Ongoing" && e.status !== "Upcoming")
+      .map((e) => ({ type: "group", id: `election-${e.id}`, label: e.title, children: electionLinks(e.id) }));
+    const main: NavSection = { id: "main", label: "Main", items: [ELECTIONS_LINK] };
+    const groups = [...live, ...others];
+    return groups.length ? [main, { id: "my-elections", label: "My elections", attached: true, items: groups }] : [main];
+  }
+
   const groups = electionGroups(elections);
   if (groups.length === 0) return BASE_SECTIONS;
   const [main, ...rest] = BASE_SECTIONS;

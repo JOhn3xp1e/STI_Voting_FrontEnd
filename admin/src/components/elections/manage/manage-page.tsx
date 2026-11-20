@@ -449,7 +449,8 @@ function WhoCanVote({ scope }: { scope: ScopeData }) {
 /*                                  Checklist                                 */
 /* -------------------------------------------------------------------------- */
 
-const GROUPS: Record<1 | 2, string> = { 1: "1 · Ballot · Election admin", 2: "2 · Voters · Super admin" };
+// Election admins and super admins can both do every step for an election.
+const GROUPS: Record<1 | 2, string> = { 1: "1 · Ballot", 2: "2 · Voters" };
 
 function Checklist({ election, items, done }: { election: Election; items: ChecklistItem[]; done: number }) {
   const total = items.length;

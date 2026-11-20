@@ -36,8 +36,12 @@ interface DashboardShellProps {
  * header, and the page workspace below it.
  */
 export function DashboardShell(props: DashboardShellProps) {
+  const { isSuperAdmin, electionIds } = props.admin;
+  // Keyed by value, so re-checking `/me` doesn't reload the list.
+  const idsKey = electionIds.join(",");
+  const onlyIds = useMemo(() => (isSuperAdmin ? undefined : idsKey.split(",").filter(Boolean)), [isSuperAdmin, idsKey]);
   return (
-    <ElectionsNavProvider>
+    <ElectionsNavProvider onlyIds={onlyIds}>
       <Shell {...props} />
     </ElectionsNavProvider>
   );
@@ -46,7 +50,7 @@ export function DashboardShell(props: DashboardShellProps) {
 function Shell({ admin, children }: DashboardShellProps) {
   const pathname = usePathname();
   const { elections } = useElectionsNav();
-  const navSections = useMemo(() => buildNavSections(elections), [elections]);
+  const navSections = useMemo(() => buildNavSections(elections, { superAdmin: admin.isSuperAdmin }), [elections, admin.isSuperAdmin]);
   const activeHref = getActiveHref(pathname, navSections);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
