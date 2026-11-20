@@ -1,0 +1,24 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	// AI for SLVP: the chatbot (called by the backend's /api/chatbot/ask) and the
+	// Students page's "Convert with AI" import (called by the admin app). See README.md.
+	"name": "slvp-ai",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-11-10",
+
+	// Public URL so the backend can call it; every request needs the AI_API_TOKEN secret.
+	// The admin app calls it through its SLVP_AI service binding (same token).
+	"workers_dev": true,
+	"preview_urls": false,
+
+	"ai": { "binding": "AI" },
+	"vars": {
+		// "@cf/..." runs on Workers AI; anything else is a Groq model id (needs GROQ_API_KEY).
+		"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+		"IMPORT_MODEL": "openai/gpt-oss-120b"
+	},
+	// Secrets (npx wrangler secret put …; locally in .dev.vars):
+	// - AI_API_TOKEN: shared with the callers (admin worker, backend)
+	// - GROQ_API_KEY: for Groq models
+	"observability": { "enabled": true }
+}
