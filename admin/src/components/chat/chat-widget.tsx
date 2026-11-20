@@ -1,0 +1,391 @@
+"use client";
+
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, ArrowUpRight, Calendar, Check, Minus, Plus, RotateCcw, Shield, Square, SquareCheck, Users, X, type LucideIcon } from "lucide-react";
+
+import { answerQuickAction, askAssistant, type ChatMessage, type QuickActionId } from "@/lib/chat";
+import { cn } from "@/lib/utils";
+import { fetchElections } from "@/services/elections/elections.service";
+import type { Election } from "@/types/election.types";
+
+/*
+ * STI Vote Buddy (Figma "Chat launcher" + "Chat panel"): the owl at the bottom-right of every
+ * dashboard page opens a 360 px panel 24 px above it. Quick actions are answered in the browser;
+ * typed questions go to the backend's /api/chatbot/ask, one question at a time.
+ */
+
+const QUICK_ACTIONS: readonly { id: QuickActionId; label: string; icon: LucideIcon }[] = [
+  { id: "how-to-vote", label: "How do I vote?", icon: SquareCheck },
+  { id: "schedule", label: "Election schedule", icon: Calendar },
+  { id: "candidates", label: "View candidates", icon: Users },
+  { id: "secret", label: "Is my vote secret?", icon: Shield },
+];
+
+const MAX_QUESTION_CHARS = 2000;
+
+const newId = () => crypto.randomUUID();
+
+/** The owl from the design, cropped the same way (the source image has empty space around it). */
+function Owl({ className, sizes }: { className: string; sizes: string }) {
+  return (
+    <span aria-hidden className={cn("relative block shrink-0 overflow-hidden", className)}>
+      <Image src="/images/chat/owl.png" alt="" width={1024} height={1280} sizes={sizes} className="absolute top-[-17.19%] left-[6.8%] h-[138.94%] w-[87.42%] max-w-none" />
+    </span>
+  );
+}
+
+export function ChatWidget() {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [question, setQuestion] = useState("");
+  const [busy, setBusy] = useState(false);
+  const elections = useRef<Promise<Election[] | null> | null>(null);
+  const request = useRef<AbortController | null>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
+  /** The elections list, loaded once per conversation (null when it couldn't be loaded). */
+  function loadElections() {
+    elections.current ??= fetchElections().catch(() => null);
+    return elections.current;
+  }
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  // Keep the newest message in view while the reply streams in.
+  useEffect(() => {
+    const log = logRef.current;
+    if (log) log.scrollTop = log.scrollHeight;
+  }, [messages]);
+
+  useEffect(() => () => request.current?.abort(), []);
+
+  function show() {
+    setOpen(true);
+    void loadElections();
+  }
+
+  /** Hides the panel; the conversation stays for next time. */
+  function minimize() {
+    setOpen(false);
+    launcherRef.current?.focus();
+  }
+
+  function reset() {
+    request.current?.abort();
+    request.current = null;
+    elections.current = null;
+    setMessages([]);
+    setQuestion("");
+    setBusy(false);
+  }
+
+  /** Closes the panel and ends the conversation. */
+  function close() {
+    reset();
+    minimize();
+  }
+
+  function startNewChat() {
+    reset();
+    void loadElections();
+    inputRef.current?.focus();
+  }
+
+  /** Adds the user's message and a pending reply, then fills the reply from `produce`. */
+  async function exchange(userText: string, produce: (signal: AbortSignal) => Promise<Partial<ChatMessage>>) {
+    const controller = new AbortController();
+    request.current?.abort();
+    request.current = controller;
+    const replyId = newId();
+    const update = (patch: Partial<ChatMessage>) => setMessages((current) => current.map((m) => (m.id === replyId ? { ...m, ...patch } : m)));
+
+    setMessages((current) => [...current, { id: newId(), role: "user", text: userText }, { id: replyId, role: "assistant", text: "", state: "pending" }]);
+    setBusy(true);
+    try {
+      update({ ...(await produce(controller.signal)), state: undefined });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        // Stopped by the user: drop the pending reply.
+        setMessages((current) => current.filter((m) => m.id !== replyId));
+      } else {
+        update({ text: error instanceof Error ? error.message : "Something went wrong. Try again.", state: "error" });
+      }
+    } finally {
+      if (request.current === controller) {
+        request.current = null;
+        setBusy(false);
+      }
+    }
+  }
+
+  function runQuickAction(id: QuickActionId, label: string) {
+    if (busy) return;
+    void exchange(label, async (signal) => answerQuickAction(id, id === "schedule" || id === "candidates" ? await loadElections() : null, signal));
+  }
+
+  /** The backend answers each question on its own (it doesn't see earlier messages). */
+  function ask(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed || busy) return;
+    setQuestion("");
+    void exchange(trimmed, async (signal) => ({ text: await askAssistant(trimmed, signal) }));
+  }
+
+  function retry(index: number) {
+    const question = messages[index - 1];
+    if (question?.role !== "user") return;
+    // Drop the failed question and its error, then ask again.
+    const quick = QUICK_ACTIONS.find((a) => a.label === question.text);
+    setMessages(messages.slice(0, index - 1));
+    if (quick) runQuickAction(quick.id, quick.label);
+    else ask(question.text);
+  }
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    ask(question);
+  }
+
+  const started = messages.length > 0;
+
+  return (
+    <>
+      {open ? (
+        <section
+          role="dialog"
+          aria-labelledby={titleId}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              minimize();
+            }
+          }}
+          className={cn(
+            "fixed right-4 bottom-29.5 left-4 z-40 flex max-h-[calc(100dvh-8.5rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground sm:left-auto sm:right-6 sm:w-90",
+            "shadow-[0_12px_32px_0_rgb(15_23_41/0.18)] dark:shadow-[0_12px_32px_0_rgb(0_0_0/0.5)]",
+            "origin-bottom-right animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 duration-200 motion-reduce:animate-none",
+          )}
+        >
+          {/* Header */}
+          <header className="flex shrink-0 items-center gap-2.5 px-4 py-3.5">
+            <Owl className="h-7 w-9" sizes="32px" />
+            <div className="min-w-0 flex-1">
+              <h2 id={titleId} className="truncate text-[0.875rem] font-semibold text-foreground">
+                STI Vote Buddy
+              </h2>
+              <p className="truncate text-[0.6875rem] text-muted-foreground">Your friendly election assistant</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1 text-muted-foreground">
+              <WindowButton label="Minimize" onClick={minimize}>
+                <Minus aria-hidden className="size-4" strokeWidth={1.75} />
+              </WindowButton>
+              <WindowButton label="Close and end the chat" onClick={close}>
+                <X aria-hidden className="size-4" strokeWidth={1.75} />
+              </WindowButton>
+            </div>
+          </header>
+
+          {/* Status bar */}
+          <div className="flex shrink-0 items-center gap-2 border-y border-border px-4 py-2.5">
+            <p className="flex flex-1 items-center gap-2 text-[0.6875rem] text-muted-foreground" aria-live="polite">
+              {busy ? (
+                <span className="size-1.5 animate-pulse rounded-full bg-brand-blue motion-reduce:animate-none" aria-hidden />
+              ) : (
+                <Check aria-hidden className="size-3" strokeWidth={2} />
+              )}
+              {busy ? "Thinking…" : "Here to help you vote"}
+            </p>
+            <button
+              type="button"
+              onClick={startNewChat}
+              disabled={!started && !question}
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[0.6875rem] font-medium text-foreground outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand-blue/30 disabled:cursor-default disabled:hover:bg-transparent"
+            >
+              <Plus aria-hidden className="size-3.5" strokeWidth={1.75} />
+              New chat
+            </button>
+          </div>
+
+          {/* Conversation */}
+          <div ref={logRef} role="log" aria-label="Conversation" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {started ? (
+              <ol className="flex flex-col gap-3 px-4 py-4">
+                {messages.map((message, index) => (
+                  <MessageItem key={message.id} message={message} onRetry={() => retry(index)} retryDisabled={busy} />
+                ))}
+              </ol>
+            ) : (
+              <div className="flex flex-col items-center gap-2.5 px-7 pt-7 pb-6">
+                <Owl className="h-15.75 w-20" sizes="72px" />
+                <p className="text-center text-[1.0625rem] font-semibold text-foreground">Hi! Need help with the election?</p>
+              </div>
+            )}
+          </div>
+
+          {/* Quick actions (until the conversation starts) */}
+          {started ? null : (
+            <div className="grid shrink-0 grid-cols-2 gap-x-2 gap-y-2.5 border-t border-border px-4 pt-4 pb-3">
+              {QUICK_ACTIONS.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => runQuickAction(id, label)}
+                  className="flex min-w-0 cursor-pointer items-center gap-2 rounded-[0.625rem] border border-border px-3 py-2.5 text-left text-[0.75rem] font-medium text-foreground outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+                >
+                  <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                  <span className="truncate">{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Composer */}
+          <form onSubmit={handleSubmit} className={cn("flex shrink-0 flex-col gap-2.5 px-4 pb-3.5", started ? "border-t border-border pt-3.5" : "pt-1")}>
+            <div className="flex items-center gap-2 rounded-xl border-[1.5px] border-brand-background py-1.5 pr-1.5 pl-3.5 transition-shadow duration-150 focus-within:ring-3 focus-within:ring-brand-blue/20 dark:border-white/70">
+              <input
+                ref={inputRef}
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                maxLength={MAX_QUESTION_CHARS}
+                placeholder="Ask about the election…"
+                aria-label="Ask about the election"
+                className="min-w-0 flex-1 bg-transparent text-[0.8125rem] text-foreground outline-none placeholder:text-muted-foreground"
+              />
+              {busy ? (
+                <button
+                  type="button"
+                  onClick={() => request.current?.abort()}
+                  aria-label="Stop answering"
+                  title="Stop"
+                  className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-muted text-foreground outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+                >
+                  <Square aria-hidden className="size-3 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!question.trim()}
+                  aria-label="Send"
+                  title="Send"
+                  className={cn(
+                    "flex size-8 shrink-0 items-center justify-center rounded-lg outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-brand-blue/30",
+                    question.trim()
+                      ? "cursor-pointer bg-brand-background text-white hover:bg-brand-background/85 dark:bg-white dark:text-brand-background"
+                      : "bg-card text-muted-foreground",
+                  )}
+                >
+                  <ArrowRight aria-hidden className="size-4" strokeWidth={1.75} />
+                </button>
+              )}
+            </div>
+            <p className="text-center text-[0.625rem] leading-[1.4] text-muted-foreground">
+              Quick actions run on your device. Typed questions go to AI, which can make mistakes.
+            </p>
+          </form>
+        </section>
+      ) : null}
+
+      {/* Launcher */}
+      <button
+        ref={launcherRef}
+        type="button"
+        onClick={() => (open ? minimize() : show())}
+        aria-expanded={open}
+        aria-label={open ? "Hide STI Vote Buddy" : "Open STI Vote Buddy, the election assistant"}
+        title="STI Vote Buddy"
+        className={cn(
+          "group fixed right-4 bottom-10.5 z-40 h-13 w-17.25 cursor-pointer rounded-xl outline-none sm:right-11",
+          "transition-transform duration-200 ease-out hover:-translate-y-0.5 focus-visible:ring-3 focus-visible:ring-brand-blue/40 active:translate-y-0 active:scale-95 motion-reduce:transition-none",
+        )}
+      >
+        <Image src="/images/chat/launcher-bubble.svg" alt="" width={67} height={54} unoptimized className="pointer-events-none absolute top-[-0.74px] left-px h-[53.97px] w-16.75 max-w-none" />
+        <span aria-hidden className="pointer-events-none absolute -top-5.5 left-0.75 h-16.25 w-16">
+          <Image src="/images/chat/launcher-owl.png" alt="" fill sizes="64px" className="object-cover" />
+        </span>
+      </button>
+    </>
+  );
+}
+
+function WindowButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="flex size-7 cursor-pointer items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+    >
+      {children}
+    </button>
+  );
+}
+
+function MessageItem({ message, onRetry, retryDisabled }: { message: ChatMessage; onRetry: () => void; retryDisabled: boolean }) {
+  if (message.role === "user") {
+    return (
+      <li className="flex justify-end">
+        <p className="max-w-[85%] rounded-xl rounded-br-sm bg-brand-background px-3 py-2 text-[0.8125rem] leading-[1.45] whitespace-pre-wrap text-white dark:bg-brand-blue">
+          {message.text}
+        </p>
+      </li>
+    );
+  }
+
+  const waiting = message.state === "pending";
+  return (
+    <li className="flex items-end gap-2">
+      <Owl className="mb-0.5 h-5 w-6.5" sizes="24px" />
+      <div className="flex max-w-[85%] min-w-0 flex-col gap-2">
+        <div
+          className={cn(
+            "rounded-xl rounded-bl-sm px-3 py-2 text-[0.8125rem] leading-[1.45] whitespace-pre-wrap",
+            message.state === "error" ? "border border-destructive/25 bg-destructive/5 text-destructive" : "bg-muted text-foreground dark:bg-white/6",
+          )}
+        >
+          {waiting ? (
+            <span className="flex h-4.5 items-center gap-1" aria-label="Writing an answer">
+              {[0, 150, 300].map((delay) => (
+                <span key={delay} className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60 motion-reduce:animate-none" style={{ animationDelay: `${delay}ms` }} />
+              ))}
+            </span>
+          ) : (
+            message.text
+          )}
+        </div>
+        {message.links?.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {message.links.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="inline-flex max-w-full items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-[0.6875rem] font-medium text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+              >
+                <span className="truncate">{link.label}</span>
+                <ArrowUpRight aria-hidden className="size-3 shrink-0" strokeWidth={1.75} />
+              </Link>
+            ))}
+          </div>
+        ) : null}
+        {message.state === "error" ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={retryDisabled}
+            className="inline-flex w-fit cursor-pointer items-center gap-1 rounded-md text-[0.6875rem] font-medium text-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-brand-blue/30 disabled:cursor-default disabled:opacity-50"
+          >
+            <RotateCcw aria-hidden className="size-3" strokeWidth={1.75} />
+            Try again
+          </button>
+        ) : null}
+      </div>
+    </li>
+  );
+}

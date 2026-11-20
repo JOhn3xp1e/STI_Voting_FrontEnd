@@ -10,6 +10,7 @@ import { endDashboardEntrance } from "@/lib/dashboard-entrance";
 import { cn } from "@/lib/utils";
 import type { AdminProfile } from "@/types/auth.types";
 import { ProfileDialogProvider } from "@/components/account/profile-dialog";
+import { ChatWidget } from "@/components/chat/chat-widget";
 import { ElectionsNavProvider, useElectionsNav } from "@/components/elections/elections-nav";
 
 import entrance from "./dashboard-entrance.module.css";
@@ -202,6 +203,8 @@ function Shell({ admin, children }: DashboardShellProps) {
           {children}
         </main>
       </div>
+
+      <ChatWidget />
 
       {/* Entrance after signing in: lifts away from the sign-in screen's navy (CSS only; hidden otherwise). */}
       <div aria-hidden className={entrance.curtain} onAnimationEnd={endDashboardEntrance} />
