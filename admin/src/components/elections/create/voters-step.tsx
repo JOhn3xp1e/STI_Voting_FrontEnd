@@ -148,10 +148,13 @@ function CareerNarrow({ career, form, update, own, total, color }: CareerNarrowP
   const programs = own.filter((code) => form.programScope.includes(code));
   const pickedLevels = levelPicks(form, career);
 
-  /** From "All", a chip picks just itself; otherwise it toggles. Picking none or every one means "All". */
+  /**
+   * "All" (no picks) shows every chip highlighted, so a chip toggles from there too:
+   * clicking one under "All" leaves out just that one. Picking none or every one means "All".
+   */
   function nextPicks<T>(all: readonly T[], picks: readonly T[], value: T): T[] {
-    if (picks.length === 0) return [value];
-    const next = picks.includes(value) ? picks.filter((p) => p !== value) : [...picks, value];
+    const current = picks.length === 0 ? all : picks;
+    const next = current.includes(value) ? current.filter((p) => p !== value) : [...current, value];
     return next.length === all.length ? [] : all.filter((x) => next.includes(x));
   }
 
@@ -181,7 +184,7 @@ function CareerNarrow({ career, form, update, own, total, color }: CareerNarrowP
             All
           </ScopeChip>
           {own.map((code) => (
-            <ScopeChip key={code} selected={programs.includes(code)} onClick={() => setPrograms(nextPicks(own, programs, code))}>
+            <ScopeChip key={code} selected={programs.length === 0 || programs.includes(code)} onClick={() => setPrograms(nextPicks(own, programs, code))}>
               {code}
             </ScopeChip>
           ))}
@@ -194,7 +197,7 @@ function CareerNarrow({ career, form, update, own, total, color }: CareerNarrowP
             All
           </ScopeChip>
           {levels.map((level) => (
-            <ScopeChip key={level} selected={pickedLevels.includes(level)} onClick={() => setLevels(nextPicks(levels, pickedLevels, level))}>
+            <ScopeChip key={level} selected={pickedLevels.length === 0 || pickedLevels.includes(level)} onClick={() => setLevels(nextPicks(levels, pickedLevels, level))}>
               {levelLabel(level, career)}
             </ScopeChip>
           ))}

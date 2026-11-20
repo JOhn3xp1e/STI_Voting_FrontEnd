@@ -213,7 +213,11 @@ export function SummaryPanel({
               Voter pool breakdown
             </SubHeading>
             <div className="space-y-2">
-              {pool.careers.map(({ career, total, levels, scale }) => (
+              {pool.careers.every(({ total }) => total === 0) ? (
+                <p className="text-[0.8125rem] text-muted-foreground">No students match yet.</p>
+              ) : null}
+              {/* Careers and levels with no students are left out. */}
+              {pool.careers.filter(({ total }) => total > 0).map(({ career, total, levels, scale }) => (
                 <div key={career.code} style={careerStyle(colors.get(career.code)!)} className={cn("rounded-[0.375rem] bg-[#f5f7fa] px-3 py-2.5 dark:bg-white/4", styles.fadeUp)}>
                   <div className="mb-1.5 flex items-baseline justify-between gap-3">
                     <p className="text-[0.8125rem] font-medium text-foreground">{career.name}</p>
@@ -222,7 +226,7 @@ export function SummaryPanel({
                     </p>
                   </div>
                   <ul className="space-y-1">
-                    {levels.map(({ level, count, included }) => (
+                    {levels.filter(({ count }) => count > 0).map(({ level, count, included }) => (
                       <li key={level} className={cn("flex items-center gap-3 transition-opacity duration-300", !included && "opacity-40")}>
                         <span className="w-18 shrink-0 text-[0.75rem] text-muted-foreground">{levelLabel(level, career)}</span>
                         <span className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-[#e3e8ef] dark:bg-white/10">

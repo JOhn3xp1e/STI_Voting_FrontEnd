@@ -125,6 +125,15 @@ function TermsWorkspace({ initialTerms, initialEnrollments, electionTermIds, tod
 
   const deferredQuery = useDeferredValue(query);
 
+  // Opened with #new (the dashboard's Terms shortcut): jump to the New term form.
+  useEffect(() => {
+    if (window.location.hash !== "#new") return;
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    const field = firstFieldRef.current;
+    field?.scrollIntoView({ behavior: "smooth", block: "center" });
+    field?.focus({ preventScroll: true });
+  }, []);
+
   useEffect(() => {
     if (flashed.size === 0) return;
     const timer = setTimeout(() => setFlashed(new Set()), 2500);

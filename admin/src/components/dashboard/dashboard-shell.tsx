@@ -50,12 +50,13 @@ function Shell({ admin, children }: DashboardShellProps) {
   const activeHref = getActiveHref(pathname, navSections);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  /** Groups the admin (or the route) opened or closed. The rest follow their default: live elections start expanded. */
-  const [groupChoices, setGroupChoices] = useState<Record<string, boolean>>({});
-  const openGroups = useMemo(
-    () => ({ ...Object.fromEntries(defaultOpenGroupIds(navSections).map((id) => [id, true])), ...groupChoices }),
-    [navSections, groupChoices],
-  );
+  /**
+   * Only one election group is expanded at a time (opening one closes the other).
+   * `undefined` until the admin (or the route) picks one: then the first live election starts expanded.
+   */
+  const [groupChoice, setGroupChoice] = useState<string | null | undefined>(undefined);
+  const openGroupId = groupChoice === undefined ? (defaultOpenGroupIds(navSections)[0] ?? null) : groupChoice;
+  const openGroups = useMemo<Record<string, boolean>>(() => (openGroupId ? { [openGroupId]: true } : {}), [openGroupId]);
 
   const desktopSearchRef = useRef<HTMLInputElement>(null);
   const drawerSearchRef = useRef<HTMLInputElement>(null);
@@ -69,13 +70,12 @@ function Shell({ admin, children }: DashboardShellProps) {
   if (activeHref !== expandedFor) {
     setExpandedFor(activeHref);
     const groupId = findGroupIdOf(activeHref, navSections);
-    if (groupId && openGroups[groupId] !== true) {
-      setGroupChoices((groups) => ({ ...groups, [groupId]: true }));
-    }
+    if (groupId && groupId !== openGroupId) setGroupChoice(groupId);
   }
 
   function setGroupOpen(groupId: string, open: boolean) {
-    setGroupChoices((groups) => ({ ...groups, [groupId]: open }));
+    if (open) setGroupChoice(groupId);
+    else if (groupId === openGroupId) setGroupChoice(null);
   }
 
   // `/` focuses the sidebar search (opening the drawer first on small screens).

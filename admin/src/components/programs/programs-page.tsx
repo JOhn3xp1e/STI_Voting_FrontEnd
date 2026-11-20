@@ -141,13 +141,21 @@ function ProgramsWorkspace({ initial }: { initial: PageData }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [flashed, setFlashed] = useState<Set<string>>(() => new Set());
   const [careerEditor, setCareerEditor] = useState<EditorState<Career>>(null);
-  const [programEditor, setProgramEditor] = useState<EditorState<Program>>(null);
+  // Opened with #new-program (the dashboard's Programs shortcut): start with the New program form open.
+  const [programEditor, setProgramEditor] = useState<EditorState<Program>>(() =>
+    typeof window !== "undefined" && window.location.hash === "#new-program" ? { mode: "new" } : null,
+  );
   const [deletingCareer, setDeletingCareer] = useState<Career | null>(null);
   const [deletingProgram, setDeletingProgram] = useState<Program | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const { notice, say } = useNotice();
 
   const deferredQuery = useDeferredValue(query);
+
+  // Drop the #new-program from the address so a refresh doesn't open the form again.
+  useEffect(() => {
+    if (window.location.hash === "#new-program") window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  }, []);
 
   useEffect(() => {
     if (flashed.size === 0) return;

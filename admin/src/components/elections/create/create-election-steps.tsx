@@ -469,7 +469,10 @@ function BreakdownBars({ title, rows, total, scale }: { title: string; rows: { k
 
 /** A career's box in the voter pool breakdown: by program (or strand), then by level. */
 function CareerBreakdown({ pool, poolTotal, color }: { pool: CareerPool; poolTotal: number; color: string }) {
-  const { career, total, programs, programScale, levels, scale } = pool;
+  const { career, total, programScale, scale } = pool;
+  // Programs and levels with no students are left out.
+  const programs = pool.programs.filter((p) => p.count > 0);
+  const levels = pool.levels.filter((l) => l.count > 0);
   const programWord = programGroupLabel(career) === "Strands" ? "strand" : "program";
   return (
     <div style={careerStyle(color)} className="rounded-[0.375rem] bg-[#f5f7fa] px-3.5 pt-3 pb-3.5 dark:bg-white/4">
@@ -526,7 +529,7 @@ export function ReviewStep({ form, terms, pool, programs, colors, editing, onEdi
         title="Who can vote"
         onEdit={() => onEdit(1)}
         after={
-          pool.careers.length ? (
+          pool.careers.some(({ total }) => total > 0) ? (
             <div className="mt-3 border-t border-[#e2e8f0] pt-3 dark:border-border">
               <div className="mb-2.5 flex items-baseline justify-between gap-3">
                 <p className="text-[0.8125rem] text-muted-foreground">Voter pool breakdown</p>
@@ -534,8 +537,8 @@ export function ReviewStep({ form, terms, pool, programs, colors, editing, onEdi
                   <AnimatedNumber value={pool.total} from={0} duration={900} className="tabular-nums" /> total
                 </p>
               </div>
-              <div className={cn("grid grid-cols-1 gap-3", pool.careers.length > 1 && "md:grid-cols-2")}>
-                {pool.careers.map((careerPool) => (
+              <div className={cn("grid grid-cols-1 gap-3", pool.careers.filter(({ total }) => total > 0).length > 1 && "md:grid-cols-2")}>
+                {pool.careers.filter(({ total }) => total > 0).map((careerPool) => (
                   <CareerBreakdown key={careerPool.career.code} pool={careerPool} poolTotal={pool.total} color={colors.get(careerPool.career.code)!} />
                 ))}
               </div>

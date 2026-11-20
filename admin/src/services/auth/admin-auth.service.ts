@@ -116,6 +116,28 @@ export async function updatePassword(password: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Checks the signed-in admin's current password by signing in with it again
+ * (Supabase has no separate "check password" call). On success the session is
+ * renewed in place; on failure the current session is left untouched.
+ */
+export async function verifyCurrentPassword(email: string, password: string): Promise<void> {
+  const { error } = await getSupabase().auth.signInWithPassword({ email, password });
+  if (error) throw error;
+}
+
+/** The password given to `verifyCurrentPassword` was wrong. */
+export function isWrongPasswordError(error: unknown): boolean {
+  return (isAuthApiError(error) || isAuthError(error)) && (error.code === "invalid_credentials" || error.status === 400);
+}
+
+/** Whether the current login has a verified two-step (MFA) factor. */
+export async function hasTwoStepSignIn(): Promise<boolean> {
+  const { data, error } = await getSupabase().auth.mfa.listFactors();
+  if (error) throw error;
+  return data.all.some((factor) => factor.status === "verified");
+}
+
 /** Ends this login's sessions on every other device (after a password change). Never throws. */
 export async function signOutOtherDevices(): Promise<void> {
   try {
