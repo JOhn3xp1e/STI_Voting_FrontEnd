@@ -57,7 +57,16 @@ function activeOrNull(me: MeResponse | null): MeResponse | null {
  * Right after signing in, the `/me` answer from the sign-in screen is reused,
  * so the dashboard opens at once (and is re-checked in the background).
  */
-export function AdminSessionGate({ children, fallback }: { children: ReactNode; fallback: ReactNode }) {
+export function AdminSessionGate({
+  children,
+  fallback,
+  bare = false,
+}: {
+  children: ReactNode;
+  fallback: ReactNode;
+  /** Full-screen pages (the QR viewer): signed-in admins only, but without the sidebar and header. */
+  bare?: boolean;
+}) {
   const router = useRouter();
   const [me, setMe] = useState<MeResponse | null>(() => (DEV_SKIP_AUTH ? DEV_ME : activeOrNull(peekCachedMe())));
   /** Why the session couldn't be checked; only shown while the dashboard isn't open yet. */
@@ -162,7 +171,7 @@ export function AdminSessionGate({ children, fallback }: { children: ReactNode; 
 
   return (
     <AdminSessionContext value={session}>
-      <DashboardShell admin={session.admin}>{children}</DashboardShell>
+      {bare ? children : <DashboardShell admin={session.admin}>{children}</DashboardShell>}
     </AdminSessionContext>
   );
 }

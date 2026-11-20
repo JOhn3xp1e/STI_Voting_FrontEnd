@@ -12,6 +12,7 @@ import { cardClassName } from "@/components/shared/section-card";
 import { PageError, Toast, useNotice } from "@/components/shared/page-feedback";
 import { useElectionsNav } from "@/components/elections/elections-nav";
 import { StatusAction } from "@/components/elections/status-action";
+import { OngoingOverview } from "@/components/elections/manage/ongoing-overview";
 import { PageSkeleton } from "@/components/shared/skeleton";
 import { AnimatedNumber } from "@/components/students/animated-number";
 import { toolbarButtonClassName } from "@/components/students/student-toolbar-styles";
@@ -211,59 +212,75 @@ function ManageWorkspace({ data, onElection }: { data: Data; onElection: (electi
         <ProgressCard election={election} done={done} total={checklist.length} />
       </section>
 
-      <section className={motion.riseIn} style={rise(1)}>
-        <SectionLabel>Election info</SectionLabel>
-        <div className={cn(cardClassName, "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_11rem] xl:grid-cols-[minmax(0,1fr)_11rem_minmax(0,23rem)]")}>
-          {/* Details */}
-          <div className="min-w-0 px-5 py-4.5">
-            <p className="flex flex-wrap items-baseline gap-x-2.5">
-              <span className="text-[1.0625rem] font-semibold text-foreground">{election.title}</span>
-              <span className="font-mono text-[0.6875rem] text-muted-foreground">{election.id}</span>
-            </p>
-            <dl className="mt-3.5 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
-              <InfoField label="Category">{election.category}</InfoField>
-              <InfoField label="Term">{term ? termOptionLabel(term) : election.termId}</InfoField>
-              <InfoField label="Rules">{election.rules?.trim() || "—"}</InfoField>
-              <InfoField label="Opens">{formatDayTime(instantToLocal(election.startsAt))}</InfoField>
-              <InfoField label="Closes">{formatDayTime(instantToLocal(election.endsAt))}</InfoField>
-            </dl>
-          </div>
+      {election.status === "Ongoing" ? (
+        <OngoingOverview
+          election={election}
+          careers={careers}
+          positions={positions}
+          candidates={candidates}
+          parties={parties}
+          enrollments={enrollments}
+          now={now}
+          onMove={move}
+          say={say}
+        />
+      ) : (
+        <>
+          <section className={motion.riseIn} style={rise(1)}>
+            <SectionLabel>Election info</SectionLabel>
+            <div className={cn(cardClassName, "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_11rem] xl:grid-cols-[minmax(0,1fr)_11rem_minmax(0,23rem)]")}>
+              {/* Details */}
+              <div className="min-w-0 px-5 py-4.5">
+                <p className="flex flex-wrap items-baseline gap-x-2.5">
+                  <span className="text-[1.0625rem] font-semibold text-foreground">{election.title}</span>
+                  <span className="font-mono text-[0.6875rem] text-muted-foreground">{election.id}</span>
+                </p>
+                <dl className="mt-3.5 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
+                  <InfoField label="Category">{election.category}</InfoField>
+                  <InfoField label="Term">{term ? termOptionLabel(term) : election.termId}</InfoField>
+                  <InfoField label="Rules">{election.rules?.trim() || "—"}</InfoField>
+                  <InfoField label="Opens">{formatDayTime(instantToLocal(election.startsAt))}</InfoField>
+                  <InfoField label="Closes">{formatDayTime(instantToLocal(election.endsAt))}</InfoField>
+                </dl>
+              </div>
 
-          {/* Voters */}
-          <div className="border-t border-[#e2e8f0] px-5 py-4.5 lg:border-t-0 lg:border-l dark:border-border">
-            <p className="font-mono text-[0.625rem] tracking-[0.1em] text-muted-foreground uppercase">Voters</p>
-            <AnimatedNumber
-              value={voterCount || (eligible ?? 0)}
-              from={0}
-              duration={1000}
-              className="mt-1.5 block text-[1.875rem] leading-9 font-semibold tracking-tight text-foreground tabular-nums"
-            />
-            <p className="text-[0.8125rem] text-muted-foreground">{voterCount ? (voterCount === 1 ? "voter" : "voters") : "eligible voters"}</p>
-            {turnout && election.status !== "Draft" && election.status !== "Upcoming" ? (
-              <p className="mt-2 text-[0.75rem] text-foreground">
-                {count(turnout.voted)} voted · {Math.round((turnout.voted / turnout.total) * 100)}%
-              </p>
-            ) : null}
-          </div>
+              {/* Voters */}
+              <div className="border-t border-[#e2e8f0] px-5 py-4.5 lg:border-t-0 lg:border-l dark:border-border">
+                <p className="font-mono text-[0.625rem] tracking-[0.1em] text-muted-foreground uppercase">Voters</p>
+                <AnimatedNumber
+                  value={voterCount || (eligible ?? 0)}
+                  from={0}
+                  duration={1000}
+                  className="mt-1.5 block text-[1.875rem] leading-9 font-semibold tracking-tight text-foreground tabular-nums"
+                />
+                <p className="text-[0.8125rem] text-muted-foreground">{voterCount ? (voterCount === 1 ? "voter" : "voters") : "eligible voters"}</p>
+                {turnout && election.status !== "Draft" && election.status !== "Upcoming" ? (
+                  <p className="mt-2 text-[0.75rem] text-foreground">
+                    {count(turnout.voted)} voted · {Math.round((turnout.voted / turnout.total) * 100)}%
+                  </p>
+                ) : null}
+              </div>
 
-          {/* Who can vote */}
-          <div className="border-t border-[#e2e8f0] px-5 py-4.5 lg:col-span-2 xl:col-span-1 xl:border-t-0 xl:border-l dark:border-border">
-            <p className="font-mono text-[0.625rem] tracking-[0.1em] text-muted-foreground uppercase">Who can vote</p>
-            <WhoCanVote scope={scope} />
-          </div>
-        </div>
-      </section>
+              {/* Who can vote */}
+              <div className="border-t border-[#e2e8f0] px-5 py-4.5 lg:col-span-2 xl:col-span-1 xl:border-t-0 xl:border-l dark:border-border">
+                <p className="font-mono text-[0.625rem] tracking-[0.1em] text-muted-foreground uppercase">Who can vote</p>
+                <WhoCanVote scope={scope} />
+              </div>
+            </div>
+          </section>
 
-      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_21.25rem]">
-        <section className={motion.riseIn} style={rise(2)}>
-          <SectionLabel>Preparation checklist</SectionLabel>
-          <Checklist election={election} items={checklist} done={done} />
-        </section>
-        <section className={motion.riseIn} style={rise(3)}>
-          <SectionLabel>{STAGE_TITLE[election.status]}</SectionLabel>
-          <StageCard election={election} now={now} checklist={checklist} voters={voterCount} eligible={eligible} turnout={turnout} positions={positions.length} onMove={move} />
-        </section>
-      </div>
+          <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_21.25rem]">
+            <section className={motion.riseIn} style={rise(2)}>
+              <SectionLabel>Preparation checklist</SectionLabel>
+              <Checklist election={election} items={checklist} done={done} />
+            </section>
+            <section className={motion.riseIn} style={rise(3)}>
+              <SectionLabel>{STAGE_TITLE[election.status]}</SectionLabel>
+              <StageCard election={election} now={now} checklist={checklist} voters={voterCount} eligible={eligible} turnout={turnout} positions={positions.length} onMove={move} />
+            </section>
+          </div>
+        </>
+      )}
 
       <Toast notice={notice} />
     </div>
@@ -297,7 +314,7 @@ function ProgressCard({ election, done, total }: { election: Election; done: num
         : election.status === "Draft"
           ? "Draft · not scheduled yet"
           : stage > 0
-            ? "Done"
+            ? `Done · started ${formatDayTime(opens)}`
             : done === total
               ? "Ready to start"
               : `${done} of ${total} checks done`,
@@ -309,7 +326,7 @@ function ProgressCard({ election, done, total }: { election: Election; done: num
         : stage === 0
           ? `Scheduled · ${formatDayTime(opens)}`
           : stage === 1
-            ? `Open · closes ${formatDayTime(closes)}`
+            ? `Voting open · closes ${formatDayTime(closes)}`
             : `${formatDay(opens)} → ${formatDay(closes)}`,
     },
     {

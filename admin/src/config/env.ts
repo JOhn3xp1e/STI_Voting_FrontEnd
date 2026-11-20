@@ -16,4 +16,10 @@ export const env = {
 
   /** Supabase anon / publishable key (public by design; access is enforced by the backend and RLS). */
   supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ?? "",
+
+  /**
+   * Public live page of an ongoing election, with `{id}` for the election id, e.g.
+   * `https://slvp-voter.kape-dev.space/live/{id}`. Empty: the Manage page hides "Open live page".
+   */
+  livePageUrl: process.env.NEXT_PUBLIC_LIVE_PAGE_URL?.trim() ?? "",
 } as const;
