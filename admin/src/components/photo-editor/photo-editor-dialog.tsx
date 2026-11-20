@@ -14,7 +14,7 @@ export interface PhotoEditorRequest {
   photo: File | string | null;
 }
 
-interface PhotoEditorDialogProps extends Pick<PhotoEditorProps, "title" | "preview" | "saveLabel"> {
+interface PhotoEditorDialogProps extends Pick<PhotoEditorProps, "title" | "preview" | "saveLabel" | "fixedBackground"> {
   request: PhotoEditorRequest | null;
   onClose: () => void;
   /** Gets the finished PNG; reject with a readable message to keep the editor open and show it. */

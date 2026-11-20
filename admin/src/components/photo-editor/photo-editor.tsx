@@ -227,6 +227,11 @@ export interface PhotoEditorProps {
   preview?: { name: string; detail: string };
   /** Label of the save button. */
   saveLabel?: string;
+  /**
+   * Locks the background to this colour (candidate portraits use their party list's colour), so
+   * the swatches and pickers are replaced by a read-only row. `label` names it, e.g. "Party Blue".
+   */
+  fixedBackground?: { color: string; label: string; detail?: string };
 }
 
 const DEFAULT_PREVIEW = { name: "Candidate name", detail: "President · Independent" };
@@ -239,6 +244,7 @@ export function PhotoEditor({
   title = "Photo editor",
   preview = DEFAULT_PREVIEW,
   saveLabel = "Save photo",
+  fixedBackground,
 }: PhotoEditorProps = {}) {
   const inDialog = mode === "dialog";
   const [photo, setPhoto] = useState<Photo | null>(null);
@@ -260,7 +266,8 @@ export function PhotoEditor({
   const [showMask, setShowMask] = useState(false);
   const [compare, setCompare] = useState(true);
   const [split, setSplit] = useState(0.5);
-  const [background, setBackground] = useState<Background>("#0F4C9E");
+  const [chosenBackground, setBackground] = useState<Background>("#0F4C9E");
+  const background: Background = (fixedBackground && normalizeHex(fixedBackground.color)) || chosenBackground;
   const [hexDraft, setHexDraft] = useState("#0F4C9E");
   const [saving, setSaving] = useState(false);
   const [workspace, setWorkspace] = useState({ width: 0, height: 0 });
@@ -962,57 +969,63 @@ export function PhotoEditor({
             <Divider />
 
             <Section ref={colorSectionRef} title="Background color" badge={<StepBadge n={4} state={stepState.color} />}>
-              <div role="radiogroup" aria-label="Background color" className="flex flex-wrap gap-2.5">
-                {SWATCHES.map((swatch) => (
-                  <Swatch key={swatch.value} {...swatch} selected={background === swatch.value} onSelect={() => chooseBackground(swatch.value)} />
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <div
-                  className={cn(
-                    "flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-white px-2.5 py-[9px] focus-within:border-brand-blue focus-within:ring-3 focus-within:ring-brand-blue/20",
-                    LINE,
-                  )}
-                >
-                  <label className="relative size-4 shrink-0 cursor-pointer overflow-hidden rounded-full border border-black/5" title="Pick a color">
-                    <span className="absolute inset-0" style={{ background: background === "transparent" ? CHECKERBOARD : background }} />
-                    <input
-                      type="color"
-                      aria-label="Pick a background color"
-                      value={background === "transparent" ? "#ffffff" : background.toLowerCase()}
-                      onChange={(e) => chooseBackground(e.target.value.toUpperCase())}
-                      className="absolute inset-0 cursor-pointer opacity-0"
-                    />
-                  </label>
-                  <input
-                    type="text"
-                    aria-label="Background color hex code"
-                    value={hexDraft}
-                    placeholder="Transparent"
-                    spellCheck={false}
-                    maxLength={7}
-                    onChange={(e) => onHexChange(e.target.value)}
-                    onBlur={() => setHexDraft(background === "transparent" ? "" : background)}
-                    className="w-20 min-w-0 bg-transparent text-[12.5px] font-medium uppercase outline-none placeholder:normal-case placeholder:text-brand-muted"
-                  />
-                  <span className="flex-1" />
-                  <span className="truncate text-[11.5px] text-brand-muted">{colorName(background)}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void pickFromScreen()}
-                  disabled={!canUseEyeDropper}
-                  aria-label="Pick a color from the screen"
-                  title={canUseEyeDropper ? "Pick a color from the screen" : "Your browser can't pick colors from the screen"}
-                  className={cn(
-                    "flex size-[38px] shrink-0 items-center justify-center rounded-lg border bg-white transition-colors hover:bg-[#f4f6fa] disabled:cursor-not-allowed disabled:opacity-40",
-                    LINE,
-                    focusRing,
-                  )}
-                >
-                  <EyedropperIcon />
-                </button>
-              </div>
+              {fixedBackground ? (
+                <FixedBackground color={background} label={fixedBackground.label} detail={fixedBackground.detail} />
+              ) : (
+                <>
+                  <div role="radiogroup" aria-label="Background color" className="flex flex-wrap gap-2.5">
+                    {SWATCHES.map((swatch) => (
+                      <Swatch key={swatch.value} {...swatch} selected={background === swatch.value} onSelect={() => chooseBackground(swatch.value)} />
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={cn(
+                        "flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-white px-2.5 py-[9px] focus-within:border-brand-blue focus-within:ring-3 focus-within:ring-brand-blue/20",
+                        LINE,
+                      )}
+                    >
+                      <label className="relative size-4 shrink-0 cursor-pointer overflow-hidden rounded-full border border-black/5" title="Pick a color">
+                        <span className="absolute inset-0" style={{ background: background === "transparent" ? CHECKERBOARD : background }} />
+                        <input
+                          type="color"
+                          aria-label="Pick a background color"
+                          value={background === "transparent" ? "#ffffff" : background.toLowerCase()}
+                          onChange={(e) => chooseBackground(e.target.value.toUpperCase())}
+                          className="absolute inset-0 cursor-pointer opacity-0"
+                        />
+                      </label>
+                      <input
+                        type="text"
+                        aria-label="Background color hex code"
+                        value={hexDraft}
+                        placeholder="Transparent"
+                        spellCheck={false}
+                        maxLength={7}
+                        onChange={(e) => onHexChange(e.target.value)}
+                        onBlur={() => setHexDraft(background === "transparent" ? "" : background)}
+                        className="w-20 min-w-0 bg-transparent text-[12.5px] font-medium uppercase outline-none placeholder:normal-case placeholder:text-brand-muted"
+                      />
+                      <span className="flex-1" />
+                      <span className="truncate text-[11.5px] text-brand-muted">{colorName(background)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void pickFromScreen()}
+                      disabled={!canUseEyeDropper}
+                      aria-label="Pick a color from the screen"
+                      title={canUseEyeDropper ? "Pick a color from the screen" : "Your browser can't pick colors from the screen"}
+                      className={cn(
+                        "flex size-[38px] shrink-0 items-center justify-center rounded-lg border bg-white transition-colors hover:bg-[#f4f6fa] disabled:cursor-not-allowed disabled:opacity-40",
+                        LINE,
+                        focusRing,
+                      )}
+                    >
+                      <EyedropperIcon />
+                    </button>
+                  </div>
+                </>
+              )}
             </Section>
           </div>
 
@@ -1592,6 +1605,22 @@ function EmptyState({ onChoose }: { onChoose: () => void }) {
         Choose photo
       </button>
       <p className="text-[11.5px] text-brand-muted">or drop it anywhere here</p>
+    </div>
+  );
+}
+
+/** The background colour when it's set for the editor (the candidate's party list colour); nothing to choose. */
+function FixedBackground({ color, label, detail }: { color: string; label: string; detail?: string }) {
+  return (
+    <div className={cn("flex items-center gap-3 rounded-lg border bg-white px-3 py-2.5", LINE)}>
+      <span aria-hidden className="size-8 shrink-0 rounded-md border border-black/5" style={{ background: color }} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[12.5px] font-medium text-brand-navy">{label}</p>
+        <p className="text-[11.5px] text-brand-muted">
+          <span className="font-medium uppercase">{color}</span>
+          {detail ? ` · ${detail}` : null}
+        </p>
+      </div>
     </div>
   );
 }

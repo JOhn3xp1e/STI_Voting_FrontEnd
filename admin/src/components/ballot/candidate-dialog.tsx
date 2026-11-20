@@ -23,7 +23,7 @@ import {
   type CandidateForm,
   type LinkDraft,
 } from "@/lib/ballot";
-import { mottoText, partyColorFallbackClassName, partyColorStyle, partyInitial } from "@/lib/partylists";
+import { mottoText, partyColorFallbackClassName, partyColorStyle, partyHex, partyInitial } from "@/lib/partylists";
 import { formatStudentName, formatYear, getStudentInitials } from "@/lib/students";
 import { cn } from "@/lib/utils";
 import { getApiErrorMessage } from "@/services/api/error-message";
@@ -358,6 +358,11 @@ export function CandidateDialog({ target, electionId, positions, parties, studen
         preview={{
           name: student ? `${student.firstName} ${student.lastName}`.trim() : "Candidate",
           detail: `${position?.title ?? "Position"} · ${party?.name ?? "Independent"}`,
+        }}
+        fixedBackground={{
+          color: partyHex(party),
+          label: party ? `${party.name} color` : "Independent (brand blue)",
+          detail: party?.color ? "set by the party list" : party ? "the party list has no color" : "no party list",
         }}
       />
 

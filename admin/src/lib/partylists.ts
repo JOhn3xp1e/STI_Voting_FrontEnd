@@ -29,6 +29,11 @@ function readableOn(hex: string): string {
   return luminance > 0.6 ? "#0f172a" : "#ffffff";
 }
 
+/** A party's colour as "#RRGGBB": its own, or brand blue when it has none (independents too). */
+export function partyHex(party: { color: string | null } | null): string {
+  return (party?.color && normalizeHex(party.color)) || "#0F4C9E";
+}
+
 /** Class for a party-coloured surface when the party has no colour (brand blue). */
 export const partyColorFallbackClassName = "bg-brand-blue text-white";
 
