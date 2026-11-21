@@ -350,3 +350,68 @@ export function scopeSummary(form: PositionScopeForm, options: readonly ScopeCar
   if (picked.length === options.length) return { title: "Everyone in this election", detail: `${names} · ${allLevels}` };
   return { title: `Scoped to ${names}`, detail: allLevels };
 }
+
+/* -------------------------------------------------------------------------- */
+/*                         A saved position's voter scope                      */
+/* -------------------------------------------------------------------------- */
+
+/** One career in a position's "Who can vote": its badge and what's narrowed inside it ("BSIT · 1st year"). */
+export interface PositionScopePart {
+  code: string;
+  /** `undefined` when the careers list couldn't be loaded. */
+  color: string | undefined;
+  /** `null` = everyone in this career (that the election allows). */
+  detail: string | null;
+}
+
+/**
+ * Reads a position's flat lists back into careers, the same way SLVP-BE matches voters: a career
+ * counts when it's in the career list (or that list is empty) and some of its programs and levels
+ * pass the other two lists. Careers without programs pass any program list.
+ *
+ * `options` are the careers the election lets vote (`scopeCareers`). When they're empty (the
+ * election couldn't be loaded), every career is used instead.
+ */
+export function positionScopeParts(
+  position: Pick<Position, "careerScope" | "programScope" | "levelScope">,
+  options: readonly ScopeCareer[],
+  careers: readonly Career[],
+): { everyone: true } | { everyone: false; parts: PositionScopePart[]; text: string } {
+  const { careerScope, programScope, levelScope } = position;
+  if (!careerScope.length && !programScope.length && !levelScope.length) return { everyone: true };
+
+  const inCareers = (code: string) => !careerScope.length || careerScope.some((c) => c.toUpperCase() === code.toUpperCase());
+  const programSet = new Set(programScope.map((p) => p.toUpperCase()));
+  const levelSet = new Set(levelScope);
+
+  // Without the election (it couldn't be loaded), read the lists against every career.
+  const sorted = sortCareers(careers);
+  const against = options.length
+    ? options
+    : sorted.map((career): ScopeCareer => ({ career, color: careerColor(career, sorted), programs: career.programScope, levels: careerLevels(career), voters: null }));
+  if (against.length === 0) {
+    // Nothing to read them against: show the lists as they are.
+    const extra = [programScope.length ? formatProgramScope(programScope) : null, levelScope.length ? formatLevelScope(levelScope, careers) : null];
+    return { everyone: false, parts: [], text: [careerScope.join(", "), ...extra].filter(Boolean).join(" · ") };
+  }
+
+  const parts: PositionScopePart[] = [];
+  for (const o of against) {
+    if (!inCareers(o.career.code)) continue;
+    const programs = programSet.size && o.programs.length ? o.programs.filter((p) => programSet.has(p.toUpperCase())) : o.programs;
+    const levels = levelSet.size ? o.levels.filter((l) => levelSet.has(l)) : o.levels;
+    // Nobody in this career passes the program or level list.
+    if ((o.programs.length && !programs.length) || (o.levels.length && !levels.length)) continue;
+    const detail = [
+      programs.length < o.programs.length ? (programs.length === 1 ? `${programs[0]} only` : formatProgramScope(programs, 2)) : null,
+      levels.length < o.levels.length ? formatLevelScope(levels, careers) : null,
+    ].filter(Boolean);
+    parts.push({ code: o.career.code, color: o.color, detail: detail.length ? detail.join(" · ") : null });
+  }
+  if (parts.length === against.length && parts.every((p) => !p.detail)) return { everyone: true };
+
+  const text = parts.length
+    ? parts.map((p) => (p.detail ? `${p.code}: ${p.detail}` : p.code)).join("; ")
+    : "No voters match";
+  return { everyone: false, parts, text };
+}

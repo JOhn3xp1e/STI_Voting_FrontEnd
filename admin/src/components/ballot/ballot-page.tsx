@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { Check, ChevronDown, Pencil, Plus, RotateCw, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Pencil, Plus, RotateCw, Trash2, Users, X } from "lucide-react";
 
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import styles from "@/components/shared/motion.module.css";
@@ -14,7 +14,7 @@ import { primaryButtonClassName, toolbarButtonClassName } from "@/components/stu
 import { CareerCode } from "@/components/programs/careers-table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useLeaving } from "@/hooks/use-leaving";
-import { positionSummary, sortPositions, toCandidateRow, type CandidateRow } from "@/lib/ballot";
+import { positionScopeParts, positionSummary, scopeCareers, sortPositions, toCandidateRow, type CandidateRow } from "@/lib/ballot";
 import { normalizeHex, sortPartylists } from "@/lib/partylists";
 import { careerColor, sortCareers } from "@/lib/programs";
 import { formatYear } from "@/lib/students";
@@ -169,6 +169,9 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
     return new Map(sorted.map((c) => [c.code.toUpperCase(), careerColor(c, sorted)]));
   }, [careers]);
   const colorOfCareer = (code: string | null | undefined) => (code ? careerColorByCode.get(code.toUpperCase()) : undefined);
+
+  /** The careers the election lets vote, for reading each position's "Who can vote". */
+  const scopeOptions = useMemo(() => (election && careers ? scopeCareers(election, careers, enrollments) : []), [election, careers, enrollments]);
 
   const rows = useMemo(
     () =>
@@ -368,6 +371,7 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
                       {position.title}
                     </span>
                     <span className="shrink-0 text-[0.75rem] text-muted-foreground">{positionSummary(position, total)}</span>
+                    <PositionScope scope={positionScopeParts(position, scopeOptions, careers ?? [])} />
                   </button>
                   <div className="flex shrink-0 items-center gap-1">
                     <button
@@ -517,6 +521,27 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
 /* -------------------------------------------------------------------------- */
 /*                                   Pieces                                   */
 /* -------------------------------------------------------------------------- */
+
+/** "Who can vote" in a position's header: "All voters", or a badge per career with what's narrowed inside it. */
+function PositionScope({ scope }: { scope: ReturnType<typeof positionScopeParts> }) {
+  const label = scope.everyone ? "All voters" : scope.text;
+  return (
+    <span title={`Who can vote: ${label}`} className="ml-1 hidden min-w-0 items-center gap-1.5 overflow-hidden md:flex">
+      <Users aria-hidden className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+      <span className="sr-only">Who can vote:</span>
+      {scope.everyone || scope.parts.length === 0 ? (
+        <span className="truncate text-[0.75rem] text-muted-foreground">{label}</span>
+      ) : (
+        scope.parts.map((part) => (
+          <span key={part.code} className="flex shrink-0 items-center gap-1 text-[0.75rem] text-muted-foreground">
+            {part.color ? <CareerCode code={part.code} color={part.color} /> : <span className="font-mono text-[0.65625rem] font-medium">{part.code}</span>}
+            {part.detail ? <span className="whitespace-nowrap">{part.detail}</span> : null}
+          </span>
+        ))
+      )}
+    </span>
+  );
+}
 
 function EmptyState({ title, detail }: { title: string; detail: string }) {
   return (
