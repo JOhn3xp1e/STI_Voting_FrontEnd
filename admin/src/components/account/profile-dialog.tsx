@@ -16,14 +16,13 @@ import {
 } from "react";
 import Link from "next/link";
 import { Dialog } from "@base-ui/react/dialog";
-import { Menu } from "@base-ui/react/menu";
-import { Camera, Check, KeyRound, LoaderCircle, LogOut, Monitor, Pencil, ShieldCheck, Trash2, UserRoundCog, UsersRound, X } from "lucide-react";
+import { Camera, Check, KeyRound, LoaderCircle, LogOut, Monitor, Pencil, ShieldCheck, UserRoundCog, UsersRound, X } from "lucide-react";
 
+import { ChangePictureDialog, type PictureChange } from "@/components/account/change-picture-dialog";
 import { useAdminSession } from "@/components/auth/admin-session";
 import { MIN_PASSWORD_LENGTH, validateNewPassword } from "@/components/auth/new-password-fields";
 import { PasswordInput } from "@/components/auth/password-input";
 import { AdminAvatar } from "@/components/dashboard/admin-avatar";
-import { menuItemClassName, popupClassName } from "@/components/dashboard/popup-styles";
 import { dialogPrimaryClassName, dialogSecondaryClassName } from "@/components/shared/dialog-frame";
 import { errorClassName, fieldClassName, labelClassName } from "@/components/shared/form-styles";
 import { Toast, useNotice } from "@/components/shared/page-feedback";
@@ -31,7 +30,7 @@ import { SectionCard } from "@/components/shared/section-card";
 import { formatDate, todayIso } from "@/lib/dates";
 import { getTermStatus } from "@/lib/terms";
 import { cn } from "@/lib/utils";
-import { checkAvatarFile, removeAdminAvatar, updateAdminAccount, uploadAdminAvatar } from "@/services/admins/admin-accounts.service";
+import { removeAdminAvatar, updateAdminAccount, uploadAdminAvatar } from "@/services/admins/admin-accounts.service";
 import { getApiErrorMessage } from "@/services/api/error-message";
 import {
   getAuthErrorMessage,
@@ -370,7 +369,7 @@ function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogPr
   const { admin, me, refresh, signOut } = useAdminSession();
   const formId = useId();
   const othersSwitchId = useId();
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [pictureOpen, setPictureOpen] = useState(false);
 
   const [tab, setTab] = useState<ProfileSection>(section);
 
@@ -543,34 +542,19 @@ function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogPr
     else onOpenChange(false);
   }
 
-  /* ---------------------------- photo (at once) ---------------------------- */
+  /* ------------------------- picture (Change picture) ------------------------ */
 
-  async function onPhotoPicked(file: File | undefined) {
-    if (!file) return;
-    const problem = checkAvatarFile(file);
-    if (problem) return setPhotoNote({ tone: "error", text: problem });
-    setPhotoBusy("upload");
+  /** Saves what the Change picture dialog chose; throws a readable message so the dialog can show it. */
+  async function savePicture(change: PictureChange) {
+    setPhotoBusy(change.kind === "remove" ? "remove" : "upload");
     setPhotoNote(null);
     try {
-      await uploadAdminAvatar(admin.id, file);
+      if (change.kind === "remove") await removeAdminAvatar(admin.id);
+      else await uploadAdminAvatar(admin.id, change.file);
       await refresh();
-      setPhotoNote({ tone: "success", text: "Photo updated." });
+      setPhotoNote({ tone: "success", text: change.kind === "remove" ? "Picture removed." : "Picture updated." });
     } catch (cause) {
-      setPhotoNote({ tone: "error", text: getApiErrorMessage(cause) });
-    } finally {
-      setPhotoBusy(null);
-    }
-  }
-
-  async function removePhoto() {
-    setPhotoBusy("remove");
-    setPhotoNote(null);
-    try {
-      await removeAdminAvatar(admin.id);
-      await refresh();
-      setPhotoNote({ tone: "success", text: "Photo removed." });
-    } catch (cause) {
-      setPhotoNote({ tone: "error", text: getApiErrorMessage(cause) });
+      throw new Error(getApiErrorMessage(cause));
     } finally {
       setPhotoBusy(null);
     }
@@ -777,27 +761,18 @@ function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogPr
                   {/* ---------------------------- Profile ---------------------------- */}
                   <SectionCard title="Profile" aside={adminSince ? `admin since ${adminSince}` : undefined} {...enter(0)}>
                     <div className="flex items-center gap-3.5">
-                      <span className="group/avatar relative shrink-0">
-                        <AdminAvatar name={previewName} src={admin.avatarUrl} tone="blue" className="size-14 text-[0.9375rem] ring-4 ring-brand-blue/8 transition-shadow duration-300 group-hover/avatar:ring-brand-blue/15" />
-                        <span
-                          aria-hidden
-                          className={cn(
-                            "pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-brand-navy/55 text-white transition-opacity duration-300",
-                            photoBusy ? "opacity-100" : admin.isSuperAdmin ? "opacity-0 group-hover/avatar:opacity-100" : "opacity-0",
-                          )}
-                        >
-                          {photoBusy ? <LoaderCircle className="size-4.5 animate-spin" /> : <Camera className="size-4.5" />}
-                        </span>
-                        {/* Election admins' name and photo are set by a super admin (Settings → Admins). */}
-                        {admin.isSuperAdmin ? (
-                          <PhotoButton
-                            hasPhoto={Boolean(admin.avatarUrl)}
-                            disabled={busy}
-                            onPick={() => fileRef.current?.click()}
-                            onRemove={() => void removePhoto()}
-                          />
-                        ) : null}
-                      </span>
+                      {/* Election admins' name and photo are set by a super admin (Settings → Admins). */}
+                      <ProfilePicture
+                        name={previewName}
+                        src={admin.avatarUrl}
+                        busy={photoBusy !== null}
+                        editable={admin.isSuperAdmin}
+                        disabled={busy}
+                        onEdit={() => {
+                          setPhotoNote(null);
+                          setPictureOpen(true);
+                        }}
+                      />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[1.125rem] leading-6 font-semibold text-foreground">{previewName}</p>
                         <p className="truncate text-[0.8125rem] text-muted-foreground">{admin.email}</p>
@@ -805,19 +780,8 @@ function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogPr
                       <span className="hidden sm:inline-flex">
                         <RolePill role={admin.role} />
                       </span>
-                      <input
-                        ref={fileRef}
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        className="sr-only"
-                        tabIndex={-1}
-                        aria-hidden
-                        onChange={(e) => {
-                          void onPhotoPicked(e.target.files?.[0]);
-                          e.target.value = "";
-                        }}
-                      />
                     </div>
+                    <ChangePictureDialog open={pictureOpen} onOpenChange={setPictureOpen} name={previewName} currentSrc={admin.avatarUrl} onSave={savePicture} />
                     <Note note={photoNote} className="mt-2.5" />
 
                     <form id={formId} onSubmit={submit} noValidate className="mt-5 grid grid-cols-1 gap-x-3 gap-y-4 sm:grid-cols-2">
@@ -1168,43 +1132,45 @@ function ProfileDialog({ open, section, onOpenChange, onSaved }: ProfileDialogPr
 /*                               More small parts                             */
 /* -------------------------------------------------------------------------- */
 
-/** Pencil badge on the avatar: picks a photo, or (when there is one) offers Change / Remove. */
-function PhotoButton({ hasPhoto, disabled, onPick, onRemove }: { hasPhoto: boolean; disabled: boolean; onPick: () => void; onRemove: () => void }) {
-  const badgeClassName = cn(
-    "absolute -right-0.5 -bottom-0.5 flex size-6 cursor-pointer items-center justify-center rounded-full border-2 border-card bg-card text-foreground shadow-[0_2px_6px_rgb(11_18_32/0.18)] outline-none",
-    "transition-[scale,background-color,color] duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-110 hover:bg-brand-navy hover:text-white focus-visible:ring-2 focus-visible:ring-brand-blue/40",
-    "disabled:cursor-wait disabled:opacity-60 disabled:hover:scale-100 dark:hover:bg-white dark:hover:text-brand-navy",
+/** The profile picture; for super admins the whole thing (with its pencil badge) opens Change picture. */
+function ProfilePicture({ name, src, busy, editable, disabled, onEdit }: { name: string; src: string | null; busy: boolean; editable: boolean; disabled: boolean; onEdit: () => void }) {
+  const picture = (
+    <>
+      <AdminAvatar name={name} src={src} tone="blue" className="size-14 text-[0.9375rem] ring-4 ring-brand-blue/8 transition-shadow duration-300 group-hover/avatar:ring-brand-blue/15" />
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-brand-navy/55 text-white transition-opacity duration-300",
+          busy ? "opacity-100" : editable ? "opacity-0 group-hover/avatar:opacity-100 group-focus-visible/avatar:opacity-100" : "opacity-0",
+        )}
+      >
+        {busy ? <LoaderCircle className="size-4.5 animate-spin" /> : <Camera className="size-4.5" />}
+      </span>
+    </>
   );
 
-  if (!hasPhoto) {
-    return (
-      <button type="button" onClick={onPick} disabled={disabled} aria-label="Upload photo" title="Upload photo (JPG, PNG or WEBP, up to 5 MB)" className={badgeClassName}>
-        <Pencil aria-hidden className="size-3" strokeWidth={2.2} />
-      </button>
-    );
-  }
+  if (!editable) return <span className="relative shrink-0">{picture}</span>;
 
   return (
-    <Menu.Root modal={false}>
-      <Menu.Trigger disabled={disabled} aria-label="Change photo" className={badgeClassName}>
-        <Pencil aria-hidden className="size-3" strokeWidth={2.2} />
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner side="bottom" align="start" sideOffset={6} className="z-60 outline-none">
-          <Menu.Popup data-themed className={cn(popupClassName, "w-52 p-1.5")}>
-            <Menu.Item onClick={onPick} className={menuItemClassName}>
-              <Camera aria-hidden />
-              Upload new photo
-            </Menu.Item>
-            <Menu.Item onClick={onRemove} className={cn(menuItemClassName, "data-highlighted:bg-destructive/8 data-highlighted:text-destructive data-highlighted:[&_svg]:text-destructive")}>
-              <Trash2 aria-hidden />
-              Remove photo
-            </Menu.Item>
-            <p className="px-2.5 pt-1.5 pb-1 text-[0.6875rem] leading-4 text-muted-foreground">JPG, PNG or WEBP, up to 5 MB. Applies right away.</p>
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+    <button
+      type="button"
+      onClick={onEdit}
+      disabled={disabled}
+      aria-label="Change picture"
+      title="Change picture"
+      className="group/avatar relative shrink-0 cursor-pointer rounded-full outline-none focus-visible:ring-3 focus-visible:ring-brand-blue/40 disabled:cursor-wait"
+    >
+      {picture}
+      <span
+        aria-hidden
+        className={cn(
+          "absolute -right-0.5 -bottom-0.5 flex size-6 items-center justify-center rounded-full border-2 border-card bg-card text-foreground shadow-[0_2px_6px_rgb(11_18_32/0.18)]",
+          "transition-[scale,background-color,color] duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover/avatar:scale-110 group-hover/avatar:bg-brand-navy group-hover/avatar:text-white dark:group-hover/avatar:bg-white dark:group-hover/avatar:text-brand-navy",
+        )}
+      >
+        <Pencil className="size-3" strokeWidth={2.2} />
+      </span>
+    </button>
   );
 }
 
