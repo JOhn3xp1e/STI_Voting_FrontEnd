@@ -13,6 +13,7 @@ import {
   getStudentsErrorMessage,
   updateEnrollment,
 } from "@/services/students/students.service";
+import { archiveStudent, updateStudentName } from "@/services/students/student-detail.service";
 import type { EnrollmentStatus, FacetFilters, Student, StudentCatalog, YearLevel } from "@/types/student.types";
 
 import { AddStudentDialog } from "./add-student-dialog";
@@ -20,6 +21,7 @@ import { BulkActionBar } from "./bulk-action-bar";
 import { AiConvertDialog } from "./ai-convert-dialog";
 import { CsvImportDialog, type ImportOutcome } from "./csv-import-dialog";
 import { StudentCatalogProvider, useStudentCatalog } from "./student-catalog";
+import { StudentDrawer } from "./student-drawer";
 import { StudentStats, type StudentStat } from "./student-stats";
 import { StudentTable } from "./student-table";
 import { StudentToolbar } from "./student-toolbar";
@@ -165,6 +167,9 @@ function StudentsRoster({ initialStudents, loadedAt, onCatalog }: RosterProps) {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+  /** Student number shown in the detail drawer. */
+  const [openNo, setOpenNo] = useState<string | null>(null);
+  const openStudent = useMemo(() => (openNo === null ? null : (students.find((s) => s.studentNo === openNo) ?? null)), [students, openNo]);
 
   // Typing stays responsive; the table catches up with the deferred value.
   const deferredQuery = useDeferredValue(query);
@@ -379,6 +384,48 @@ function StudentsRoster({ initialStudents, loadedAt, onCatalog }: RosterProps) {
     };
   }
 
+  /* ---------------------------------- drawer ----------------------------------- */
+
+  const replaceStudent = (next: Student) => setStudents((list) => list.map((s) => (s.studentNo === next.studentNo ? next : s)));
+
+  async function renameStudent(student: Student, name: { firstName: string; lastName: string; middleName?: string }) {
+    await updateStudentName(student.studentNo, name);
+    const next = { ...student, ...name };
+    replaceStudent(next);
+    setHighlighted(new Set([student.studentNo]));
+    say(`Saved ${formatStudentName(next)}.`);
+  }
+
+  async function enrollInCurrentTerm(student: Student) {
+    if (!currentTermId) return;
+    const next: Student = { ...student, term: currentTermId, enrollmentStatus: "Active" };
+    await updateEnrollment(next);
+    replaceStudent(next);
+    setHighlighted(new Set([student.studentNo]));
+    say(`Enrolled ${formatStudentName(student)} as active in ${currentTermId}.`);
+  }
+
+  async function setLoa(student: Student, loa: boolean) {
+    const next: Student = { ...student, enrollmentStatus: loa ? "Loa" : "Active" };
+    await updateEnrollment(next);
+    replaceStudent(next);
+    setHighlighted(new Set([student.studentNo]));
+    say(loa ? `${formatStudentName(student)} is on leave (LOA) for ${student.term}.` : `${formatStudentName(student)} is active again.`);
+  }
+
+  async function removeStudent(student: Student) {
+    await archiveStudent(student.studentNo);
+    setOpenNo(null);
+    setStudents((list) => list.filter((s) => s.studentNo !== student.studentNo));
+    setSelected((current) => {
+      if (!current.has(student.studentNo)) return current;
+      const next = new Set(current);
+      next.delete(student.studentNo);
+      return next;
+    });
+    say(`Removed ${formatStudentName(student)} from the roster.`);
+  }
+
   const filtersActive = query.trim() !== "" || countFacets(facets) > 0 || career !== null;
 
   return (
@@ -415,6 +462,7 @@ function StudentsRoster({ initialStudents, loadedAt, onCatalog }: RosterProps) {
           selected={selected}
           onToggle={toggle}
           onToggleAll={toggleAll}
+          onOpen={setOpenNo}
           highlighted={highlighted}
           resultKey={resultKey}
           emptyAction={
@@ -455,6 +503,14 @@ function StudentsRoster({ initialStudents, loadedAt, onCatalog }: RosterProps) {
         onDiscard={() => setSelected(new Set())}
       />
 
+      <StudentDrawer
+        student={openStudent}
+        onClose={() => setOpenNo(null)}
+        onRename={renameStudent}
+        onEnrollCurrent={enrollInCurrentTerm}
+        onSetLoa={setLoa}
+        onRemove={removeStudent}
+      />
       <AddStudentDialog open={addOpen} onOpenChange={setAddOpen} existingStudentNos={existingStudentNos} existingEmails={existingEmails} onAdd={addStudent} />
       <CsvImportDialog
         key={importKey}

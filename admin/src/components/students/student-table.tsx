@@ -60,21 +60,26 @@ interface RowProps {
   introIndex: number;
   currentTermId: string | null;
   onToggle: (studentNo: string, checked: boolean) => void;
+  onOpen: (studentNo: string) => void;
 }
 
-const StudentRow = memo(function StudentRow({ student, careerColor, checked, highlighted, introIndex, currentTermId, onToggle }: RowProps) {
+const StudentRow = memo(function StudentRow({ student, careerColor, checked, highlighted, introIndex, currentTermId, onToggle, onOpen }: RowProps) {
   const name = formatStudentName(student);
   return (
     <tr
       data-selected={checked || undefined}
       style={introIndex >= 0 ? { animationDelay: `${introIndex * 26}ms` } : undefined}
+      // Clicking anywhere but the checkbox opens the student's details.
+      onClick={(event) => {
+        if (!(event.target as HTMLElement).closest("[data-row-select]")) onOpen(student.studentNo);
+      }}
       className={cn(
-        "group/row h-14.5 transition-colors duration-200 hover:bg-muted/55 data-selected:bg-brand-blue/2.5 dark:hover:bg-white/3 dark:data-selected:bg-white/2",
+        "group/row h-14.5 cursor-pointer transition-colors duration-200 hover:bg-muted/55 data-selected:bg-brand-blue/2.5 dark:hover:bg-white/3 dark:data-selected:bg-white/2",
         introIndex >= 0 && styles.rowIn,
         highlighted && styles.rowAdded,
       )}
     >
-      <td className="border-b border-border pl-2">
+      <td data-row-select className="cursor-default border-b border-border pl-2">
         <Checkbox
           aria-label={`Select ${name}`}
           checked={checked}
@@ -91,7 +96,17 @@ const StudentRow = memo(function StudentRow({ student, careerColor, checked, hig
             {getStudentInitials(student)}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-[0.84375rem] leading-4.5 font-medium text-foreground">{name}</p>
+            <button
+              type="button"
+              aria-label={`Open ${name}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpen(student.studentNo);
+              }}
+              className="block max-w-full cursor-pointer truncate rounded-sm text-left text-[0.84375rem] leading-4.5 font-medium text-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-brand-blue/30"
+            >
+              {name}
+            </button>
             <p className="truncate font-mono text-[0.65625rem] leading-4 text-muted-foreground">{student.email}</p>
           </div>
         </div>
@@ -135,6 +150,8 @@ interface StudentTableProps {
   selected: ReadonlySet<string>;
   onToggle: (studentNo: string, checked: boolean) => void;
   onToggleAll: (checked: boolean) => void;
+  /** Opens the student detail drawer. */
+  onOpen: (studentNo: string) => void;
   /** Student numbers to flash (just added / imported / updated). */
   highlighted: ReadonlySet<string>;
   /** Changes whenever the result set is re-queried (filters, search): replays the entrance and scrolls to the top. */
@@ -146,7 +163,7 @@ interface StudentTableProps {
  * Roster table. Scrolls inside a 7-row viewport (reference proportions) and
  * renders rows in batches as you scroll, so the full roster stays smooth.
  */
-export function StudentTable({ students, selected, onToggle, onToggleAll, highlighted, resultKey, emptyAction }: StudentTableProps) {
+export function StudentTable({ students, selected, onToggle, onToggleAll, onOpen, highlighted, resultKey, emptyAction }: StudentTableProps) {
   const { currentTerm, careers } = useStudentCatalog();
   const currentTermId = currentTerm?.id ?? null;
   const careerColors = useMemo(() => new Map(careers.map((c) => [c.code, c.color])), [careers]);
@@ -253,6 +270,7 @@ export function StudentTable({ students, selected, onToggle, onToggleAll, highli
                 introIndex={intro && index < INTRO_ROWS ? index : -1}
                 currentTermId={currentTermId}
                 onToggle={onToggle}
+                onOpen={onOpen}
               />
             ))
           )}
