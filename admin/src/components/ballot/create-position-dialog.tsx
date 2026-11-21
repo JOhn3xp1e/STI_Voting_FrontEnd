@@ -15,6 +15,7 @@ import {
   narrowSummary,
   positionScopeToApi,
   programPicksOf,
+  resolveScope,
   scopeCareers,
   scopeSummary,
   togglePick,
@@ -75,6 +76,8 @@ export function CreatePositionDialog({ open, electionId, positions, election, ca
   const [errors, setErrors] = useState<PositionErrors>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** What `resolveScope` changed on the last click, e.g. "Level picks cleared: …". */
+  const [scopeNote, setScopeNote] = useState<string | null>(null);
   const seatsRef = useRef<HTMLInputElement>(null);
 
   // Start fresh each time the dialog opens: no name, one seat, every career.
@@ -84,6 +87,7 @@ export function CreatePositionDialog({ open, electionId, positions, election, ca
     if (open) {
       setForm(EMPTY_FORM);
       setScope(everyoneScope(options));
+      setScopeNote(null);
       setErrors({});
       setError(null);
     }
@@ -100,8 +104,11 @@ export function CreatePositionDialog({ open, electionId, positions, election, ca
     setError(null);
   }
 
+  /** Applies a change, then settles any clash with careers that have no programs / levels (the latest click wins). */
   function updateScope(patch: Partial<PositionScopeForm>) {
-    setScope((current) => ({ ...current, ...patch }));
+    const resolved = resolveScope(scope, { ...scope, ...patch }, options);
+    setScope(resolved.scope);
+    setScopeNote(resolved.note);
     setError(null);
   }
 
@@ -262,6 +269,16 @@ export function CreatePositionDialog({ open, electionId, positions, election, ca
                     </Collapse>
                   ))}
                 </div>
+              ) : null}
+
+              {scopeNote ? (
+                <p
+                  key={scopeNote}
+                  role="status"
+                  className="animate-in rounded-lg bg-brand-gold/12 px-3.5 py-2.5 text-[0.75rem] leading-[1.125rem] text-foreground duration-200 fade-in motion-reduce:animate-none"
+                >
+                  {scopeNote}
+                </p>
               ) : null}
 
               {scopeError ? (

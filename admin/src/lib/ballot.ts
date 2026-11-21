@@ -191,7 +191,8 @@ export function validatePosition(form: PositionForm, existing: readonly Position
  * from what the election itself allows. The API keeps one flat list each of careers,
  * programs and levels (a voter must match all three), so `positionScopeToApi` spells out
  * "all" for a career whenever another picked career is narrowed. Program codes belong to
- * one career and career level ranges never overlap, so the flat lists stay exact.
+ * one career and career level ranges never overlap, so the flat lists stay exact. Voters
+ * without a program (careers like JHS) aren't limited by the program list at all.
  */
 
 /** One career the election lets vote, with what it allows inside that career. */
@@ -253,6 +254,32 @@ export function togglePick<T>(all: readonly T[], picks: readonly T[], value: T):
 export const programPicksOf = (option: ScopeCareer, form: PositionScopeForm) => ownPicks(option.programs, form.programs);
 export const levelPicksOf = (option: ScopeCareer, form: PositionScopeForm) => ownPicks(option.levels, form.levels);
 
+/**
+ * Keeps the picks saveable. Careers without programs (e.g. JHS) are fine next to a program
+ * filter: the API doesn't apply the program list to voters who have no program. Levels are
+ * different: every enrollment has one, so a career whose level range isn't set can't share a
+ * position narrowed by level (its levels can't be listed). The latest click wins: narrowing
+ * unpicks such careers, and picking one clears the level picks. `note` says what changed.
+ */
+export function resolveScope(prev: PositionScopeForm, next: PositionScopeForm, options: readonly ScopeCareer[]): { scope: PositionScopeForm; note: string | null } {
+  const picked = options.filter((o) => next.careers.includes(o.career.code));
+  const blank = picked.filter((o) => o.levels.length === 0);
+  if (!blank.length || !picked.some((o) => levelPicksOf(o, next).length > 0)) return { scope: next, note: null };
+
+  const names = (list: readonly ScopeCareer[]) => list.map((o) => o.career.name).join(" and ");
+  const addedBlank = blank.filter((o) => !prev.careers.includes(o.career.code));
+  if (addedBlank.length) {
+    // A career without levels was just picked: drop the level picks it can't match.
+    return { scope: { ...next, levels: [] }, note: `Level picks cleared: ${names(addedBlank)} ${addedBlank.length === 1 ? "has" : "have"} no levels set.` };
+  }
+  // The position was just narrowed by level: drop the careers that can't match it.
+  const one = blank.length === 1;
+  return {
+    scope: { ...next, careers: next.careers.filter((code) => !blank.some((o) => o.career.code === code)) },
+    note: `Unpicked ${names(blank)}: ${one ? "it has" : "they have"} no levels set, so ${one ? "it" : "they"} can't be narrowed by level. Set ${one ? "its" : "their"} levels in Programs & Careers, or give ${one ? "it" : "them"} a position of ${one ? "its" : "their"} own.`,
+  };
+}
+
 export interface PositionScopeLists {
   careerScope: string[];
   programScope: string[];
@@ -269,12 +296,9 @@ export function positionScopeToApi(form: PositionScopeForm, options: readonly Sc
   const programsNarrowed = programRows.some((r) => r.picks.length);
   const levelsNarrowed = levelRows.some((r) => r.picks.length);
 
-  // A voter must match every list, so a career whose students have no program (or no level)
-  // can't sit next to a career that's narrowed by program (or level).
-  if (programsNarrowed) {
-    const blank = picked.find((o) => o.programs.length === 0);
-    if (blank) return { error: `${blank.career.name} has no programs, so programs can't be narrowed while it's picked. Make it its own position.` };
-  }
+  // Careers without programs add nothing to the program list; the API lets their voters through
+  // it (they have no program to match). Every voter has a level, though, so a career whose levels
+  // can't be listed can't sit next to one narrowed by level. (`resolveScope` normally prevents this.)
   if (levelsNarrowed) {
     const blank = picked.find((o) => o.levels.length === 0);
     if (blank) return { error: `${blank.career.name} has no levels set, so levels can't be narrowed while it's picked. Make it its own position.` };
