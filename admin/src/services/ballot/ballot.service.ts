@@ -18,6 +18,9 @@ interface PositionDto {
   description: string;
   maxVote: number;
   electionId: string;
+  careerScope?: string[] | null;
+  academicProgramScope?: string[] | null;
+  levelScope?: number[] | null;
   createdAt: string;
 }
 
@@ -58,6 +61,9 @@ function toPosition(dto: PositionDto): Position {
     description: dto.description ?? "",
     maxVotes: dto.maxVote,
     electionId: dto.electionId,
+    careerScope: dto.careerScope ?? [],
+    programScope: dto.academicProgramScope ?? [],
+    levelScope: dto.levelScope ?? [],
     createdAt: dto.createdAt,
   };
 }
@@ -92,12 +98,18 @@ export async function fetchCandidates(electionId: string, { signal }: RequestOpt
   return dtos.map(toCandidate);
 }
 
-/** CreatePositionRequest (no voter restrictions: everyone the election allows can vote for it). */
+/**
+ * CreatePositionRequest. The voter restrictions must sit inside the election's own scope
+ * (the API refuses codes or levels the election doesn't allow); empty = no extra limit.
+ */
 interface CreatePositionBody {
   title: string;
   description: string;
   maxVote: number;
   electionId: string;
+  careerScope: string[];
+  academicProgramScope: string[];
+  levelScope: number[];
 }
 
 export interface PositionInput {
@@ -105,6 +117,10 @@ export interface PositionInput {
   /** Seats: how many candidates a voter may pick. */
   maxVotes: number;
   electionId: string;
+  /** Who can vote for it; leave out (or empty) for everyone the election allows. */
+  careerScope?: string[];
+  programScope?: string[];
+  levelScope?: number[];
 }
 
 /**
@@ -113,7 +129,15 @@ export interface PositionInput {
  */
 export async function createPosition(input: PositionInput): Promise<Position> {
   const title = input.title.trim();
-  const body: CreatePositionBody = { title, description: title, maxVote: input.maxVotes, electionId: input.electionId };
+  const body: CreatePositionBody = {
+    title,
+    description: title,
+    maxVote: input.maxVotes,
+    electionId: input.electionId,
+    careerScope: input.careerScope ?? [],
+    academicProgramScope: input.programScope ?? [],
+    levelScope: input.levelScope ?? [],
+  };
   return toPosition(await apiClient.post<PositionDto, CreatePositionBody>(ROUTES.positions, body));
 }
 

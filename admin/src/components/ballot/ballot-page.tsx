@@ -22,9 +22,11 @@ import { cn } from "@/lib/utils";
 import { getApiErrorMessage } from "@/services/api/error-message";
 import { deleteCandidate, deletePosition, fetchCandidates, fetchPositions } from "@/services/ballot/ballot.service";
 import { fetchPartylists } from "@/services/partylists/partylists.service";
+import { fetchElection, fetchVoterEnrollments } from "@/services/elections/elections.service";
 import { fetchCareers } from "@/services/programs/programs.service";
 import { fetchStudents } from "@/services/students/students.service";
 import type { Candidate, Position } from "@/types/ballot.types";
+import type { Election, VoterEnrollment } from "@/types/election.types";
 import type { Partylist } from "@/types/partylist.types";
 import type { Career } from "@/types/program.types";
 import type { Student } from "@/types/student.types";
@@ -44,6 +46,10 @@ type LoadState =
       students: Student[] | null;
       /** For the career tags' colors (`null` when the list couldn't be loaded; plain codes are shown instead). */
       careers: Career[] | null;
+      /** For "Who can vote" when creating a position (`null` when it couldn't be loaded; positions are then open to everyone). */
+      election: Election | null;
+      /** For the voter counts in that section (`null` when they couldn't be loaded). */
+      enrollments: VoterEnrollment[] | null;
     };
 
 /** Party filter value for candidates without a party. */
@@ -78,9 +84,11 @@ export function BallotPage({ electionId }: { electionId: string }) {
       fetchPartylists(electionId, { signal }),
       fetchStudents({ signal }).catch(() => null),
       fetchCareers({ signal }).catch(() => null),
+      fetchElection(electionId, { signal }).catch(() => null),
+      fetchVoterEnrollments({ signal }).catch(() => null),
     ])
-      .then(([positions, candidates, parties, students, careers]) =>
-        setState({ status: "ready", positions: sortPositions(positions), candidates, parties: sortPartylists(parties), students, careers }),
+      .then(([positions, candidates, parties, students, careers, election, enrollments]) =>
+        setState({ status: "ready", positions: sortPositions(positions), candidates, parties: sortPartylists(parties), students, careers, election, enrollments }),
       )
       .catch((error: unknown) => {
         if (!signal.aborted) setState({ status: "error", message: getApiErrorMessage(error) });
@@ -110,6 +118,8 @@ export function BallotPage({ electionId }: { electionId: string }) {
       parties={state.parties}
       students={state.students}
       careers={state.careers}
+      election={state.election}
+      enrollments={state.enrollments}
     />
   );
 }
@@ -125,9 +135,11 @@ interface WorkspaceProps {
   parties: Partylist[];
   students: Student[] | null;
   careers: Career[] | null;
+  election: Election | null;
+  enrollments: VoterEnrollment[] | null;
 }
 
-function BallotWorkspace({ electionId, initialPositions, initialCandidates, parties, students, careers }: WorkspaceProps) {
+function BallotWorkspace({ electionId, initialPositions, initialCandidates, parties, students, careers, election, enrollments }: WorkspaceProps) {
   const [positions, setPositions] = useState(initialPositions);
   const [candidates, setCandidates] = useState(initialCandidates);
   const [query, setQuery] = useState("");
@@ -433,6 +445,9 @@ function BallotWorkspace({ electionId, initialPositions, initialCandidates, part
         open={creatingPosition}
         electionId={electionId}
         positions={positions}
+        election={election}
+        careers={careers}
+        enrollments={enrollments}
         onClose={() => setCreatingPosition(false)}
         onCreated={(position) => {
           setPositions((current) => sortPositions([...current, position]));

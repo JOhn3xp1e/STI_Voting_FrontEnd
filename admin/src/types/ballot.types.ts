@@ -7,6 +7,13 @@ export interface Position {
   /** How many candidates a voter may pick for it (its seats). */
   maxVotes: number;
   electionId: string;
+  /**
+   * Who can vote for it, inside the election's own scope. Each list is a flat filter
+   * (empty = no extra limit); a voter must match all three.
+   */
+  careerScope: string[];
+  programScope: string[];
+  levelScope: number[];
   createdAt: string;
 }
 
