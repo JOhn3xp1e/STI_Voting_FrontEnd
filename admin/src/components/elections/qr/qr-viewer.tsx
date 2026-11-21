@@ -237,8 +237,9 @@ function Lookup({ data }: { data: Data }) {
       if (id === request.current) setResult({ kind: "qr", voter, url: qr.loginUrl });
     } catch (error) {
       if (id !== request.current) return;
+      // A 404 without an `{ error }` body means the endpoint itself isn't there yet.
       const message =
-        isApiError(error) && error.isNotFound
+        isApiError(error) && error.isNotFound && typeof error.problem?.error !== "string"
           ? "QR sign-in isn't available yet: the server can't make sign-in links for the QR viewer."
           : getApiErrorMessage(error);
       setResult({ kind: "error", voter, message });
