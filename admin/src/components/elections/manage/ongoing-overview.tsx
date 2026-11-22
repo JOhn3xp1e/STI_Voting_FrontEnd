@@ -40,6 +40,10 @@ import type { Partylist } from "@/types/partylist.types";
 import type { Career } from "@/types/program.types";
 import type { Student } from "@/types/student.types";
 
+import { TurnoutTimeline } from "./turnout-timeline";
+import { TurnoutDonuts, TurnoutViewSwitch, type TurnoutView } from "./turnout-charts";
+import { VotesRace, useTallyTimeline, type RaceFrames } from "./votes-race";
+
 /** How often the live numbers refresh while the tab is visible. */
 const REFRESH_MS = 30_000;
 
@@ -53,6 +57,8 @@ export const electionQrHref = (electionId: string) => `/elections/${encodeURICom
 interface LiveData {
   voters: VoterRow[] | null;
   tally: ElectionTally | null;
+  /** When `tally` was fetched (ms). */
+  tallyAt: number | null;
   /** The server has no tally endpoint yet (404). */
   tallyMissing: boolean;
   students: Map<string, Student> | null;
@@ -62,7 +68,7 @@ interface LiveData {
 
 /** Voters and the tally, refreshed every 30 s while the tab is visible; students once. */
 function useLiveData(electionId: string): LiveData {
-  const [data, setData] = useState<LiveData>({ voters: null, tally: null, tallyMissing: false, students: null, error: null });
+  const [data, setData] = useState<LiveData>({ voters: null, tally: null, tallyAt: null, tallyMissing: false, students: null, error: null });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -86,6 +92,7 @@ function useLiveData(electionId: string): LiveData {
         ...d,
         voters: voters.status === "fulfilled" ? voters.value : d.voters,
         tally: tally.status === "fulfilled" ? tally.value : d.tally,
+        tallyAt: tally.status === "fulfilled" ? Date.now() : d.tallyAt,
         tallyMissing: tally.status === "rejected" && isApiError(tally.reason) && tally.reason.isNotFound,
         error: voters.status === "rejected" ? getApiErrorMessage(voters.reason) : null,
       }));
@@ -147,8 +154,10 @@ export function OngoingOverview({ election, careers, positions, candidates, part
     if (!voters || !enrollments) return null;
     return turnoutBreakdown(voters, enrollmentsByStudent(enrollments, election.termId), careers);
   }, [voters, enrollments, election.termId, careers]);
+  const [view, setView] = useState<TurnoutView>("bar");
   const standings = useMemo(() => (tally ? standingsOf(tally, positions, candidates, parties) : null), [tally, positions, candidates, parties]);
   const colors = useMemo(() => new Map(careers.map((c) => [c.code, careerColor(c, careers)])), [careers]);
+  const race = useTallyTimeline(election.id, election.startsAt, tally, live.tallyAt);
 
   return (
     <>
@@ -162,13 +171,25 @@ export function OngoingOverview({ election, careers, positions, candidates, part
       </section>
 
       <section className={motion.riseIn} style={rise(2)}>
+        <SectionLabel meta="every participating voter · by career, program or level">Votes over time</SectionLabel>
+        <TurnoutTimeline election={election} voters={voters} enrollments={enrollments} careers={careers} colors={colors} now={now} />
+      </section>
+
+      <section className={motion.riseIn} style={rise(2)}>
         <SectionLabel>Turnout</SectionLabel>
         <StatRow turnout={turnout} standings={standings} positions={positions.length} tallyMissing={live.tallyMissing} />
       </section>
 
       <section className={motion.riseIn} style={rise(3)}>
-        <SectionLabel meta="grouped by career">Turnout breakdown</SectionLabel>
-        <Breakdown breakdown={breakdown} colors={colors} loading={!voters} scope={election.careerScope} />
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-mono text-[0.6875rem] font-semibold tracking-[0.16em] text-foreground uppercase">Turnout breakdown</h2>
+          <TurnoutViewSwitch value={view} onChange={setView} />
+        </div>
+        {view === "line" ? (
+          <TurnoutTimeline election={election} voters={voters} enrollments={enrollments} careers={careers} colors={colors} now={now} />
+        ) : (
+          <Breakdown breakdown={breakdown} view={view} colors={colors} loading={!voters} scope={election.careerScope} />
+        )}
       </section>
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_21.25rem]">
@@ -178,6 +199,9 @@ export function OngoingOverview({ election, careers, positions, candidates, part
             election={election}
             standings={standings}
             tallyMissing={live.tallyMissing}
+            race={race}
+            positions={positions}
+            candidates={candidates}
             students={live.students}
             parties={parties}
             careers={careers}
@@ -385,11 +409,13 @@ function CareerCard({ group, color }: { group: CareerTurnout; color: string }) {
 
 function Breakdown({
   breakdown,
+  view,
   colors,
   loading,
   scope,
 }: {
   breakdown: ReturnType<typeof turnoutBreakdown> | null;
+  view: TurnoutView;
   colors: ReadonlyMap<string, string>;
   loading: boolean;
   /** The election's career scope (empty = every career). */
@@ -405,9 +431,11 @@ function Breakdown({
   }
   return (
     <div className="space-y-3">
-      {breakdown.careers.map((group) => (
-        <CareerCard key={group.career.code} group={group} color={colors.get(group.career.code) ?? "#0f4c9e"} />
-      ))}
+      {view === "donut" ? (
+        <TurnoutDonuts careers={breakdown.careers} colors={colors} />
+      ) : (
+        breakdown.careers.map((group) => <CareerCard key={group.career.code} group={group} color={colors.get(group.career.code) ?? "#0f4c9e"} />)
+      )}
       {breakdown.outOfScope.map((career) => (
         <div key={career.code} style={careerStyle(colors.get(career.code) ?? "#0f4c9e")} className={cn(cardClassName, "flex items-center gap-2.5 px-4.5 py-3 opacity-60")}>
           <CareerBadge code={career.code} />
@@ -437,13 +465,16 @@ interface LeadingProps {
   election: Election;
   standings: Standings | null;
   tallyMissing: boolean;
+  race: RaceFrames;
+  positions: Position[];
+  candidates: Candidate[];
   students: Map<string, Student> | null;
   parties: Partylist[];
   careers: Career[];
   colors: ReadonlyMap<string, string>;
 }
 
-function LeadingCandidates({ election, standings, tallyMissing, students, parties, careers, colors }: LeadingProps) {
+function LeadingCandidates({ election, standings, tallyMissing, race, positions, candidates, students, parties, careers, colors }: LeadingProps) {
   if (!standings) {
     return (
       <div className={cardClassName}>
@@ -456,7 +487,19 @@ function LeadingCandidates({ election, standings, tallyMissing, students, partie
   const rows = standings.positions;
   return (
     <div className={cn(cardClassName, "overflow-hidden")}>
-      <VotesChart rows={rows} />
+      {race.frames ? (
+        <VotesRace
+          frames={race.frames}
+          replay={race.replay}
+          minBallotsPerStep={race.minBallotsPerStep}
+          positions={positions}
+          candidates={candidates}
+          students={students}
+          parties={parties}
+        />
+      ) : (
+        <TallyMissing>Loading the replay…</TallyMissing>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[40rem] text-left">
           <thead>
@@ -481,50 +524,6 @@ function LeadingCandidates({ election, standings, tallyMissing, students, partie
           <ArrowRight aria-hidden className="size-3 transition-transform group-hover:translate-x-0.5" />
         </Link>
       </div>
-    </div>
-  );
-}
-
-function VotesChart({ rows }: { rows: PositionStanding[] }) {
-  const max = Math.max(1, ...rows.flatMap((r) => [r.leader?.votes ?? 0, r.runnerUp?.votes ?? 0]));
-  return (
-    <div className="px-4 pt-4 pb-3.5">
-      <div className="flex items-center gap-3.5">
-        <p className="flex-1 text-[0.65625rem] font-medium tracking-[0.04em] text-muted-foreground uppercase">Votes by position</p>
-        <span className="flex items-center gap-1.25 text-[0.6875rem] text-muted-foreground">
-          <span aria-hidden className="size-2 rounded-[2px] bg-brand-blue dark:bg-[#7aa7e6]" />
-          Leading
-        </span>
-        <span className="flex items-center gap-1.25 text-[0.6875rem] text-muted-foreground">
-          <span aria-hidden className="size-2 rounded-[2px] bg-[#cbd2db] dark:bg-white/25" />
-          Runner-up
-        </span>
-      </div>
-      <div className="mt-3 flex gap-2 overflow-x-auto">
-        {rows.map((row, i) => (
-          <div key={row.position.id} className="flex min-w-16 flex-1 flex-col items-center">
-            <div className="flex h-31.5 items-end gap-1">
-              <ChartBar votes={row.leader?.votes ?? 0} max={max} lead delay={i * 70} />
-              <ChartBar votes={row.runnerUp?.votes ?? 0} max={max} delay={i * 70 + 40} />
-            </div>
-            <p className="mt-1.5 w-full truncate border-t border-[#e2e8f0] pt-1.5 text-center text-[0.6875rem] text-muted-foreground dark:border-border" title={row.position.title}>
-              {row.position.title}
-            </p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ChartBar({ votes, max, lead = false, delay }: { votes: number; max: number; lead?: boolean; delay: number }) {
-  return (
-    <div className="flex w-6.5 flex-col items-center justify-end gap-1 self-stretch">
-      <span className={cn("text-[0.6875rem] tabular-nums", lead ? "font-semibold text-foreground" : "text-muted-foreground")}>{count(votes)}</span>
-      <span
-        className={cn("w-full origin-bottom rounded-t-[3px] animate-in fade-in slide-in-from-bottom-2 duration-700 motion-reduce:animate-none", lead ? "bg-brand-blue dark:bg-[#7aa7e6]" : "bg-[#cbd2db] dark:bg-white/25")}
-        style={{ height: `${Math.max(2, (votes / max) * 100)}px`, animationDelay: `${delay}ms` }}
-      />
     </div>
   );
 }

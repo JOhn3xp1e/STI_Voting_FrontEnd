@@ -2,6 +2,7 @@ import type { Candidate, Position } from "@/types/ballot.types";
 import type { VoterEnrollment } from "@/types/election.types";
 import type { Partylist } from "@/types/partylist.types";
 import type { Career } from "@/types/program.types";
+import { levelLabel } from "@/lib/elections";
 import type { ElectionTally } from "@/services/elections/live.service";
 import type { VoterRow } from "@/services/voters/voters.service";
 
@@ -139,6 +140,138 @@ export function turnoutBreakdown(
         };
       }),
     outOfScope: careers.filter((c) => !groups.has(c.code)),
+    unknown,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  Timeline                                  */
+/* -------------------------------------------------------------------------- */
+
+export type TimelineGrouping = "all" | "career" | "program" | "level";
+
+export interface TimelineSeries {
+  /** Career code, program code, level number, `"all"` or `"other"`. */
+  key: string;
+  /** Short name for legends and line ends: "SHS", "BSIT", "Grade 11". */
+  label: string;
+  /** Longer name for the tooltip: "Senior High School". */
+  name: string;
+  /** Voters in this group. */
+  total: number;
+  /** The group's career (for its color), when it belongs to one. */
+  careerCode: string | null;
+  /** Ballots cast by this group so far, at each of `times`. */
+  values: number[];
+}
+
+export interface Timeline {
+  /** Evenly spaced instants (ms) from `from` to `to`, both included. */
+  times: number[];
+  /** In a fixed order (careers, then their programs or levels); at most `MAX_SERIES`. */
+  series: TimelineSeries[];
+  /** Voters left out of the groups: no enrollment record. */
+  unknown: number;
+}
+
+/** Lines a timeline shows at most; smaller groups beyond that fold into "Other". */
+export const MAX_SERIES = 8;
+const MAX_POINTS = 145;
+
+/**
+ * Ballots cast over time, as one line for every voter or one per career, program or level.
+ * Votes before `from` count from the first point; votes without a time count at the last one.
+ */
+export function turnoutTimeline(
+  voters: readonly VoterRow[],
+  enrollment: ReadonlyMap<string, VoterEnrollment> | null,
+  careers: readonly Career[],
+  grouping: TimelineGrouping,
+  from: number,
+  to: number,
+): Timeline {
+  const span = Math.max(60_000, to - from);
+  const points = Math.max(2, Math.min(MAX_POINTS, Math.round(span / 60_000) + 1));
+  const step = span / (points - 1);
+  const times = Array.from({ length: points }, (_, i) => (i === points - 1 ? from + span : from + i * step));
+  const bucketOf = (voter: VoterRow) => {
+    const t = voter.votedAt ? Date.parse(voter.votedAt) : NaN;
+    if (!Number.isFinite(t)) return points - 1;
+    return Math.min(points - 1, Math.max(0, Math.ceil((t - from) / step)));
+  };
+
+  const careerByCode = new Map(careers.map((c, i) => [c.code, { career: c, order: i }]));
+  const groups = new Map<string, Omit<TimelineSeries, "values"> & { order: [number, number | string]; counts: number[] }>();
+  let unknown = 0;
+
+  for (const voter of voters) {
+    let key = "all";
+    let label = "All voters";
+    let name = "All voters";
+    let careerCode: string | null = null;
+    let order: [number, number | string] = [0, 0];
+    if (grouping !== "all") {
+      const e = enrollment?.get(voter.studentId);
+      if (!e) {
+        unknown += 1;
+        continue;
+      }
+      const c = careerByCode.get(e.careerCode);
+      const careerOrder = c?.order ?? careers.length;
+      careerCode = e.careerCode;
+      if (grouping === "career" || (grouping === "program" && !e.programCode)) {
+        // Careers without programs (e.g. JHS) stand in as one "program".
+        key = grouping === "career" ? e.careerCode : `career:${e.careerCode}`;
+        label = e.careerCode;
+        name = c?.career.name ?? e.careerCode;
+        order = [careerOrder, ""];
+      } else if (grouping === "program") {
+        key = e.programCode!;
+        label = e.programCode!;
+        name = c ? `${e.programCode} · ${c.career.name}` : e.programCode!;
+        order = [careerOrder, e.programCode!];
+      } else {
+        key = String(e.level);
+        label = levelLabel(e.level, c?.career);
+        name = c ? `${label} · ${c.career.name}` : label;
+        order = [careerOrder, e.level];
+      }
+    }
+    let g = groups.get(key);
+    if (!g) {
+      g = { key, label, name, total: 0, careerCode, order, counts: new Array<number>(points).fill(0) };
+      groups.set(key, g);
+    }
+    g.total += 1;
+    if (voter.voteStatus === "completed") g.counts[bucketOf(voter)] += 1;
+  }
+
+  const byOrder = (a: { order: [number, number | string] }, b: { order: [number, number | string] }) =>
+    a.order[0] - b.order[0] || (typeof a.order[1] === "number" && typeof b.order[1] === "number" ? a.order[1] - b.order[1] : String(a.order[1]).localeCompare(String(b.order[1])));
+
+  let list = [...groups.values()];
+  if (list.length > MAX_SERIES) {
+    // The biggest groups keep their own line (sizes don't change while voting, so neither does the cut).
+    const kept = new Set([...list].sort((a, b) => b.total - a.total || byOrder(a, b)).slice(0, MAX_SERIES - 1).map((g) => g.key));
+    const rest = list.filter((g) => !kept.has(g.key));
+    const other = {
+      key: "other",
+      label: "Other",
+      name: `Other (${rest.map((g) => g.label).join(", ")})`,
+      total: rest.reduce((n, g) => n + g.total, 0),
+      careerCode: null,
+      order: [Number.MAX_SAFE_INTEGER, 0] as [number, number],
+      counts: times.map((_, i) => rest.reduce((n, g) => n + g.counts[i], 0)),
+    };
+    list = [...list.filter((g) => kept.has(g.key)), other];
+  }
+
+  return {
+    times,
+    series: list.sort(byOrder).map((g) => {
+      let running = 0;
+      return { key: g.key, label: g.label, name: g.name, total: g.total, careerCode: g.careerCode, values: g.counts.map((n) => (running += n)) };
+    }),
     unknown,
   };
 }

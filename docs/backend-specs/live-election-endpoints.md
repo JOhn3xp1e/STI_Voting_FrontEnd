@@ -1,10 +1,11 @@
 # Backend spec: live election endpoints (tally and voter QR)
 
-Two endpoints that the admin portal already calls but SLVP-BE doesn't have yet. Until they exist, the portal shows "not available yet" in their place.
+Endpoints the admin portal calls for live elections. All three now exist in SLVP-BE: the tally and timeline in `Endpoints/ElectionTallyEndpoints.cs` (counting in `DB/schemas/election_tally.sql`, run it in the Supabase SQL editor before deploying), the voter QR in `Endpoints/VoterQrEndpoints.cs`. Against an older API the portal shows "not available yet" in their place.
 
 | Endpoint | Used by | What it gives |
 |---|---|---|
 | `GET /api/admin/elections/{electionId}/tally` | Manage → Overview while voting is open | Unofficial vote counts per position and candidate |
+| `GET /api/admin/elections/{electionId}/tally/timeline` | The "bar race" replay in Leading candidates | The same counts over time, from the opening of voting to now |
 | `POST /api/admin/elections/{electionId}/voter-qr` | QR viewer (`/elections/{id}/qr`) | A sign-in link for one voter; the portal draws it as a QR |
 
 Frontend code that calls them: `admin/src/services/elections/live.service.ts`.
@@ -91,6 +92,32 @@ $$;
 ```
 
 The portal works out the leaders, leads, "close race", party shares and the leading party from this. The backend doesn't need to.
+
+---
+
+## 1b. `GET /api/admin/elections/{electionId}/tally/timeline`
+
+The counts over time, for replaying the race from the opening of voting. Same access and status rules as the tally (as built: a signed-in super admin, or an admin of this election, always, even with `Auth:Enforce` off).
+
+- Time runs from the election's `start_date` to now (to `end_date` once it's `Completed`). Each ballot is placed by `votes.created_at`.
+- The database counts it in 240 equal steps (`election_vote_buckets`); the API merges them into at most 60 frames.
+- **Every frame adds at least `minBallotsPerStep` (5) ballots to the one before.** Admins also see when each voter voted (`voters.voted_at`, stamped in the same transaction as `votes.created_at`), so a frame that adds one ballot would show how that person voted. A tail of fewer than 5 ballots is folded into the final frame.
+- The first frame is everyone at zero; the last is the totals now. No ballots yet: only the first frame.
+
+```json
+{
+  "from": "2026-11-23T00:00:00Z",
+  "to": "2026-11-23T05:12:40Z",
+  "minBallotsPerStep": 5,
+  "frames": [
+    { "at": "2026-11-23T00:00:00Z", "ballots": 0, "votes": {} },
+    { "at": "2026-11-23T00:08:00Z", "ballots": 37, "votes": { "CAND-00025": 21, "CAND-00031": 14 } },
+    { "at": "2026-11-23T05:12:40Z", "ballots": 777, "votes": { "CAND-00025": 412, "CAND-00031": 298 } }
+  ]
+}
+```
+
+`votes` lists running totals by candidate id; a missing candidate has 0. The portal fetches it when the page opens and again whenever the tally's `ballots` changes.
 
 ---
 

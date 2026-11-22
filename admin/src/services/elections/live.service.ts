@@ -1,15 +1,13 @@
 import { apiClient } from "@/services/api/client";
 
 /*
- * Live election data for the Manage overview (ongoing) and the QR viewer.
- *
- * Both endpoints are proposed for SLVP-BE and aren't there yet; callers treat a 404 as
- * "not available yet":
- *   GET  /api/admin/elections/{id}/tally       unofficial per-position vote counts
- *   POST /api/admin/elections/{id}/voter-qr    { studentId } → a sign-in link for that voter
+ * Live election data for the Manage overview (ongoing) and the QR viewer:
+ *   GET  /api/admin/elections/{id}/tally            unofficial per-position vote counts
+ *   GET  /api/admin/elections/{id}/tally/timeline   the same counts over time, for the replay
+ *   POST /api/admin/elections/{id}/voter-qr         { studentId } → a sign-in link for that voter
  *
  * Votes are anonymous ballots (`votes.ballot`: position id → candidate ids), so the
- * tally has to be counted on the server.
+ * tally is counted on the server. Callers treat a 404 as "not available yet" (an older API).
  */
 
 interface RequestOptions {
@@ -49,6 +47,39 @@ export async function fetchElectionTally(electionId: string, { signal }: Request
       abstain: p.abstain ?? 0,
       candidates: (p.candidates ?? []).map((c) => ({ candidateId: c.candidateId, votes: c.votes ?? 0 })),
     })),
+  };
+}
+
+/** The totals at one moment. */
+export interface TallyFrame {
+  /** When (ms). */
+  at: number;
+  /** Ballots cast by then. */
+  ballots: number;
+  /** Candidate id → votes by then (missing = 0). */
+  votes: Record<string, number>;
+}
+
+export interface TallyTimeline {
+  /** Every frame adds at least this many ballots to the one before, so no single vote shows. */
+  minBallotsPerStep: number;
+  /** From everyone at zero when voting opened to the totals now, oldest first. */
+  frames: TallyFrame[];
+}
+
+interface TallyTimelineDto {
+  minBallotsPerStep?: number | null;
+  frames?: { at: string; ballots?: number | null; votes?: Record<string, number> | null }[] | null;
+}
+
+/** The tally over time since voting opened (every ballot, not only while a page was open). */
+export async function fetchTallyTimeline(electionId: string, { signal }: RequestOptions = {}): Promise<TallyTimeline> {
+  const dto = await apiClient.get<TallyTimelineDto>(`admin/elections/${encodeURIComponent(electionId)}/tally/timeline`, { signal });
+  return {
+    minBallotsPerStep: dto?.minBallotsPerStep ?? 0,
+    frames: (dto?.frames ?? [])
+      .map((f) => ({ at: Date.parse(f.at), ballots: f.ballots ?? 0, votes: f.votes ?? {} }))
+      .filter((f) => Number.isFinite(f.at)),
   };
 }
 
