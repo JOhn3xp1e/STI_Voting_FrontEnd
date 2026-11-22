@@ -176,7 +176,8 @@ export interface Timeline {
 
 /** Lines a timeline shows at most; smaller groups beyond that fold into "Other". */
 export const MAX_SERIES = 8;
-const MAX_POINTS = 145;
+/** Few enough that the curve reads as a trend rather than minute-by-minute steps. */
+const MAX_POINTS = 49;
 
 /**
  * Ballots cast over time, as one line for every voter or one per career, program or level.

@@ -185,11 +185,7 @@ export function OngoingOverview({ election, careers, positions, candidates, part
           <h2 className="font-mono text-[0.6875rem] font-semibold tracking-[0.16em] text-foreground uppercase">Turnout breakdown</h2>
           <TurnoutViewSwitch value={view} onChange={setView} />
         </div>
-        {view === "line" ? (
-          <TurnoutTimeline election={election} voters={voters} enrollments={enrollments} careers={careers} colors={colors} now={now} />
-        ) : (
-          <Breakdown breakdown={breakdown} view={view} colors={colors} loading={!voters} scope={election.careerScope} />
-        )}
+        <Breakdown breakdown={breakdown} view={view} colors={colors} loading={!voters} scope={election.careerScope} />
       </section>
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_21.25rem]">

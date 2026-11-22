@@ -264,6 +264,35 @@ function tickLabel(t: number, step: number): string {
   return hourFormat.format(d).replace(":00", "").replace(/\s/g, " ");
 }
 
+/**
+ * A smooth curve through the points (monotone cubic, Fritsch–Carlson): it never overshoots,
+ * so a running total never appears to dip or to rise past the next value.
+ */
+function smoothPath(points: [number, number][]): string {
+  const n = points.length;
+  if (n === 0) return "";
+  const f = (v: number) => v.toFixed(1);
+  if (n < 3) return points.map(([px, py], i) => `${i ? "L" : "M"}${f(px)},${f(py)}`).join("");
+  const h = points.slice(1).map(([px], i) => px - points[i][0] || 1e-6);
+  const d = points.slice(1).map(([, py], i) => (py - points[i][1]) / h[i]);
+  const m = points.map((_, i) => {
+    if (i === 0) return d[0];
+    if (i === n - 1) return d[n - 2];
+    const [a, b] = [d[i - 1], d[i]];
+    if (a * b <= 0) return 0;
+    const p = (a * h[i] + b * h[i - 1]) / (h[i - 1] + h[i]);
+    return Math.sign(a) * Math.min(Math.abs(a), Math.abs(b), Math.abs(p) / 2) * 2;
+  });
+  let out = `M${f(points[0][0])},${f(points[0][1])}`;
+  for (let i = 0; i < n - 1; i++) {
+    const [x0, y0] = points[i];
+    const [x1, y1] = points[i + 1];
+    const t = h[i] / 3;
+    out += `C${f(x0 + t)},${f(y0 + t * m[i])} ${f(x1 - t)},${f(y1 - t * m[i + 1])} ${f(x1)},${f(y1)}`;
+  }
+  return out;
+}
+
 const formatValue = (value: number, metric: Metric) => (metric === "turnout" ? percent(value) : count(value));
 
 function Chart({ times, lines, metric, endLabels }: { times: number[]; lines: Line[]; metric: Metric; endLabels: boolean }) {
@@ -283,7 +312,7 @@ function Chart({ times, lines, metric, endLabels }: { times: number[]; lines: Li
   const { ticks: xTicks, step } = timeTicks(from, to, Math.max(2, Math.floor(plotW / 84)));
   const last = times.length - 1;
 
-  const path = (l: Line) => l.plotted.map((v, i) => `${i ? "L" : "M"}${x(times[i]).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  const path = (l: Line) => smoothPath(l.plotted.map((v, i) => [x(times[i]), y(v)]));
 
   // Names at the line ends, nudged apart so they don't overlap.
   const labels = endLabels

@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 /*                                 View switch                                */
 /* -------------------------------------------------------------------------- */
 
-export const TURNOUT_VIEWS = ["line", "bar", "donut"] as const;
+export const TURNOUT_VIEWS = ["bar", "donut"] as const;
 export type TurnoutView = (typeof TURNOUT_VIEWS)[number];
 
 /** LINE · BAR · DONUT segmented switch. */
