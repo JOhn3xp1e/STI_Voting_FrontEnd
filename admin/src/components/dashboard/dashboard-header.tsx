@@ -58,7 +58,7 @@ export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, class
       >
         {/* Light theme: header artwork. */}
         <div className={styles.artwork}>
-          <Image src="/images/headerdesign.png" alt="" fill loading="eager" sizes="140vw" className="object-cover" />
+          <Image src="/images/header-bg.webp" alt="" fill loading="eager" sizes="100vw" className="object-cover" />
         </div>
         {/* Dark theme: animated navy gradient. */}
         <div className={styles.darkLayers}>
@@ -113,7 +113,8 @@ export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, class
                 <p
                   className={cn(
                     "line-clamp-2 font-mono text-[0.6875rem] transition-colors duration-500 sm:text-xs",
-                    hero ? "text-brand-navy/60 xl:truncate dark:text-brand-white/65" :"text-brand-muted lg:truncate dark:text-shell-item",
+                    // Greeting: blend mode "plus lighter", as in Figma (Topbar subtitle).
+                    hero ? "text-brand-muted mix-blend-plus-lighter xl:truncate dark:text-brand-white/65" : "text-brand-muted lg:truncate dark:text-shell-item",
                   )}
                 >
                   {description}

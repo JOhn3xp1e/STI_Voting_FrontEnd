@@ -1,8 +1,8 @@
 /*
  * Dashboard (`hero`) header backdrop.
- * Light theme: the `headerdesign.png` artwork — pale grey with a soft white
- * ring on the left (behind the navy title), sweeping through STI Gold and
- * Primary Blue into dark navy on the right.
+ * Light theme: the `header-bg.webp` artwork (Figma "image 75") — pale grey on
+ * the left (behind the navy title), sweeping through STI Gold and Primary Blue
+ * into dark navy on the right.
  * Dark theme: animated dark navy gradient lit by STI Gold and Primary Blue,
  * with a soft glow and film grain (white title).
  */
@@ -20,18 +20,10 @@
   background-color: var(--color-brand-background);
 }
 
-/*
- * Light artwork, scaled to 137% of the header width and shifted so the small
- * white ring sits in the top-left corner and the navy fills the right side.
- * Sized from the width (aspect-ratio), so the crop stays the same at every size.
- */
+/* Light artwork (Figma "image 75"), covering the whole header. */
 .artwork {
   position: absolute;
-  top: 0;
-  left: -36.9%;
-  width: 137%;
-  aspect-ratio: 2116 / 922;
-  transform: translate3d(0, -23.3%, 0);
+  inset: 0;
   transition: opacity 500ms ease-out;
 }
 
