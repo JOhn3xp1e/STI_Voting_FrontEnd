@@ -113,8 +113,9 @@ export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, class
                 <p
                   className={cn(
                     "line-clamp-2 font-mono text-[0.6875rem] transition-colors duration-500 sm:text-xs",
-                    // Greeting: blend mode "plus lighter", as in Figma (Topbar subtitle).
-                    hero ? "text-brand-muted mix-blend-plus-lighter xl:truncate dark:text-brand-white/65" : "text-brand-muted lg:truncate dark:text-shell-item",
+                    // Greeting: navy like the title. (Figma's "plus lighter" blend only brightens, so it
+                    // turns white over the artwork's pale left side.)
+                    hero ? "text-brand-navy/65 xl:truncate dark:text-brand-white/65" : "text-brand-muted lg:truncate dark:text-shell-item",
                   )}
                 >
                   {description}
@@ -131,7 +132,8 @@ export function DashboardHeader({ admin, onOpenNavigation, navigationOpen, class
               label={`Account menu for ${admin.fullName}`}
               showIdentity
               triggerClassName={cn(
-                "rounded-full outline-none transition-[box-shadow,translate] duration-300 ease-out",
+                // `flex`: hug the 32px avatar (inline, the button gains line-height and its ring turns oval).
+                "flex shrink-0 rounded-full outline-none transition-[box-shadow,translate] duration-300 ease-out",
                 hero ? "shadow-[0_0_0_2px_rgb(255_255_255/0.3)]" : "shadow-[0_0_0_2px_transparent]",
                 "hover:-translate-y-px hover:shadow-[0_0_0_2px_rgb(255_255_255/0.9),0_0_0_5px_color-mix(in_oklab,var(--color-brand-blue)_40%,transparent)]",
                 "data-popup-open:shadow-[0_0_0_2px_rgb(255_255_255/0.9),0_0_0_5px_color-mix(in_oklab,var(--color-brand-blue)_40%,transparent)]",
