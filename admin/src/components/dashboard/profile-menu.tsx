@@ -3,11 +3,11 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { Menu } from "@base-ui/react/menu";
-import { LogOut, Shield, Sun, UsersRound } from "lucide-react";
+import { LogOut, MonitorDown, Shield, Sun, UsersRound } from "lucide-react";
 
 import { useProfileDialog } from "@/components/account/profile-dialog";
 import { useAdminSession } from "@/components/auth/admin-session";
-import { SETTINGS_LINKS } from "@/config/navigation";
+import { ACCOUNT_LINKS, SETTINGS_LINKS } from "@/config/navigation";
 import { cn } from "@/lib/utils";
 import type { AdminProfile } from "@/types/auth.types";
 
@@ -30,7 +30,7 @@ interface ProfileMenuProps {
 /** Bigger rows than the shared menu item: 15px text, 20px icons. */
 const itemClassName = cn(menuItemClassName, "h-11 gap-3.5 px-3 text-[0.9375rem] [&_svg]:size-5");
 
-/** Account menu: My profile, Change password, Settings (super admins), Log out. */
+/** Account menu: My profile, Change password, Settings (super admins), Desktop app, Log out. */
 export function ProfileMenu({ admin, label, children, triggerClassName, side = "bottom", align = "end", showIdentity = false }: ProfileMenuProps) {
   const { signOut } = useAdminSession();
   const { openProfile } = useProfileDialog();
@@ -73,6 +73,11 @@ export function ProfileMenu({ admin, label, children, triggerClassName, side = "
                 <span className="ml-auto font-mono text-[0.6875rem] text-muted-foreground">email · admins</span>
               </Menu.LinkItem>
             ) : null}
+            <Menu.LinkItem closeOnClick className={itemClassName} render={<Link href={ACCOUNT_LINKS.desktopApp} />}>
+              <MonitorDown aria-hidden strokeWidth={1.75} />
+              Desktop app
+              <span className="ml-auto font-mono text-[0.6875rem] text-muted-foreground">windows</span>
+            </Menu.LinkItem>
             <Menu.Separator className="mx-1 my-1.5 h-px bg-border" />
             <Menu.Item onClick={() => void signOut()} className={itemClassName}>
               <LogOut aria-hidden strokeWidth={1.75} />

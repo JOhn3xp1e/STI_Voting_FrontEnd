@@ -151,6 +151,7 @@ export const SETTINGS_LINKS = {
 export const ACCOUNT_LINKS = {
   profile: "/account/profile",
   settings: "/account/settings",
+  desktopApp: "/account/desktop-app",
 } as const;
 
 /**
@@ -194,6 +195,7 @@ const PAGE_META: Record<string, PageMetaConfig> = {
   [SETTINGS_LINKS.admins]: { title: "Settings", headerDivider: false },
   [ACCOUNT_LINKS.profile]: { title: "Profile", description: "Your admin account" },
   [ACCOUNT_LINKS.settings]: { title: "Account settings", description: "Your admin account" },
+  [ACCOUNT_LINKS.desktopApp]: { title: "Desktop app", description: "SLVP Admin for Windows", headerDivider: false },
 };
 
 /** Routes with a dynamic segment, e.g. `/elections/ELC-00016/edit`. */

@@ -1,0 +1,77 @@
+name: Build desktop app
+
+# Builds the Windows installer (desktop/) and uploads it to the R2 bucket `slvp-desktop`, which the
+# admin Worker serves at /api/desktop/* (Account → Desktop app, and the app's own updater).
+#
+# Needs:
+#   vars.DESKTOP_ADMIN_URL          the admin portal's origin, e.g. https://slvp-admin.kape-dev.space
+#   secrets.CLOUDFLARE_API_TOKEN    with "Workers R2 Storage: Edit" (the deploy token, plus R2)
+#   secrets.CLOUDFLARE_ACCOUNT_ID
+# and the bucket, created once: `npx wrangler r2 bucket create slvp-desktop`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/build-desktop.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: build-desktop
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    env:
+      WRANGLER: npx --yes wrangler@4.160.1
+      BUCKET: slvp-desktop
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+
+      # Major.minor from package.json, patch = this workflow's run number, so every build is newer
+      # than the last and installed apps pick it up.
+      - name: Set version
+        run: |
+          base=$(node -p "require('./package.json').version.split('.').slice(0, 2).join('.')")
+          npm version "$base.${{ github.run_number }}" --no-git-tag-version
+
+      - name: Build installer
+        run: npm run dist
+        env:
+          SLVP_ADMIN_URL: ${{ vars.DESKTOP_ADMIN_URL }}
+
+      # The installer first, latest.yml last: apps only see a version once its installer is there.
+      # Then the previous installer is deleted, so the bucket holds one build (~120 MB) and stays
+      # well inside R2's free storage.
+      - name: Upload to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          installer=$(basename "$(ls dist/SLVP-Admin-Setup-*.exe)")
+          previous=$($WRANGLER r2 object get "$BUCKET/latest.yml" --pipe --remote 2>/dev/null \
+            | sed -n 's/^path: *//p' | tr -d "'\"\r" || true)
+
+          $WRANGLER r2 object put "$BUCKET/$installer" --file "dist/$installer" \
+            --content-type application/vnd.microsoft.portable-executable --remote
+          $WRANGLER r2 object put "$BUCKET/latest.yml" --file dist/latest.yml \
+            --content-type "text/yaml; charset=utf-8" --remote
+
+          if [[ "$previous" =~ ^SLVP-Admin-Setup-[0-9.]+\.exe$ && "$previous" != "$installer" ]]; then
+            $WRANGLER r2 object delete "$BUCKET/$previous" --remote || echo "::warning::Couldn't delete $previous"
+          fi
+          echo "Published $installer${previous:+ (replaced $previous)}" >> "$GITHUB_STEP_SUMMARY"

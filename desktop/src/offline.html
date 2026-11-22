@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:" />
+    <title>SLVP Admin</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f7fb;
+        --card: #ffffff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --border: #e2e8f0;
+        --accent: #1d4ed8;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b1430;
+          --card: #111c3d;
+          --text: #f1f5f9;
+          --muted: #94a3b8;
+          --border: rgb(255 255 255 / 0.1);
+          --accent: #7aa7e6;
+        }
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
+      }
+      main {
+        max-width: 26rem;
+        margin: 1rem;
+        padding: 2rem;
+        border: 1px solid var(--border);
+        border-radius: 0.75rem;
+        background: var(--card);
+        text-align: center;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.125rem;
+      }
+      p {
+        margin: 0 0 1.25rem;
+        color: var(--muted);
+      }
+      code {
+        font-size: 0.75rem;
+        word-break: break-all;
+      }
+      button {
+        height: 2.25rem;
+        padding: 0 1.25rem;
+        border: 0;
+        border-radius: 0.5rem;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      @media (prefers-color-scheme: dark) {
+        button {
+          color: #0b1430;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Can't reach the admin portal</h1>
+      <p>
+        Check your internet connection, then try again. It retries on its own when you're back online.<br />
+        <code id="reason"></code>
+      </p>
+      <button id="retry" type="button">Try again</button>
+    </main>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const target = params.get("url") || "";
+      document.getElementById("reason").textContent = params.get("reason") || "";
+      function retry() {
+        if (/^https?:\/\//.test(target)) location.href = target;
+      }
+      document.getElementById("retry").addEventListener("click", retry);
+      window.addEventListener("online", retry);
+    </script>
+  </body>
+</html>

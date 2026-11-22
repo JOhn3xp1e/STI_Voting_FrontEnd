@@ -27,6 +27,14 @@
 		// and removes photo backgrounds in the photo editor (`segment: "foreground"`).
 		"binding": "IMAGES"
 	},
+	"r2_buckets": [
+		{
+			// Desktop app builds (installer + latest.yml), uploaded by .github/workflows/build-desktop.yml
+			// and served at /api/desktop/*. Create the bucket once: `npx wrangler r2 bucket create slvp-desktop`.
+			"binding": "DESKTOP_RELEASES",
+			"bucket_name": "slvp-desktop"
+		}
+	],
 	// Keep this top level free of remote bindings (`"remote": true`, `"ai"`): the deploy
 	// step starts a local proxy from it, and the CI token can't open a remote session.
 	// The photo editor's uniforms call Workers AI over its REST API instead (secrets
@@ -48,7 +56,9 @@
 			"images": {
 				"binding": "IMAGES",
 				"remote": true
-			}
+			},
+			// Local (empty) stand-in: the Desktop app page shows "no build published yet".
+			"r2_buckets": [{ "binding": "DESKTOP_RELEASES", "bucket_name": "slvp-desktop" }]
 		}
 	}
 }

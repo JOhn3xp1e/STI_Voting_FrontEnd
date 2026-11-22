@@ -1,0 +1,24 @@
+{
+  "name": "slvp-admin-desktop",
+  "productName": "SLVP Admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop app for the Voting System admin portal.",
+  "author": "Kape.Dev",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --config electron-builder.config.cjs --win --publish never",
+    "dist:dir": "electron-builder --config electron-builder.config.cjs --win --dir --publish never"
+  },
+  "slvp": {
+    "adminUrl": "http://localhost:3000"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0"
+  }
+}
